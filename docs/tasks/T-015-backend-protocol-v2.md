@@ -34,3 +34,9 @@
 
 - 공통 조건, `FakeBackend` 가 새 메서드를 모두 구현
 - 끝나면 `[검토요청 T-015]`
+
+## Addition (from T-023, 실행11)
+
+- Add an optional `notes: dict[str, str]` (default empty) to `Readback` and `BackendInfo`. Backends use it
+  for markings such as `"unmeasured provisional"` and demo substitutions, so they never go into device or
+  property names.
