@@ -80,3 +80,16 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
   규칙에서 뺀다. 실행 중인 작업과 동시에 받는다. 기록에는 그대로 남긴다.
 - 원격 abort 허용 여부, 로컬 탭이 모두 끊겼을 때 자동 abort 여부는 사용자 결정 대기다 (총괄에 올림).
   설정 값으로 두고 기본은 "원격 abort 허용", "자동 abort 끔" 으로 시작한다. 결정되면 기본값만 바꾼다.
+
+## v1.0 decisions (PLAN.md 3494688, D13 and D14). Supersedes the defaults in the T-004 section above
+
+- **D13**: a remote viewer may send `abort` and nothing else. Default **on**. Every other command from a
+  non-loopback client is refused (the server's 403 rule in T-009 stays; `abort` is the one exception).
+- **D14**: during operator-watched operations (declare this per operation, e.g. `edge_trace`), the engine
+  aborts **10 s** after every microscope-PC (loopback) browser connection has dropped. Default **on**,
+  timeout 10 s, both kept as settings. A reconnect inside the window cancels the timer.
+- Record both in the operation log when they fire: which rule, who or what triggered it, the time, and
+  for D14 the moment the last connection dropped. Abort then follows the normal exit path (lights off,
+  readback recorded).
+- The engine learns about browser connections from the server through one call (for example
+  `set_local_viewers(count)`), so the engine still imports no web framework.
