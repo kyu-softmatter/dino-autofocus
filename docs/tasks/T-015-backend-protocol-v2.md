@@ -1,15 +1,16 @@
 # T-015 WP-A 백엔드 프로토콜 확장 (T-006 명세의 읽기와 상대 이동)
 
-- 담당: 미정
+- 담당: AF 실행12 · 개발 (새 세션). MockBackend 과제 T-021 과 이어서
 - 묶음: WP-A
-- 선행: T-002 병합. MockBackend 과제와 WP-G (hardware_scan) 가 이것을 쓴다
+- 선행: T-002-1 병합. MockBackend 과제와 WP-G (hardware_scan) 가 이것을 쓴다
 - 배정: 2026-10-01 작성
 - 브랜치: `execN/T-015-backend-protocol-v2`
 
 ## 소유 경로
 
 - `src/dino_autofocus/engine/backend.py` (T-002 병합 뒤 소유 이전)
-- `tests/engine/conftest.py` 의 `FakeBackend` 확장 (T-002 병합 뒤 소유 이전)
+- `tests/engine/conftest.py` 의 `FakeBackend` 확장 (T-002-1 병합 뒤 소유 이전. 실행1 의 2·3단계가 conftest 를
+  고쳐야 하면 매니저에게 먼저 알린다)
 - `tests/engine/test_contract_backend_v2.py`
 
 ## 내용 (이름은 `docs/operations-spec.md` 0.1절의 가칭. 다르게 정하면 명세도 고친다)
