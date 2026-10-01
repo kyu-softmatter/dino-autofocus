@@ -38,6 +38,15 @@
   미리 복사해야 한다는 점을 넣는다.
 - **T-019 git 쪽 구현**: 세션별 브랜치/워크트리 대 한 브랜치 폴더별 커밋. 사용자 결정 뒤.
 
+- **From the T-004 spec (실행5, 6fcd8a8), accepted, for future cards:**
+  - WP-H: record operations `sample_geometry_set`, `loading_confirm_person`, `loading_check_image` (ui-spec 7.3).
+  - WP-I: append-only `map_flag_retire`, `candidate_confirm`, `candidate_reject` (ui-spec 7.4).
+  - WP-G: `hardware_confirm` for human-confirmed profile items (ui-spec 7.2).
+  - Server/web: first-screen notice of the last shutdown's light readback (ui-spec 5.2).
+  - Piezo keys f / w / W stay disabled until M5 (operations-spec 9.2).
+- **Waiting on the director/user:** real `light_set`/`lights_off` at M3 instead of M4; whether viewers
+  may submit questions to the mock store and write flags (default: local operator only).
+
 ## 현미경 PC 확인 항목 (총괄에 넘김)
 
 - `docs/operations-spec.md` 10절 Q1–Q21 (실행4, T-006)

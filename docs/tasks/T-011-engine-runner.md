@@ -93,3 +93,8 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
   readback recorded).
 - The engine learns about browser connections from the server through one call (for example
   `set_local_viewers(count)`), so the engine still imports no web framework.
+
+## From the T-004 spec (실행5, 6fcd8a8, ui-spec 7.5)
+
+- The return-only operation allowed while `awaiting_return` is `start("objective_change", {"resume": true})`.
+  Every other motion operation is refused in preflight until it finishes.

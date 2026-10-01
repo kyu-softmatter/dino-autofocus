@@ -77,3 +77,9 @@
   측정 계속), 가짜 라이브러리언 (closed 세션을 읽고 반영 기록을 `librarian\` 에만 쓴다, 병합 없음).
 - soft-matter-agents 저장소 (공개) 에는 쓰지 않는다. 시뮬레이션이 어디에 쓰는지는 미해결 (PLAN 10절).
 - 완료 조건의 테스트 목록에서 "병합" 은 "같은 샘플의 이벤트를 두 세션 폴더에서 모아도 충돌 없음" 으로 읽는다.
+
+## From the T-004 spec (실행5, 6fcd8a8, ui-spec 5.1)
+
+- Expose the open experiment session's start time (and `None` when no session is open). The engine uses
+  it for the "re-trace every session" rule: a hole fit older than the open session's start is stale, and
+  with no open session the engine falls back to its own start time.
