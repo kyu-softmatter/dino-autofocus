@@ -131,7 +131,7 @@ class FocusScorer:
         dz = h["dz"].predict(X)
         sigma = h["sigma_scale"] * np.exp(h["err"].predict(X))
         pv = h["valid"].predict_proba(X)[:, 1]
-        for t, a, b, c in zip(tiles, dz, sigma, pv):
+        for t, a, b, c in zip(tiles, dz, sigma, pv, strict=True):  # one prediction per tile
             t.dz, t.sigma, t.p_valid = float(a), float(b), float(c)
         use = [t for t in tiles if t.p_valid >= 0.5]
         if not use:
@@ -141,5 +141,6 @@ class FocusScorer:
         o = np.argsort(v)
         cw = np.cumsum(w[o]) / w.sum()
         score = float(v[o][np.searchsorted(cw, 0.5)])  # weighted median: one odd tile can't drag it
-        sig = float(np.median([t.sigma for t in use]))  # tiles share optics: don't divide by sqrt(n)
+        # tiles share optics: don't divide by sqrt(n)
+        sig = float(np.median([t.sigma for t in use]))
         return FocusReading(score, sig, len(use), tiles)
