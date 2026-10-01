@@ -24,7 +24,7 @@ def test_commands_and_events_round_trip_through_json():
     ev = Event("progress", "scan_4x_1", {"tile": "r0c1", "z_um": [3052.9]})
     assert Event.from_json(ev.to_json()) == ev
     cmd = Command("confirm", op_id="scan_4x_1", args={"key": "oil_loaded", "ok": True},
-                  origin="assistant", user_id="kyuchoi", session_id="20261001_1540_1")
+                  origin="assistant", user_id="user-1", session_id="20261001_1540_1")
     assert Command.from_json(cmd.to_json()) == cmd
     assert json.loads(Command("abort").to_json())["user_id"] is None
     with pytest.raises(ValueError):
