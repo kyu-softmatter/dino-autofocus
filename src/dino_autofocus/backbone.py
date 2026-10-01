@@ -70,6 +70,11 @@ class DinoExtractor:
     name: str = "dinov2_vits14"
     n_layers: int = 1
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    #: On by default for the microscope PC (RTX A4000, tensor cores); heads in
+    #: models/heads were trained on fp16 features. On GPUs without tensor cores pass
+    #: fp16=False: on a GTX 1650 SUPER autocast fp16 ran ~4x slower than fp32
+    #: (scripts/bench_latency.py). Features differ by up to ~0.02 between the two, so
+    #: extract with the same setting a head was trained with.
     fp16: bool = True
     repo: Path = DEFAULT_REPO
 

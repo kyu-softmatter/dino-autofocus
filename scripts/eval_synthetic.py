@@ -55,9 +55,17 @@ def cached(path: Path, fn):
     return x
 
 
-def classical_features(d) -> np.ndarray:
-    m = np.array([[focus_score(im.astype(np.float64), k) for k in RELIABLE] for im in d["image"]])
-    return np.log10(np.abs(m) + 1e-12)
+def classical_metrics(d) -> np.ndarray:
+    rows = []
+    for im in d["image"]:
+        im = im.astype(np.float64)
+        rows.append([focus_score(im, k) for k in RELIABLE])
+    return np.array(rows)
+
+
+def signed_log(m: np.ndarray, floor: float = 1e-3) -> np.ndarray:
+    """Monotonic and sign-preserving (vollath4 goes negative out of focus)."""
+    return np.sign(m) * np.log10(1 + np.abs(m) / floor)
 
 
 def ridge():
@@ -125,17 +133,27 @@ def main() -> None:
     ap.add_argument("--model", default="dinov2_vits14")
     ap.add_argument("--n-layers", type=int, default=1)
     ap.add_argument("--out", type=Path, default=Path("outputs"))
+    ap.add_argument(
+        "--fp16",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="autocast fp16 feature extraction (default, as on the microscope PC); "
+        "--no-fp16 on GPUs without tensor cores. fp32 features are cached as *_fp32.npz "
+        "so train_head.py, which reads feat_<model>_L<n>.npz, never mixes the two",
+    )
     args = ap.parse_args()
 
     d = load(args.data)
     valid = d["valid"]
     print(f"{len(valid)} frames, {len(np.unique(d['scene_id']))} scenes, {valid.mean():.0%} valid")
 
-    tag = f"{args.model}_L{args.n_layers}"
+    tag = f"{args.model}_L{args.n_layers}" + ("" if args.fp16 else "_fp32")
     dino = cached(
-        args.data / f"feat_{tag}.npz", lambda: DinoExtractor(args.model, args.n_layers)(d["image"])
+        args.data / f"feat_{tag}.npz",
+        lambda: DinoExtractor(args.model, args.n_layers, fp16=args.fp16)(d["image"]),
     )
-    clas = cached(args.data / "feat_classical.npz", lambda: classical_features(d))
+    raw = cached(args.data / "feat_classical_raw.npz", lambda: classical_metrics(d))
+    clas = signed_log(raw)
     cond = normalise_cond(d["cond"])
     desc = np.nan_to_num(d["descriptors"])
 
@@ -145,7 +163,13 @@ def main() -> None:
         f"dino[{tag}]+classical": np.hstack([dino, clas, desc, cond]),
     }
     dz, groups = d["dz_dof"], d["scene_id"]
-    results = {"data": str(args.data), "n_frames": int(len(dz)), "frame": {}, "stack": {}}
+    results = {
+        "data": str(args.data),
+        "n_frames": int(len(dz)),
+        "fp16": args.fp16,
+        "frame": {},
+        "stack": {},
+    }
 
     for fname, X in feature_sets.items():
         for hname, make in (("ridge", ridge), ("mlp", mlp)):
@@ -158,6 +182,7 @@ def main() -> None:
             print(f"  {key}: {time.perf_counter() - t:.0f}s")
 
     for k, name in enumerate(RELIABLE):
+        # log scale: the parabola through the peak fits a log-sharpness curve better
         results["stack"][f"z-scan argmax {name}"] = stack_pick(d, clas[:, k], True)
 
     per_family = {}
@@ -171,7 +196,11 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         args.out / f"pred_{args.data.name}_{tag}.npz",
-        dz_dof=dz, pred_dz_dof=p, valid=valid, family=d["family"], scene_id=groups,
+        dz_dof=dz,
+        pred_dz_dof=p,
+        valid=valid,
+        family=d["family"],
+        scene_id=groups,
     )
     out = args.out / f"eval_{args.data.name}_{tag}.json"
     out.write_text(json.dumps(results, indent=2))
