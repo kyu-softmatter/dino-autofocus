@@ -8,6 +8,8 @@
 - v0.2: 사용자 요구사항 F1–F5 추가 (2026-10-01). **모든 기능을 mock 으로 먼저 구축**.
   Python 환경 방침 추가. 작업 묶음 WP-F–J 추가. D1 권고 갱신. D5 결정 (통합 시 공개).
 - v0.3: **D1 결정: 로컬 웹 앱 (FastAPI + React)**. D3 확정. 서버/웹 구조, API 규칙, 작업 묶음 WP-D 분할. Node 는 uv 그룹 `web`.
+- v0.4: F6 시뮬레이션 현황 상세, 공통 요구 X1 (모든 화면에 프롬프트 칸), X2 (Claude 연동).
+  Claude 연동 설계 (5절), 결정 D6–D8, 작업 묶음 WP-K, WP-L.
 
 ## 1. 목적과 범위
 
@@ -109,6 +111,38 @@
 - 3번과 6번의 XY 이동은 Z 후퇴 상태가 확인될 때만 가드가 허용한다.
 - 7번은 soft-matter-agents 과제 026 의 "넘겨받은 Z 는 목적지가 아니라 목표" 규칙과 같다.
 
+### F6. 시뮬레이션 현황 상세 (F1.3 확장)
+
+| | 기능 |
+|---|---|
+| F6.1 | 진행 중인 시뮬레이션의 진행률 (현재 step / 전체 step, 경과 시간, 예상 종료) |
+| F6.2 | 데이터를 쉽게 내려받는 버튼 (실행 폴더 단위 묶음) |
+| F6.3 | 시뮬레이션 시각화: 입자 궤적 재생 |
+| F6.4 | 주요 결과를 그래프로 보기: 로그 값 (에너지, 온도, 압력 등)과 관측량 |
+
+- 참고: [kyu-softmatter/HOOMD_GUI](https://github.com/kyu-softmatter/HOOMD_GUI). 같은 구조를 쓴다.
+  FastAPI 로컬 러너, 루프백만 바인딩, Host 헤더 허용 목록, 같은 출처에서 웹과 API 제공.
+  뷰포트는 지금 Canvas 2D 이고, 3D 가 필요해지면 Three.js 인스턴싱으로 간다.
+  진행률은 WebSocket 또는 server-sent events 로 받는다. 궤적은 GSD, 로그는 HDF5/CSV.
+- 데이터 출처: soft-matter-agents `simulation_agent/runs/<run_id>/` 의 `config.json`,
+  `log.json`, `observables.json`, `trajectory_meta.json`. 궤적 파일 자체는 저장소에 없고 WSL 쪽에 있다.
+  서버는 `\\wsl$\<배포판>\...` 경로로 읽기만 한다. 실제 경로는 현미경 PC 에서 확인한다.
+- 진행률 출처: 실행 중인 시뮬레이션이 진행 상태를 파일로 남겨야 한다. 지금 남기는지 확인이
+  필요하다 (10절). mock 에서는 시간에 따라 진행하는 가짜 실행을 쓴다.
+- 내려받기: 서버가 실행 폴더를 zip 으로 묶어 스트리밍한다. 큰 궤적은 선택해서 포함한다.
+- 그래프의 숫자는 기록 파일에서 읽은 값 그대로 그린다. 화면에서 다시 계산하지 않는다.
+
+### 공통 요구사항
+
+| | 기능 |
+|---|---|
+| X1 | **모든 화면에 프롬프트로 요청할 수 있는 칸**을 둔다 |
+| X2 | **모든 프롬프트와 기능을 Claude 와 연동**한다 (설계는 5절 "Claude 연동") |
+
+- 프롬프트 칸은 공통 컴포넌트 하나로 만들고, 화면은 자기 문맥을 붙여 보낸다.
+  예: 샘플 맵 화면은 선택된 샘플 id 와 클릭한 영역, 시뮬레이션 화면은 선택된 run id.
+- 답변과 제안은 그 화면 안에 보여 주고, 같은 대화 기록을 모든 화면에서 이어 볼 수 있다.
+
 ## 3. 현재 상태
 
 | 구성 | 위치 | 상태 |
@@ -182,6 +216,40 @@ Python 환경 방침 (권고, **최종 결정은 현미경 PC 에서**):
   `web` (nodejs-wheel) 으로 넣는다.** `uv sync` 만으로 현미경 PC 와 개발 PC 에 같은 버전이 깔린다.
   실행은 `uv run npm ...`, `uv run node ...`.
 
+### Claude 연동 (X2)
+
+권고 구조: **서버 안에서 Claude API 를 부르고, 앱 기능을 Claude 의 도구로 노출한다.**
+
+```
+  화면의 프롬프트 칸 --(질문 + 화면 문맥)--> Server /api/assistant
+      Server: Anthropic Python SDK, Tool Runner, 모델 claude-opus-5-5
+      도구 = 엔진과 저장소 API 를 감싼 함수 (화면이 쓰는 API 와 같은 것)
+  <--(스트리밍 답변, 도구 호출 표시, 실행 제안 카드)--
+```
+
+- **구현면**: Anthropic Python SDK 의 Messages API + Tool Runner. 도구는 우리가 정의하고,
+  서버가 실행한다. Tool Runner 의 턴별 훅에서 승인 게이트와 기록을 건다.
+- **도구는 두 종류다.**
+  - 읽기 도구: 하드웨어 상태, 샘플 기록, 맵, 질문과 카드, 시뮬레이션 진행률과 결과. 바로 실행한다.
+  - 동작 도구: 이동, 광원, 렌즈 전환, 스캔 시작 등. **실행하지 않고 제안 카드만 만든다.**
+    사람이 화면에서 확인을 눌러야 엔진으로 간다. 엔진의 게이트와 가드는 그대로 적용된다.
+- **같은 도구를 나중에 MCP 서버로도 연다.** 그러면 soft-matter-agents 의 Claude Code 세션도
+  같은 기능을 쓴다. 통합 단계의 일이다.
+- **다른 선택지와 비교**
+  - Claude Agent SDK: Claude Code 의 하네스 전체 (파일, bash 포함). 실험 장비 UI 에는 권한이
+    너무 넓다. 개발용 에이전트에 맞는다.
+  - Managed Agents: Anthropic 이 루프와 샌드박스를 돌린다. 장비 도구는 어차피 이 PC 에서
+    실행해야 하므로 얻는 것이 적다.
+- **캐싱**: 시스템 프롬프트와 도구 목록은 고정해 캐시하고, 화면 문맥과 질문은 그 뒤에 붙인다.
+  시스템 프롬프트에 시각이나 매번 바뀌는 값을 넣지 않는다.
+- **자격 증명**: API 키는 서버에만 둔다 (환경 변수 또는 `ant auth login` 프로필).
+  브라우저로 보내지 않는다. 키가 없으면 프롬프트 칸은 "연결 안 됨" 으로 보이고 나머지 기능은 돈다.
+- **mock 우선**: 테스트와 개발은 가짜 LLM 공급자로 한다. 네트워크와 비용 없이 도구 호출 흐름을
+  검증한다. 실제 호출은 사용자가 켤 때만 한다.
+- **기록**: 모든 대화, 도구 호출, 제안, 사람의 확인/거부를 기록 파일에 남긴다.
+  Claude 가 낸 숫자는 "model" 로 표시하고 측정값과 섞지 않는다.
+- **비용 표시**: 답변마다 사용 토큰을 보여 준다.
+
 디렉터리:
 
 ```
@@ -192,10 +260,12 @@ src/dino_autofocus/engine/operations/   status.py hardware_scan.py edge_trace.py
 src/dino_autofocus/agents/              store.py mock_store.py sma_files.py
 src/dino_autofocus/focus/               classical.py dino.py verdict.py
 src/dino_autofocus/server/              app.py api/ (영역별 라우터) ws.py schemas/ static.py
+src/dino_autofocus/assistant/           tools.py (읽기/제안 도구) runner.py providers/ (anthropic, fake) records.py
 web/                                    package.json vite.config.ts
 web/src/app/                            셸: 레이아웃, 내비게이션, 상태 표시줄, API 클라이언트
 web/src/api/                            OpenAPI 에서 생성한 타입 (생성물, 손으로 고치지 않음)
-web/src/features/<영역>/                console hardware sample map objective live
+web/src/features/<영역>/                console hardware sample map objective live simulation
+web/src/app/assistant/                  모든 화면 공통 프롬프트 칸 컴포넌트
 tests/engine/  tests/agents/  tests/focus/  tests/server/   web/ 의 테스트는 vitest
 ```
 
@@ -213,6 +283,8 @@ tests/engine/  tests/agents/  tests/focus/  tests/server/   web/ 의 테스트�
 9. **에이전트 저장소는 읽기 전용이다.** 카드는 UI 가 쓰지 않는다.
 10. **9월 30일 운영 규칙을 코드로 넣는다.** 명시야로 가장자리 추적 후 입자 조명으로 전환,
     세션마다 재추적, 액침액 로딩 확인 대기, 100x 상향 연장은 사용자 승인 후.
+11. **Claude 는 제안만 한다.** 동작 도구는 사람이 확인해야 실행되고, 확인 뒤에도 엔진의 게이트와
+    가드를 그대로 지난다. Claude 는 안전 판단과 모션 한계에 들어가지 않는다.
 
 soft-matter-agents 와의 대응 (통합 단계에서 다룸):
 
@@ -234,6 +306,9 @@ soft-matter-agents 와의 대응 (통합 단계에서 다룸):
 | D3 | 엔진 프로세스 | **결정: 엔진은 FastAPI 서버 프로세스 안에서 돈다** (D1 에 따름). 엔진은 서버 없이도 import 된다 |
 | D4 | 첫 범위 | **결정: 모든 기능을 mock 으로 먼저** (사용자, 2026-10-01) |
 | D5 | 공개/비공개 | **결정: 통합할 때 이 저장소를 공개한다** (사용자, 2026-10-01). 그때까지 비공개 |
+| D6 | Claude 연동 방식 | **권고: 서버의 Messages API + Tool Runner, 동작은 제안 카드**. MCP 노출은 통합 단계 |
+| D7 | Claude 에 보낼 수 있는 데이터 | 사용자 결정 필요. 텍스트 기록만, 또는 카메라 프레임과 맵 이미지까지. 이미지도 외부로 나간다 |
+| D8 | 비용 한도 | 사용자 결정 필요. 하루 또는 월 한도와 사용 모델. 기본 모델은 `claude-opus-5-5` |
 
 D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 PySide6 를 권했다. F1 로 범위가
 에이전트 콘솔까지 넓어졌다. 질문 입력, 카드와 실행 기록 열람, 샘플 맵 클릭, 상태 대시보드는
@@ -245,7 +320,7 @@ D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 
 
 | | 내용 | 확인 방법 |
 |---|---|---|
-| M1 | **전 기능 mock**: 엔진 계약, mock 백엔드, mock 에이전트 저장소, UI 의 F1–F5 화면 | 개발 데스크톱에서 하드웨어 없이 F1–F5 를 끝까지 실행. `uv run pytest` |
+| M1 | **전 기능 mock**: 엔진 계약, mock 백엔드, mock 에이전트 저장소, F1–F6 화면, 모든 화면의 프롬프트 칸 (가짜 LLM) | 개발 데스크톱에서 하드웨어 없이 F1–F5 를 끝까지 실행. `uv run pytest` |
 | M2 | 실제 데이터 읽기: soft-matter-agents 파일 읽기, replay 로 실제 샘플 스택 | 사용자 확인 |
 | M3 | 현미경 PC 읽기 전용: 하드웨어 탐지, 구성 파일, 게이트, 상태 표시 | 사용자가 현미경 PC 에서 실행 |
 | M4 | 동작: 샘플 맵, 클릭 이동, 배율 전환과 액침액 로딩, 100x 초점 | 벤치 기록이 9월 30일 결과와 일치 |
@@ -268,6 +343,9 @@ D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 
 | WP-I 샘플 맵 (F4) | 투과광 모자이크, 입자 후보, flag, 클릭 이동 | `engine/operations/sample_map.py`, `server/api/map.py`, `web/src/features/map/` | WP-B mock, WP-C scan_4x |
 | WP-J 배율 전환 (F5) | 2절 F5 순서, XY 이탈/복귀, 수동 단계 | `engine/operations/objective_change.py`, `server/api/objective.py`, `web/src/features/objective/` | WP-A, WP-B mock |
 
+| WP-K 시뮬레이션 현황 (F6) | 진행률, 내려받기, 궤적 뷰어, 결과 그래프. mock 실행 생성기 | `server/api/simulation.py`, `web/src/features/simulation/`, AgentStore 의 시뮬레이션 읽기 부분 | WP-F 어댑터, WP-D1·D2 |
+| WP-L Claude 연동 (X1, X2) | 도구 정의, Tool Runner, 가짜 공급자, 제안 카드 흐름, 기록, 공통 프롬프트 칸 | `assistant/`, `server/api/assistant.py`, `web/src/app/assistant/` | WP-A, WP-D1·D2. 실제 호출은 D6–D8 결정 후 |
+
 - 기능별 화면은 `server/api/<영역>.py` 와 `web/src/features/<영역>/` 를 한 묶음이 함께 소유한다.
   셸(WP-D2)은 각 영역을 내비게이션에 붙이는 등록 지점 하나만 열어 두고, 영역 묶음은 그 파일을 고치지 않는다.
 - `web/package.json`, `web/package-lock.json` 은 `pyproject.toml` 과 같은 규칙이다. 매니저를 통해 한 세션만 고친다.
@@ -284,6 +362,9 @@ D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 
 - F3.2 내용, F3.1 필드 목록 확정.
 - F5 이탈 방향과 거리. 재물대 Y 한계와 샘플의 24 mm 변 방향을 측정한 뒤 정한다.
 - F5 에서 물 대물렌즈(40x WI)는 작동 거리 값이 없어 보류 (soft-matter-agents 과제 026 5절).
+- F6 진행률: WSL 의 시뮬레이션이 진행 상태를 파일로 남기는지, 궤적과 로그가 어디에 있는지 현미경 PC 에서 확인.
+- X2 와 soft-matter-agents 규칙: 그쪽 과제 026 은 외부 서비스 호출을 "사람의 결정, 미승인" 으로 둔다.
+  이 저장소의 Claude 연동은 사용자가 요청한 것이고, 통합 시 그쪽 기록에도 남겨야 한다.
 
 9월 30일 벤치에서 넘어온 것:
 - `find_particle_z.py` 의 입자 판별을 신뢰할 수 없다 (실제 입자 약 6.7 µm).
