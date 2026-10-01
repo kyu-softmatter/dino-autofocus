@@ -13,6 +13,13 @@
 | AF 검토보조N · <T-NNN 또는 대기> (여러 개 가능) | 검토요청 브랜치를 자기 worktree 에서 먼저 확인 (테스트, 소유 범위, PLAN 규칙). 통과한 것만 검토 세션에 넘기고 실패는 실행 세션에 반려 | 자기 worktree (읽기, 테스트 실행) | 병합, 푸시, 공유 폴더 쓰기 |
 | AF 실행N · 개발 (늘어나면 같은 규칙) | 배정된 과제를 자기 worktree 브랜치에서 구현하고 커밋 | 배정된 소유 경로만 | 소유 밖 파일 수정, `main` 직접 커밋, 푸시, 하드웨어 명령 |
 
+## Language (2026-10-01)
+
+To save tokens, **sessions talk to each other in English**: cross-session messages, task cards in
+`docs/tasks/`, review notes, commit messages, code, comments and new docs. Only the director session
+talks to the user in Korean. `docs/PLAN.md` stays Korean for the user; quote its section numbers
+instead of restating it. Older Korean task cards stay as they are; write new ones in English.
+
 ## 세션 이름: 지금 하는 일을 보이게
 
 세션 이름은 사이드바에서 지금 무슨 개발을 하는지 알 수 있게 유지한다.
@@ -70,6 +77,9 @@ uv run ruff check src tests
 
 ## 공통 금지 사항
 
+- **사용자 화면에 창을 띄우지 않는다.** 브라우저 열기, 확인 대화상자, tkinter 창, exe 실행은 테스트에서
+  끄거나 대체하고 호출 기록만 확인한다. 시험용 서버는 끝나면 직접 정리한다.
+  실제 창을 띄워 봐야 하는 확인은 매니저를 거쳐 "사용자 확인 필요" 로 올린다 (2026-10-01, 8799 포트 사건).
 - 하드웨어 스크립트 실행 금지. 이 데스크톱에는 현미경이 없고, 벤치 실행은 사용자가 현미경 PC 에서 한다.
 - 데이터셋 생성과 DINO 학습은 현미경 PC 에서만 한다. 데스크톱에서 돌리지 않는다.
 - `pyproject.toml`, `uv.lock` 변경은 매니저를 통해 한 세션만 한다.
