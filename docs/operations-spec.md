@@ -15,13 +15,16 @@
 | 1 | `lights_off` | 초안 |
 | 2 | `status` | 초안 |
 | 3 | `scan_4x` | 초안 |
-| 4 | `objective_change` (PLAN 2절 F5 7단계 포함) | 작성 예정 (다음) |
-| 5 | `hardware_scan` (F2) | 작성 예정 |
-| 6 | `sample_map` (F4) | 작성 예정 |
-| 7 | `focus_100x` | 작성 예정 |
-| 8 | `edge_trace` | 작성 예정 |
-| 9 | 보류와 범위 밖: `find_particle_z`, `focus_servo` | 작성 예정 |
-| 10 | 현미경 PC 에서 확인할 질문 | 계속 추가 |
+| 4 | `objective_change` (PLAN 2절 F5 7단계 포함) | 초안 |
+| 5 | `hardware_scan` (F2) | 초안 |
+| 6 | `sample_map`, `map_flag`, `goto_xy` (F4) | 초안 |
+| 7 | `focus_100x` | 초안 |
+| 8 | `edge_trace` | 초안 |
+| 9 | 보류와 범위 밖: `find_particle_z`, `focus_servo` | 초안 |
+| 10 | 현미경 PC 에서 확인할 질문 | Q1–Q21 |
+
+매니저 결정 반영 (T-002 부록 3, main `69e6ba5`): `scan4x_<stamp>/` 폴더 유지 + `scan.json` 병행,
+`lights_off` 는 선점 명령, 상태 표시는 `position` 이벤트, `hole.fitted_at`, 원본 빈틈 세 가지.
 
 ## 0. 공통 약속
 
@@ -322,10 +325,552 @@ blocks_per_side, block_z_um}`, 그리고 상위 폴더 `sample.json` 의 `stage_
 결과 (serpentine 순서): r0c0 (6368.3, −1086.0), r0c1 (9683.7, −1086.0), r1c1 (9683.6, 2229.2),
 r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1.66, y −3.62 µm/mm.
 
-## 4–9. (작성 예정)
+## 4. `objective_change` (F5 포함)
 
-`objective_change` (F5), `hardware_scan`, `sample_map`, `focus_100x`, `edge_trace`, 보류와 범위 밖.
-같은 브랜치에 이어서 커밋한다.
+원본: `scripts/change_objective.py`. 9/30 에는 `--to 5 --park` → 사람이 오일 → `--return-only` 로 썼다.
+런처에는 버튼이 없다 ("The objective change and 100x steps stay manual"). 엔진에서는 PLAN 2절 F5 의
+7단계 순서로 다시 짠다. 아래는 원본을 먼저 적고, 그다음 F5 엔진 작업을 적는다.
+
+### 4.1 원본이 하는 일
+
+**입력 인자**
+
+| 명령행 | 기본값 | 뜻 |
+|---|---|---|
+| `--to N` | None | 목표 Nosepiece **State** (0 = 4x, 5 = 100x Oil) |
+| `--status` | False | 읽기만 (2절) |
+| `--park` | False | 회전 후 Z 를 0 에 둔다 (오일을 바르기 위해) |
+| `--return-only` | False | 회전 없이 Z 0 → 2800 |
+
+고정값: `RETRACT_Z_UM = 0.0`, `RETURN_Z_UM = 2800.0`, 코어는 `open_core(30.0, 0)`.
+`--status` 가 있으면 다른 인자보다 먼저 처리되고 끝난다. `--to` 가 없고 `--return-only` 도 없으면 읽기만 한다.
+
+**원본 호출 순서** (`--to N`, `--park` 유무)
+
+| # | 스크립트 호출 | 엔진 호출 | 비고 |
+|---|---|---|---|
+| 1 | `state(core)` | `nosepiece_read()`, `positions()`, `pfs_read()` | 시작 상태 `s0` |
+| 2 | `s0.nosepiece_state == N` 이면 "already on that objective" 후 종료 | preflight | 아무것도 움직이지 않는다 |
+| 3 | `FocusAxis(core, registry_key(s0.label), allow_motion=True)` | 가드 Z 축 (현재 렌즈 키) | |
+| 4 | `axis.require_pfs_quiet(disable=True)` | 같음 | |
+| 5 | `axis.move_to(0.0)` | 같음 | 후퇴. 내려가는 이동이라 `allow_ascent_um` 이 없다 |
+| 6 | `state(core)` → `pfs_in_range` 가 `"in range"` 이면 거부하고 종료 | `pfs_read()` | Z 는 0 에 남는다 |
+| 7 | `setProperty("Nosepiece", "State", N)`, `waitForDevice("Nosepiece")` | `nosepiece_set(N)` | soft-matter-agents 에서는 거부되는 호출 (`NAMED_REFUSALS` 에 Nosepiece) |
+| 8 | `state(core)` → State 가 N 이 아니면 종료 ("ZDrive left retracted") | `nosepiece_read()` | |
+| 9 | `--park` 이면 종료 | | Z 는 0 |
+| 10 | `FocusAxis(core, registry_key(s2.label), allow_motion=True)` | 가드 Z 축 (새 렌즈 키) | |
+| 11 | `axis.move_to(2800.0, allow_ascent_um=2800.5)` | 같음 | **한 번에 2800 µm 상승.** F5 7단계는 이것을 단계 접근으로 바꾼다 |
+| 12 | `state(core)`, `getPixelSizeUm()` 출력 | `nosepiece_read()`, `info().pixel_um` | |
+
+`--return-only`: `FocusAxis(현재 렌즈)` → `require_pfs_quiet(disable=True)` → Z 가 1.0 µm 넘으면 거부 →
+`axis.move_to(2800, allow_ascent_um=2800 − z + 0.5)` → `state`. 렌즈, PFS, 오일 확인을 다시 하지 않는다.
+
+원본이 하지 않는 것: XY 이동 (9/30 에는 회전 전에 XY 를 구멍 중심으로 따로 옮겼다), 조명, 기록 파일, 오일 확인.
+
+### 4.2 엔진 작업 `objective_change` (F5 7단계)
+
+**1) 입력 인자**
+
+| 엔진 인자 | 기본값 | 비고 |
+|---|---|---|
+| `target_state` | (필수) | Nosepiece State. UI 는 Label 로 고르고 State 로 보낸다 |
+| `escape_dy_um` | 없음 | Y 이탈 거리. PLAN 은 15–20 mm, 방향 미정 (PLAN 10절). **값이 정해지기 전에는 기본값을 두지 않는다.** mock 은 자체 값 |
+| `escape` | True | False 면 3·6 단계를 건너뛴다 (건조 렌즈끼리 바꿀 때) |
+| `approach_target_um` | 2800 | 7단계 단계 접근의 목표. 원본 `RETURN_Z_UM` |
+| `approach_step_um` | 미정 | 7단계 한 걸음. 10절 질문 |
+| `park_only` | False | 원본 `--park`. 5단계 뒤 멈춘다 (6·7 을 나중에 따로) |
+
+**2) plan** (보여 줄 것)
+
+- 시작 상태: 현재 렌즈, XY, Z, PFS.
+- 순서와 각 단계의 목표값: Z → 0, Y → `y + escape_dy_um`, Nosepiece → `target_state`, 수동 로딩, XY → 시작 XY,
+  Z → `approach_target_um` 까지 `approach_step_um` 걸음.
+- 새 렌즈의 액침 종류 (렌즈 표: 4x 건조, 100x Oil 오일, 40x WI 물) 와 작동 거리.
+
+**3) preflight**
+
+| 확인 | 결과 |
+|---|---|
+| `target_state` 가 현재 State 와 같다 | `preflight_failed("already on that objective")` (원본 2번) |
+| 목표 렌즈가 렌즈 표에 있다 (레지스트리 키, 작동 거리) | 없으면 `preflight_failed`. **40x WI 는 작동 거리 값이 없어 거부한다** (PLAN 10절, soft-matter-agents 과제 026 5절) |
+| `escape=True` 인데 `escape_dy_um` 이 없다 | `preflight_failed("escape distance not set")`. 정해질 때까지는 `escape=False` 로만 쓸 수 있다 |
+| 이탈 위치가 재물대 한계 안이다 | 한계는 F2 구성 파일에서. 아직 값이 없으면 `preflight_failed` |
+| 실행 중인 다른 작업, 조명 | 다른 작업이 없어야 한다. 조명은 켜져 있으면 1단계에서 끈다 (`all_off()`) |
+| 이전 `objective_change` 가 "복귀 대기" 로 끝났다 | 4.2 의 5항 참고. 새 회전 대신 복귀(6·7)를 먼저 하라고 `preflight_failed` |
+
+**4) run**
+
+| F5 단계 | 엔진 호출 | 가드 / 확인 | 원본 대응 |
+|---|---|---|---|
+| 1 현재 XY, Z, 렌즈 기록 | `positions()`, `nosepiece_read()`, `pfs_read()` | `started` 시작 상태에 `return_xy`, `z_before`, `objective_before` 저장 | 원본 1번 |
+| (1b) 소등 | `all_off()` | readback | 원본에 없음 |
+| 2 PFS off → Z 후퇴 → PFS Out of Range 확인 | `axis.require_pfs_quiet(disable=True)`, `axis.move_to(0.0)`, `positions()`, `pfs_read()` | Z readback 이 후퇴값 ± 허용 오차인지 확인. `pfs_in_range == "In Range"` 면 중단 (Z 는 0) | 원본 4–6번 |
+| 3 Y 이탈 | `xy_move(x, y + escape_dy_um)`, `positions()` | **큰 XY 이동 가드: Z 후퇴가 readback 으로 확인될 때만.** 이동 직전에 Z 를 다시 읽는다. XY readback 비교 | 원본에 없음 |
+| 4 렌즈 회전, 읽기 확인 | `nosepiece_set(target_state)`, `nosepiece_read()`, 새 렌즈 키로 가드 Z 축 다시 만들기, `info()` | State 가 다르면 중단. Z 는 0, XY 는 이탈 위치에 둔다 | 원본 7–8, 10번 |
+| 5 사용자: 액침액 로딩 → "로딩 완료" | `confirm_required(kind="manual_step", step="load_immersion", immersion=<oil\|water>)` 를 내고 기다린다 | 기다리는 동안 이 작업은 Z, XY, Nosepiece 에 명령을 보내지 않는다. 응답을 `manual_step` 기록으로 남긴다 | 원본 `--park` 후 사람이 오일 |
+| (5b) `park_only` 면 여기서 `finished(state="awaiting_return")` | | | 원본 `--park` 종료 |
+| 6 XY 를 1 의 위치로 복귀 | `positions()` (Z 다시 읽기), `xy_move(*return_xy)`, `positions()` | 3단계와 같은 가드. XY readback 비교 | 원본에 없음 |
+| 7 Z 단계 접근 | `axis.approach(approach_target_um, approach_step_um)` | 걸음마다 readback 과 새 렌즈의 상한 비교. 목표로 점프하지 않는다 | 원본 11번 (`move_to(2800)` 한 번) 을 대체 |
+| 끝 | `nosepiece_read()`, `positions()`, `info().pixel_um` | | 원본 12번 |
+
+- 7단계의 목표는 "목적지가 아니라 목표" 다 (soft-matter-agents 과제 026 2절 6번). 접근은 후퇴 위치에서 시작하고
+  걸음마다 비교가 살아 있어야 한다. 무엇과 비교하는지는 지금은 Z 창 상한과 렌즈별 상한이다. F3 의 커버슬립 두께와
+  샘플 두께가 정해지면 그 값이 들어간다 (PLAN F3).
+- **추론**: 원본 11번 `move_to(2800, allow_ascent_um=2800.5)` 는 FocusAxis 가 이 상승을 한 번의 명령으로 보낸다고
+  보인다. 2800 µm 는 100x 초점(약 2989)보다 약 190 µm 아래라 9/30 에는 문제가 없었다. 단계 접근은 이 여유가
+  없는 렌즈(작동 거리가 짧은 렌즈, 동초점 오차가 큰 경우)를 위한 것이다.
+- 2800 µm 는 Z 창 하한이다. 0 → 2800 의 접근 경로는 창 밖이다. 가드는 "후퇴 상태에서 시작한 `approach`" 를
+  창 밖 이동의 허용 경로로 둔다 (T-002 의 렌즈 교체 예외와 같은 자리).
+
+**5) abort / finally**
+
+| 중단 시점 | Z | XY | 남기는 상태 |
+|---|---|---|---|
+| 1–2 사이 | 그 자리 (올리지 않는다) | 그 자리 | `aborted` |
+| 2 후퇴 뒤, 3 전 | 후퇴 | 그 자리 | `aborted` |
+| 3–5 (이탈, 회전, 로딩 대기) | 후퇴 | 이탈 위치 | `aborted(state="awaiting_return", return_xy=...)` |
+| 6 복귀 중 | 후퇴 | 멈춘 곳 | `awaiting_return` |
+| 7 접근 중 | 멈춘 곳. **어떤 중단도 Z 를 올리지 않는다** | 시작 XY | `aborted` |
+
+- 모든 경로에서 `all_off()` (켜진 것이 없어도 readback 확인).
+- `awaiting_return` 은 샘플 기록에 남겨서, 다음에 엔진이 시작할 때 UI 가 "Return to sample position" 을 보여 줄 수
+  있게 한다. 이 상태에서 다른 모션 작업은 preflight 에서 막는다.
+
+**6) 기록**
+
+| 지금 | 엔진 |
+|---|---|
+| stdout 의 `state` JSON 줄 (`nosepiece_state, nosepiece_label, z_um, pfs_enabled, pfs_locked, pfs_in_range`) 과 안내 문구. 파일 없음 | `<sample>/objective_change_<stamp>/`: `log.jsonl` (단계마다 `progress(step=1..7)`, `property_set`, `position`), `summary.json`: 시작 상태, 단계별 readback, `manual_step: {step: load_immersion, immersion, confirmed_at, by: user}`, 끝 상태, `state` (`done` / `awaiting_return` / `aborted`) |
+| `sample.json` 의 `objectives_used` 는 라이브 뷰가 갱신 | 4단계 성공 시 엔진이 갱신 |
+
+**7) 확인 지점**
+
+| 지점 | `confirm_required` |
+|---|---|
+| 시작 전 | `"rotate <label_now> -> <label_target>: retract Z, move Y <dy>, rotate"` + plan. 9/30 에는 사람이 채팅으로 회전을 명시 승인했다 |
+| 5단계 | `manual_step: load_immersion` ("Loading done" 버튼). 이 응답이 6·7 단계 시작의 승인이기도 하다 |
+| 건조 렌즈로 바꿀 때 (`escape=False`) | 5단계 대신 `"objective rotated; continue to approach Z?"` (제안). 100x 에서 4x 로 갈 때 오일을 닦을지는 사용자 결정 |
+
+**8) 9/30 기록 대응**: Step 3.
+
+| 사례 | 무엇이 있었나 | 반영 |
+|---|---|---|
+| 회전 전 XY | 구멍 중심 (8026, 572) 으로 먼저 옮김 (`xy_before_um [8025.7, 571.4]`) | 1단계 `return_xy` |
+| 순서 | PFS off → Z 0 → PFS Out of Range 확인 → Nosepiece 5 → park → 오일 → Z 2800 | 2, 4, 5, 7단계 |
+| 결과 | `6-Plan Apo LmbdD0.13 100x Oil`, Z 2800.0 | 4단계 readback |
+| 오일 부족 | 회전 뒤 첫 100x 곡선에 3005 µm 근처 가짜 상승. 오일을 더 바르자 깨끗한 피크 (7절) | 오일을 다시 바르려면 이 작업의 2·3·5·6·7 단계를 다시 해야 한다. "re-load immersion" 을 `target_state = 현재` 로 허용하는 변형을 제안 |
+| 연구실 기록 | 2026-09-07 에 잘못된 중심으로 고 NA 렌즈가 커버슬립에 닿을 뻔했다 (`focus_100x.py` 머리말) | 7단계 단계 접근, 7절의 천장 |
+
+게이트 (F2): Nosepiece 읽기·쓰기, ZDrive, PFS 읽기, XYStage (`escape=True` 일 때), 렌즈 표에 목표 렌즈의 작동 거리.
+
+## 5. `hardware_scan` (F2)
+
+원본 없음 (새 작업). 근거: `mm_grab.open_core` 의 `info`, `mm_grab.positions`, `mm_grab.PiezoReader.read`,
+`change_objective.state`, soft-matter-agents `devices/micromanager.py` 의 `load_configuration` 과 `preflight`.
+**탐지만 한다. 아무것도 움직이거나 켜지 않는다.**
+
+**1) 입력 인자**
+
+| 엔진 인자 | 기본값 | 비고 |
+|---|---|---|
+| `include_properties` | True | 장치별 속성 전체를 읽을지. 끄면 장치 목록과 핵심 값만 |
+| `piezo_port` | `"COM4"` | `""` 이면 피에조를 열지 않는다 (live_focus `--piezo` 와 같은 약속) |
+| `out` | 기본 기록 위치 | `hardware_profile.json` 을 쓸 곳. 샘플 폴더가 아니다 (장비 단위) |
+
+**2) plan**: 읽을 목록만 보여 준다. "Reads devices, properties, objectives, camera, positions, PFS, lights, piezo.
+Nothing moves or turns on."
+
+**3) preflight**
+
+| 확인 | 결과 |
+|---|---|
+| 다른 작업 실행 중 | 막는다. 탐지는 다른 작업과 같이 돌지 않는다 |
+| 백엔드가 열려 있다 | 엔진 시작 시 연 것. config 로드는 Startup 프리셋을 적용하므로 (0.3), 그 사실을 기록에 남긴다 |
+| 피에조 포트 | NanoBench 프로그램이 포트를 잡고 있으면 `PiezoReader` 가 `OSError`. 실패는 막지 않고 `piezo.error` 로 남긴다 |
+
+**4) run** (전부 읽기)
+
+| # | 읽는 것 | 엔진 호출 | 원본 근거 |
+|---|---|---|---|
+| 1 | config 경로, sha256, 로드 중 변경 여부, AutoShutter readback | `info()` + (가칭) `config_record()` | soft-matter-agents `load_configuration` 반환값 |
+| 2 | 로드된 장치 목록, 장치별 종류·라이브러리·설명 | (가칭) `describe_devices()` → `getLoadedDevices`, `getDeviceType`, `getDeviceLibrary`, `getDeviceDescription` | 없음. T-002 백엔드 목록에 추가 필요 |
+| 3 | 장치별 속성: 값, 읽기 전용 여부, 허용 값, 한계, 읽기 성공 여부 | 같은 메서드 → `getDevicePropertyNames`, `getProperty`, `isPropertyReadOnly`, `getAllowedPropertyValues`, `getPropertyLowerLimit/UpperLimit` | 없음 |
+| 4 | 대물렌즈 목록: State, Label, 픽셀 크기 | `nosepiece_read()` + (가칭) `nosepiece_labels()` → `getStateLabels("Nosepiece")`, 픽셀 크기 표 | `change_objective.state`, `open_core` 의 `pixel_um` |
+| 5 | 카메라: 이름, 센서, ROI, 비트 깊이, 천장, PixelType | `info()` | `open_core`, `getImageBitDepth` |
+| 6 | 위치: XY, Z | `positions()` | `mm_grab.positions` |
+| 7 | PFS: enabled, locked, in range | `pfs_read()` | `change_objective.state` |
+| 8 | 조명 상태: Aura State 와 라인, DiaLamp State | `read_property(...)` | 없음 |
+| 9 | 피에조: 연결 여부, x/y/z µm | (가칭) `piezo_read()` → `PiezoReader(port).read()` 후 `close()` | `mm_grab.PiezoReader`. `read()` 는 쓰지 않는다. 보안 수준 변경은 `move_z` 에서만 일어나므로 탐지에서는 생기지 않는다 |
+| 10 | 렌즈 표와 대조: 레지스트리 키, 작동 거리, 액침 | 순수 함수 | 렌즈 표는 탐지가 아니라 사람이 넣은 값 (10절 Q8) |
+| 11 | 게이트 판정 | `gates.py` (WP-G) | PLAN F2.2 |
+
+- "읽기 확인 가능 여부" 는 탐지 단계에서는 **읽기가 되는지** 까지만 안다. 쓰기 후 readback 이 맞는지는 쓰지 않고는
+  모른다. 그래서 장치마다 `read_back: true/false` 와 `write_verified: null` (아직 시험 안 함) 을 따로 둔다.
+  soft-matter-agents `preflight` 의 `read_back`, `automatable` 필드와 이름을 맞춘다.
+
+**5) abort / finally**: 되돌릴 것이 없다. 피에조 세션을 열었으면 `close()` (보안 수준을 바꾼 적이 없으므로 그대로 닫힘).
+`all_off()` 는 부르지 않는다 (읽기만 하는 작업이 조명을 바꾸지 않는다). 다만 읽은 조명 상태가 켜짐이면 `log` 경고.
+
+**6) 기록**
+
+`hardware_profile.json` (가칭, PLAN F2.1) 제안 필드:
+
+| 필드 | 내용 |
+|---|---|
+| `detected_at`, `backend` (`mock` / `mm-demo` / `mm-real`), `host` | |
+| `config` | `path, sha256, changed_during_load, autoshutter_verified, startup_preset_applied` |
+| `devices[]` | `label, type, library, description, read_back, write_verified, properties{name: {value, read_only, allowed, limits, read_ok}}` |
+| `objectives[]` | `state, label, pixel_um, registry_key, working_distance_um, immersion` (뒤의 셋은 렌즈 표에서) |
+| `camera` | `name, sensor, roi, bit_depth, ceiling_adu, pixel_type` |
+| `positions`, `pfs`, `lights` | 탐지 시점 값 |
+| `piezo` | `port, connected, x_um, y_um, z_um, error` |
+| `human_confirmed{}` | 사람이 확인하는 항목. 예: DiaLamp 세기 (스탠드에서 608), CondenserTurret, 40x WI 보정 링. 탐지가 아니라 UI 입력 |
+| `gates{}` | 작업별 켜짐/꺼짐과 꺼진 이유 |
+
+엔진 기록: `hardware_scan_<stamp>/log.jsonl` (읽기마다 `reading`), `summary.json` = 위 프로필. 최신 프로필의 위치는
+T-002/WP-G 가 정한다.
+
+게이트 표 초안 (WP-G 입력):
+
+| 작업 | 필요한 장치와 조건 |
+|---|---|
+| `status`, `lights_off` | 카메라 없이도. Aura, DiaLamp 읽기 |
+| `edge_trace` | 카메라, XYStage 읽기·쓰기, DiaLamp, 4x 렌즈, 이 렌즈의 stage-camera 보정이 가능한 영상 |
+| `scan_4x` | 위 + ZDrive, PFS 읽기, Aura 라인, 카메라 비트 깊이, 샘플의 `hole` |
+| `sample_map` | `scan_4x` 와 같음 (조명은 DiaLamp) |
+| `objective_change` | Nosepiece 읽기·쓰기, ZDrive, PFS 읽기, XYStage (`escape=True`), 목표 렌즈의 작동 거리 |
+| `focus_100x` | 100x Oil 이 Nosepiece 에 있음, ZDrive, PFS, Aura, 이번 세션의 `load_immersion` 기록 |
+
+**7) 확인 지점**: 없음. `human_confirmed` 항목은 확인 대화상자가 아니라 입력 양식이다.
+
+**8) 9/30 기록 대응**: 3절 "Settings reference" 표 (MM config, 카메라 12-bit 천장 4095, 픽셀 크기 4x 1.625 /
+100x 0.065, Z 창, DiaLamp 608, CondenserTurret `3-`, LightPath `4-L100`, PFS off, 피에조 읽기 전용 z 9.94 µm) 가
+이 프로필의 첫 예다. 관련 실패: 12-bit 를 16-bit 로 가정한 자동 노출 (3절 8항) 은 프로필의 `bit_depth` 로 막는다.
+
+## 6. `sample_map` (F4)
+
+원본 없음 (새 작업). `edge_trace` (8절) 와 `scan_4x` (3절) 를 재사용하고, 모자이크는 `scripts/plot_scan.py` 의
+조립 방식을 쓴다. PLAN F4: 투과광(DiaLamp) 권장.
+
+F4 는 작업 하나가 아니라 셋으로 나눈다. 스캔만 모션이 길고, flag 는 모션이 없고, 클릭 이동은 짧다.
+
+| 이름 | 하는 일 | 모션 |
+|---|---|---|
+| `sample_map` | 투과광 4x 타일 스캔, 모자이크, 입자 후보 | XY, Z |
+| `map_flag` | 맵 위 지점에 flag (F4.4) | 없음 (기록만) |
+| `goto_xy` | 맵 클릭 위치로 이동 (F4.3) | XY (필요하면 Z 후퇴 먼저) |
+
+### 6.1 `sample_map`
+
+**1) 입력 인자**: `scan_4x` 인자 (3절 1항) 에서 조명만 바뀐다.
+
+| 엔진 인자 | 기본값 | 비고 |
+|---|---|---|
+| `sample_id`, `margin_um`, `overlap`, `z_guess_um`, `first_half_um`, `tile_half_um`, `dry_run` | `scan_4x` 와 같음 | |
+| `light` | `"bf"` | `"bf"` = DiaLamp (Aura State 0, DiaLamp State 1). `"aura"` 면 `scan_4x` 와 같음 |
+| `exposure_ms` | 12 | 9/30 명시야 4x 값. 자동 노출을 쓰면 천장의 50 % 목표는 명시야에서 너무 밝을 수 있다 (10절 질문) |
+| `focus` | `"per_tile"` | `"per_tile"`: 타일마다 스윕 (`scan_4x` 와 같음). `"plane"`: 최근 `scan_4x` 의 초점 평면을 쓰고 스윕하지 않음 |
+| `candidates` | True | 입자 후보 검출 |
+
+**2) plan**: `scan_4x` 의 plan 과 같다 (격자, 박스, 스윕). `focus="plane"` 이면 타일마다 평면에서 계산한 Z 를 보여 준다.
+
+**3) preflight**: `scan_4x` 의 preflight 전부 (렌즈 4x, `hole`, 피팅이 이번 세션 것인지, 비트 깊이, 현재 Z).
+추가: `focus="plane"` 이면 같은 샘플의 `scan4x_*/scan.json` 이 있어야 한다.
+
+**4) run**
+
+| # | 엔진 호출 | 원본 근거 |
+|---|---|---|
+| 1 | 가드 종료 컨텍스트 진입 → `axis.require_pfs_quiet(disable=True)` | `scan_4x` 7번 |
+| 2 | `light="bf"`: `aura_off()`, `lamp_on()` (readback). `"aura"`: `aura_line_on()` | `live_focus --set Aura State 0 --set DiaLamp State 1`, `scan_4x` 8번 |
+| 3 | 타일 루프: `scan_4x` 의 9–19번과 같다 (XY 박스 가드, 스윕, `best_z_um`, 드롭아웃 필터, 블록 z, `park_at`, 타일 저장) | `scan_4x` |
+| 4 | 모자이크: 타일을 8×8 비닝, stage-camera 보정 `M_px_per_um` 의 부호로 좌우·상하 뒤집기, 타일 중심 `x_um, y_um` 에 배치 | `plot_scan.py` 의 `mosaic` 조립 (`flip_lr = M[0,0] > 0`, `rows_up = M[1,1] < 0`) |
+| 5 | 입자 후보: 고전 이미지 처리로 점 찾기 → 픽셀 → stage 좌표 (`stage + inv(M) @ (centre − p)`) | 9/30 기록 Step 1 의 좌표 변환. 검출 방법은 WP-E (T-003) 와 정한다 |
+| 6 | `finished`. 종료 컨텍스트가 `all_off()` | |
+
+- 9/30 의 입자는 약 6.7 µm (FWHM) 이고 4x 픽셀은 1.625 µm 라서 한 입자가 4 픽셀 남짓이다. 명시야 4x 에서
+  보이는지는 확인되지 않았다 (10절 질문). 후보는 "후보" 로만 기록하고, 사람이 확인한 것과 구분한다 (PLAN F4).
+- 명시야 Vollath 스윕이 4x 에서 초점을 잡는지도 확인되지 않았다. 9/30 의 4x 스캔은 Aura GREEN 1 % 에서 했다.
+  그래서 `focus="plane"` 선택지를 둔다.
+
+**5) abort / finally**: `scan_4x` 와 같다. Z, XY 는 그 자리. 종료 컨텍스트가 DiaLamp 와 Aura 를 끈다.
+`live_focus.py` 처럼 DiaLamp 를 켠 채 남기지 않는다.
+
+**6) 기록**
+
+| 파일 | 내용 |
+|---|---|
+| `<sample>/sample_map_<stamp>/` | `log.jsonl`, `summary.json` (= `scan_4x` 의 `scan.json` 필드 + `light`, `focus`), 타일 `.npy` |
+| 같은 폴더 `mosaic.npy` + `mosaic.json` | 비닝한 모자이크와 범위 (`x0, x1, y0, y1, um_per_px, bin`). UI 가 그리는 데 쓴다 |
+| `<sample>/map.json` (기존) 또는 새 `features.json` | 입자 후보 `{x_um, y_um, source: "classical_candidate", score, map_id}`. 사람이 확인하면 `source: "person_confirmed"` 로 새 항목을 추가한다 (덮어쓰지 않는다) |
+
+모델 값은 없다. DINO 를 후보 점수에 쓰게 되면 그 숫자는 `grade: model` 로 표시한다 (PLAN 6절 3항).
+
+**7) 확인 지점**: `scan_4x` 와 같다 (시작 전 한 번, 피팅 시각, 창 밖 첫 이동).
+
+**8) 9/30 기록 대응**: Step 1 (명시야 노출 12 ms, 10 ms 에서 중앙값 2766 ADU, 30 ms 이상 포화), Step 2
+(격자, 모자이크, `plot_scan.py`). 모자이크의 좌우 반전: 영상이 재물대에 대해 거울상이다 (Step 1 의 보정 결과).
+
+### 6.2 `map_flag`
+
+- 인자: `sample_id`, `x_um`, `y_um`, `name`, `note`. 엔진이 채우는 것: `t`, 현재 렌즈, 현재 Z.
+- 모션 없음, preflight 는 샘플 폴더가 있는지뿐. 기록: `<sample>/flags.json` (또는 `features.json` 의 `kind: flag`).
+  PLAN F4.4 의 필드: 이름, 메모, 시각, 대물렌즈, 좌표.
+- 삭제는 지우지 않고 `retired_at` 을 붙인다 (기록은 남는다).
+
+### 6.3 `goto_xy` (클릭 이동, F4.3)
+
+**1) 인자**: `x_um`, `y_um`, `sample_id`. 선택: `retract_first` (기본 자동).
+
+**2) plan**: 현재 XY → 목표 XY 거리, 큰 이동인지, Z 후퇴가 필요한지, 후퇴할 Z 값.
+
+**3) preflight**
+
+| 확인 | 결과 |
+|---|---|
+| 목표가 샘플의 맵 범위 + 여유 안 | 밖이면 거부 (PLAN F4 "스캔 박스 밖이면 거부"). 범위는 최근 `sample_map` 또는 `scan_4x` 의 박스 |
+| 다른 작업 실행 중 | 막는다 |
+| `awaiting_return` 상태 (4.2 5항) | 막는다 |
+
+**4) run**
+
+| # | 엔진 호출 | 가드 |
+|---|---|---|
+| 1 | `positions()` | |
+| 2 | 큰 이동이면: Z 가 후퇴 상태가 아니면 `axis.move_to(z_safe)` 로 먼저 후퇴하고 `positions()` 로 확인 | **큰 XY 이동은 Z 후퇴가 readback 으로 확인될 때만** |
+| 3 | `xy_move(x, y)`, `positions()` | XY 박스, XY readback 비교 |
+| 4 | Z 는 후퇴 상태로 둔다. 다시 올리는 것은 사용자가 고르는 다음 작업 (`scan_4x` 의 한 타일 스윕, `objective_change` 의 접근, `focus_100x`) | 목표로 점프하지 않는다 |
+
+결정이 필요한 값 (매니저/T-002):
+- "큰 이동" 의 문턱. 제안: 현재 렌즈 시야의 1 배 또는 1 mm 중 작은 쪽. `edge_trace` 의 한 걸음 (최대 200 µm) 과
+  보정 이동 (200 µm) 은 문턱보다 작아야 한다.
+- `z_safe` (렌즈별 후퇴 높이). 4x 는 작동 거리 20 mm 라서 후퇴가 꼭 필요하지 않을 수 있다. 100x Oil 은 오일이 있으므로
+  큰 이동 전에 후퇴한다.
+
+**5) abort**: 이동 사이에서 멈춘다. Z 는 올리지 않는다. 조명은 이 작업이 켜지 않는다.
+
+**6) 기록**: `<sample>/goto_xy_<stamp>/summary.json` (시작, 후퇴 여부, 목표, 착지 readback). 짧은 작업이므로
+T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된다.
+
+**7) 확인 지점**: Z 후퇴가 필요한 이동이면 `confirm_required("retract Z <z> -> <z_safe>, then move to (x, y)")`.
+후퇴가 필요 없는 작은 이동은 확인 없이 (클릭 자체가 명령).
+
+**8) 9/30 기록 대응**: 원본에는 클릭 이동이 없다. 9/30 에 사람이 재물대를 손으로 움직인 사례 (기록 4절 3항) 와,
+`find_particle_z` 가 사람의 이동 중에 readback 가드로 멈춘 사례 (3037/3036) 가 같은 문제다. 이동 후 readback 비교가 필요하다.
+
+## 7. `focus_100x`
+
+원본: `scripts/focus_100x.py`. 런처에 버튼 없음 (수동 단계).
+
+**1) 입력 인자**
+
+| 명령행 | 기본값 | 엔진 인자 | 비고 |
+|---|---|---|---|
+| `--centre` | 2930.0 µm | `centre_um` | 스윕 중심. **4x 초점에 맞추지 않는다** (아래 8항) |
+| `--half` | 40.0 µm | `half_um` | 거친 스윕 반폭 |
+| `--step` | 2.0 µm | `step_um` | |
+| `--fine-half` | 3.0 µm | `fine_half_um` | |
+| `--fine-step` | 0.2 µm | `fine_step_um` | |
+| `--exposure` | 30.0 ms | `exposure_ms` | 9/30 결론은 20 ms (포화 없음) |
+| `--aura LINE PERCENT` | GREEN 1 | `aura_line`, `aura_percent` | |
+| `--metric` | `peak` | `metric` (`peak` / `vollath`) | `peak`: 4×4 비닝 최댓값 − 중앙값. 성긴 입자 시야용 |
+| `--out` | `D:\AutoFocus\samples\20260930_1849_1` (고정 샘플!) | `sample_id` | 원본 기본값은 9/30 샘플 폴더다. 엔진은 현재 샘플 |
+
+고정값: 렌즈 라벨 `6-Plan Apo LmbdD0.13 100x Oil`, 레지스트리 키 `"100x-Oil"`, settle 0.1 s (거친) / 0.15 s (고운).
+
+**2) plan**
+
+- 거친 스윕 `axis.plan(centre, half, step)`, 고운 스윕은 거친 피크 ± `fine_half` @ `fine_step`.
+- 천장: 머리말은 `min(3200, centre + 0.4 × 130 µm)` 라고 적는다. **코드에는 이 계산이 없다.** **추론**: FocusAxis 가
+  레지스트리 키 `"100x-Oil"` 의 작동 거리로 계산한다. 엔진의 plan 은 이 천장을 숫자로 보여 준다 (10절 Q8, Q15).
+- 중심 제안: 같은 샘플의 4x 초점 평면에서 현재 XY 의 Z 를 구하고, 동초점 오프셋 (9/30 측정 약 −60 µm) 을 더한 값.
+  측정값에서 나온 제안이지 모델 값이 아니다. 사람이 고친 값으로 실행한다.
+
+**3) preflight**
+
+| 확인 | 원본 | 엔진 |
+|---|---|---|
+| 렌즈 라벨 = 100x Oil | 있음 (`refusing`) | `preflight_failed` |
+| 오일 로딩 | 없음 | 이번 세션에 `objective_change` 의 `load_immersion` 기록이 있어야 한다. 없으면 `confirm_required` |
+| `centre_um` 이 4x 초점 근처 | 없음 (머리말 경고만) | 4x 초점 평면 값보다 위면 경고와 `confirm_required` |
+| 천장 안 | **추론**: FocusAxis 가 계획 단계에서 거부 | plan 의 천장을 넘는 스윕은 `preflight_failed` |
+| 신호 | 없음 | 시작 Z 에서 한 장 찍어 최댓값이 암전 오프셋 (약 102 ADU) 근처면 경고. 9/30 의 30 ms Vollath 실패 사례 |
+
+**4) run**
+
+| # | 스크립트 호출 | 엔진 호출 | 비고 |
+|---|---|---|---|
+| 1 | `open_core(exposure, 0)` | `set_exposure()`, `info()` | |
+| 2 | `getProperty("Nosepiece", "Label")` | `nosepiece_read()` | preflight |
+| 3 | `FocusAxis(core, "100x-Oil", allow_motion=True)` | 가드 Z 축 | |
+| 4 | `ceiling = 2 ** getImageBitDepth() − 1` | `info().bit_depth` | 포화 판정용 |
+| 5 | `axis.require_pfs_quiet(disable=True)` | 같음 | |
+| 6 | `aura_on(core, line, pct)` | `aura_line_on()` | 가드 종료 컨텍스트 안에서 |
+| 7 | `axis.sweep(axis.plan(centre, half, step), grab, score=, settle_s=0.1)` | 같음 | `score`: `sharp` (peak 또는 vollath), `vollath`, `mean`, `max`, `sat` |
+| 8a | 피크가 **위 끝** (`argmax_index == 마지막`): "PEAK AT THE TOP END", `axis.move_to(coarse.points[0].z_um)` (아래 끝으로 내려감), 고운 스윕 없음 | 같은 이동 후 `confirm_required("peak at the top end; extend upward?")` | 원본은 여기서 끝. 사람이 새 중심으로 다시 실행 |
+| 8b | 피크가 **아래 끝** (`argmax_index == 0`): "re-centre lower" 출력, 고운 스윕 없음 | `reading(peak_at="low_end")` | 아래로 다시 거는 것은 안전 방향. 확인 없이 제안 |
+| 8c | 내부 피크: `axis.sweep(axis.plan(coarse.peak_z_um, fine_half, fine_step), grab, score=, settle_s=0.15)` | 같음 | |
+| 9 | `best_z_um(coarse, fine)` | 같음 | |
+| 10 | `zf` 가 있으면 `axis.park_at(zf)` | 같음 | |
+| 11 | `positions(core)` | `positions()` | |
+
+**5) abort / finally**
+
+| 원본 `finally` | 엔진 |
+|---|---|
+| `lights` 가 있으면 `aura_off()` | 종료 컨텍스트의 `all_off()` |
+| `focus100x_<stamp>.json` 저장 (중단돼도) | `summary.json` + `aborted` |
+| Z 그 자리 | 그 자리. 위 끝 피크면 원본처럼 아래 끝으로 내려간 상태 |
+
+빈틈: `scan_4x` 와 같은 `aura_on` 부분 실패 문제 (3절 5항).
+
+**6) 기록**
+
+| 지금 `focus100x_<stamp>.json` | 엔진 |
+|---|---|
+| `started, header (=info), coarse [(z_readback, score, mean, max)], fine [...], z_focus_um, why, z_parked_um, position` | `summary.json` 에 같은 필드 + **원본에 없는 실행 인자** (`centre_um, half_um, step_um, exposure_ms, metric, aura`) 와 `sat`. 9/30 yaml 은 노출과 지표를 메모에서 되살려 적어야 했다 |
+| 쓰는 곳이 `--out` (기본 9/30 샘플 고정) | 현재 샘플의 `focus100x_<stamp>/` (`scan4x` 와 같은 방식으로 기존 접두 유지) |
+
+**7) 확인 지점**
+
+| 지점 | `confirm_required` |
+|---|---|
+| 위 끝 피크 후 상향 연장 | `"peak at the top end of <lo>-<hi>; extend upward to <new_hi>?"`. 새 범위는 천장을 넘지 않는다. 운영 규칙 `no_climb_without_ok` |
+| 오일 기록 없음 | `"no immersion loading recorded this session; oil applied?"` |
+| 중심이 4x 초점보다 위 | `"centre <c> is above the 4x focus <z4>; 100x focus is usually 60-100 um below"` |
+
+**8) 9/30 기록 대응**: Step 4.
+
+| 파일 | 노출 | 범위 | 결과 | 명세 반영 |
+|---|---|---|---|---|
+| `focus100x_20260930-201702` | 30 ms, vollath | | 암전 오프셋만 (약 102 ADU) → 초점 없음 | preflight 신호 확인, `metric=peak` 기본 |
+| `-202011` | 200 ms | 2890–2980 | 위 끝 피크, 오르지 않음 | 8a, 상향 연장 확인 |
+| `-202226` | 50 ms | 2965–3005 | 2982.0, 포화, 3005 근처 가짜 상승 (오일) | `sat` 기록, 이중 피크 경고 (아래) |
+| `-202507` | 30 ms | 2955–3015 | 2988.45 at (8164.7, 523.4), 오일 추가 후 깨끗한 피크 | |
+| `-202813` | 20 ms | 2968–3008 | 2989.42 at (7811.0, 1529.0), 포화 없음, 최대 3435 ADU | 20 ms 를 기본값 후보로 |
+
+- 이중 피크: 거친 곡선에 떨어진 극대가 두 개면 "check immersion oil" 경고를 낸다 (고전 판정, 모델 아님).
+  이 경고가 나면 4.2 의 재로딩 변형으로 이어진다.
+- 포화: `sat > 0` 인 점이 있으면 노출을 줄이라는 경고.
+- 100x − 4x ≈ −60 µm (연구실 2026-09-07 메모는 약 −100 µm). 기준 시료 재측정은 PLAN 10절.
+
+## 8. `edge_trace`
+
+원본: `scripts/edge_track.py` 의 `EdgeTracker` 와 `scripts/live_focus.py` 의 `t` 키 (`toggle_track`).
+런처 Step 1 "Start live view" (명시야) 후 창에서 `t`. 오프라인 시뮬레이션은 `scripts/sim_edge_track.py`.
+
+**1) 입력 인자**
+
+| 원본 | 기본값 | 엔진 인자 | 비고 |
+|---|---|---|---|
+| live_focus `--exposure` | 30 ms (런처 명시야 기본 12) | `exposure_ms` | 9/30: 12 ms |
+| live_focus `--hole-diameter` | None | `hole_diameter_mm` | 추적기의 `expect_diameter_um` |
+| live_focus `--track-speed` | 100 µm/s | `speed_um_s` | 10–1000 으로 자름. 실행 중 `+`/`-` 로 2 배/절반 |
+| live_focus `--set Aura State 0 --set DiaLamp State 1` | (런처가 넣음) | `light="bf"` | |
+| live_focus `--sample` | 새 id | `sample_id` | |
+| `EdgeTracker(step_um=50, cal_um=200, point_every_um=250, max_radius_um=7000, max_path_um=25000, max_time_s=360, min_radius_um=1000)` | | 같은 이름 | 걸음은 `speed × 0.5 s` 를 20–200 µm 로 자른 값 |
+| `min_blob_um = 500`, settle `2 × exposure + 0.08 s` | | 상수 | |
+
+**2) plan**: 시작 XY, 최대 반경 원 (시작점 7 mm), 최대 경로 25 mm, 최대 시간 360 s, 속도와 걸음.
+보정 이동 (+x 200 µm 갔다 오기, +y 200 µm 갔다 오기) 을 미리 보여 준다.
+
+**3) preflight**
+
+| 확인 | 원본 | 엔진 |
+|---|---|---|
+| 데모 모드 | `"edge tracking needs the real stage"` 로 거부 | mock 백엔드는 추적을 지원해야 한다 (M1 mock 우선). `sim_edge_track.py` 가 근거 |
+| 렌즈 | 확인 없음 | 4x 권장. 다른 렌즈면 경고 (보정은 렌즈별로 저장된다: `stage_camera_calibration.objective`) |
+| 조명 | 런처가 명시야로 켠다 | `light="bf"` 면 run 1번에서 켠다 |
+| 이전 경계 | 없음. 9/30 에는 에이전트가 손으로 백업하고 지웠다 | 샘플에 `boundary` 가 있으면 `map_before_rescan_<stamp>.json`, `sample_before_rescan_<stamp>.json` 으로 백업하고 `boundary` 만 비운다 (방문 필드는 남김). `confirm_required` |
+| 다른 작업 | 원본: 서보·스윕이 돌면 거부 | 엔진 단일 작업 |
+
+**4) run**
+
+| # | 원본 호출 | 엔진 호출 | 비고 |
+|---|---|---|---|
+| 1 | `set_and_read` 로 Aura State 0, DiaLamp State 1 | 종료 컨텍스트 진입 → `aura_off()`, `lamp_on()` | |
+| 2 | `startContinuousSequenceAcquisition`, 틱마다 `popNextImageAndMD` → `tracker.feed(img)` | (가칭) 프레임 스트림. T-002 의 `snap()` 만으로도 되지만 라이브 뷰와 같이 쓰려면 연속 취득이 필요하다 | `feed` 는 마지막 이동 후 settle 시간이 지난 프레임만 쓴다 |
+| 3 | 보정: `getXYPosition` → `setRelativeXYPosition(+200, 0)` → 프레임 → 위상 상관 → `(−200, 0)` → y 도 같게 | `positions()`, `xy_move` 의 상대 이동 (가칭 `xy_move_rel`) | 피크 선명도 < 8 이면 "too little structure" 로 멈춤. `um_per_px / pixel_um` 이 0.7–1.4 밖이면 멈춤 |
+| 4 | 추적 루프: `find_edge` → 원 피팅 (`robust_circle`, 지름 고정 `fixed_radius_centre`) → 한 걸음 `setRelativeXYPosition` → `waitForDevice` | 순수 함수 (`edge_track` 의 영상 함수들) + `xy_move_rel` + `positions()` | XY 만. Z 는 움직이지 않는다 |
+| 5 | 멈춤 조건: 시작점에서 7 mm 넘음, 경로·시간 한도, 경계를 잃음 (원이 있으면 약 2 mm 까지 원을 따라 coast, 없으면 3 프레임), 한 바퀴 (경로 > 3 mm 이고 처음 본 점으로 돌아옴), 키 (`t`, `Esc`), 예외 | 같은 조건. 키는 `abort` 명령 | |
+| 6 | `edge_point` (250 µm 마다) → `map.mark_boundary(Ti2 + piezo)` | `progress(edge_point)` + 샘플 `boundary` 에 추가 | 좌표는 Ti2 + 피에조 합 |
+| 7 | `cal_result` → `sample.calibration = {um_per_px, angle_deg, M_px_per_um, objective}` | 샘플 `stage_camera_calibration` | `scan_4x` 와 `plot_scan` 이 읽는다 |
+| 8 | 라이브 뷰가 10 초마다 `Sample.save()` → `hole` 피팅 (`XYMap.circle`) | 끝날 때 `hole` 피팅을 `sample.json` 에 쓰고 `fitted_at` 을 넣는다 | 피팅은 추적기 내부 원이 아니라 경계점 전체의 원 |
+| 9 | 실행 중 속도 변경 `set_speed` | (가칭) 실행 중 인자 변경 명령. T-002 `Command` 에는 시작, 중단, 확인만 있다 | T-002 에 알릴 것 |
+
+이동 한계: 한 걸음은 최대 200 µm, 보정은 200 µm. 이동 범위는 "시작점 7 mm 원" 이 지킨다. `goto_xy` 의 "큰 이동"
+문턱 (6.3) 보다 작아서 Z 후퇴 조건에 걸리지 않는다.
+
+**5) abort / finally**
+
+| 원본 | 엔진 |
+|---|---|
+| 추적기 `stop(why)` → `track_stop` 기록. 이동 중이던 걸음은 끝난다 (`waitForDevice`) | 같음 |
+| live_focus `finally`: 추적·서보·스윕 정지, 연속 취득 정지, `--aura` 였으면 `aura_off`, `Sample.close()` (저장), 피에조 닫기 | 같음 + **DiaLamp 도 끈다** (`all_off()`). 원본은 `--set DiaLamp State 1` 로 켠 램프를 끄지 않는다 (9/30 알려진 문제 4) |
+| XY 는 멈춘 곳 | 같음. Z 는 건드리지 않음 |
+
+**6) 기록**
+
+| 지금 | 엔진 |
+|---|---|
+| `<sample>/track_<stamp>.jsonl`: 첫 줄 `{header, sample}`, 이후 `track_start, cal, cal_result, move (why, d_um, at_um), edge_point (um, contrast), track_speed, track_stop (why)` 와 라이브 뷰 이벤트 | `<sample>/edge_trace_<stamp>/log.jsonl` 에 같은 이벤트 이름 (`progress` 의 하위 종류). 라이브 뷰 이벤트와 분리 |
+| `<sample>/map.json`: `boundary` (합 좌표), `visits` | 그대로 (T-002 `sample.py`) |
+| `<sample>/sample.json`: `hole {centre_um, diameter_mm, fit_rms_um, n_points, arc_deg}`, `boundary_limits_um`, `stage_camera_calibration` | 같음 + `hole.fitted_at` (매니저 답변: T-002 에 반영) |
+| 백업 `*_before_rescan_<stamp>.json` | preflight 의 자동 백업 |
+
+**7) 확인 지점**
+
+| 지점 | `confirm_required` |
+|---|---|
+| 이전 경계가 있음 | `"replace the hole fit from <fitted_at>? (backed up)"` |
+| 시작 | `"trace the edge: XY moves only, within 7 mm of here"` |
+| 끝난 뒤 | 없음. 결과 (지름, rms, 호 각도) 를 보여 준다. 지름이 `hole_diameter_mm` 와 20 % 넘게 다르면 경고 |
+
+**8) 9/30 기록 대응**: Step 1.
+
+| 항목 | 값 |
+|---|---|
+| 시작 | (8833.4, −2354.1), 속도 400 µm/s, 걸음 200 µm (사람이 올림), 한 바퀴로 멈춤 |
+| 결과 | 중심 (8026.0, 571.6), 지름 6.1438 mm, rms 42.5 µm, 49 점, 352° |
+| 이전 피팅 | (9361.1, 1272.2), 5.9919 mm. 18:49 → 19:57 사이 1.5 mm 이동 → "세션마다 재추적" 규칙 |
+| 보정 | 1.6252 µm/px, 0.117°, `M = [[0.6160, 0.0024], [0.0013, −0.6146]]`. 영상이 재물대에 대해 거울상 |
+| 명시야 | DiaLamp 세기 608/2100 (스탠드), 10 ms 중앙값 2766 ADU, 30 ms 이상 포화, 12 ms 사용 |
+| 실패 | 창을 닫아도 DiaLamp 가 켜져 있음 (알려진 문제 4) → 5항 |
+
+## 9. 보류와 범위 밖
+
+### 9.1 `find_particle_z` (보류)
+
+`scripts/find_particle_z.py`: 100x 시야를 나선형 (150 µm 간격) 으로 옮기며 시야마다 1 µm 간격 상향 Z 스택을 찍고,
+밝기가 지정한 Z 띠 **안에서** 최대가 되는 점을 입자로 본다. 9/30 기록 4절 1번에 따라 **사용 불가**다.
+
+- 점 판정이 맞지 않는다. 실제 입자는 약 6.7 µm (FWHM) 인데 9/30 실행 때 판정은 2.5 µm 를 가정했다. 지금 코드의
+  기본값은 `--particle-um 7.0` 이다. 7 µm 로는 사람이 찾은 입자 (3010.0 µm) 를 저장된 스택에서 찾지만, 합성한
+  디포커스 고리 조각 24 개도 통과시킨다.
+- 4 번 실행, 46 시야에서 찾은 것이 없다. 마지막 실행은 사람이 재물대를 움직이는 중에 readback 가드 (3037.0 명령 /
+  3036.0 읽음) 로 멈췄다.
+- 이식하지 않는다. 판정 문제가 풀리면 다시 명세를 쓴다. F4.2 (잃어버린 입자 찾기) 는 우선 `sample_map` 의 후보와
+  flag 로 다룬다.
+
+### 9.2 `focus_servo` (범위 밖)
+
+`scripts/focus_servo.py` 는 라이브 뷰 안에서 **피에조 Z** (NanoBench, 0–600 µm) 로 미세 초점을 맞추는 세 루틴이다.
+`FocusServo` (`f` 키) 는 DINO 헤드의 부호 있는 점수를 0 으로 보내려고 +0.5 µm 탐침으로 기울기와 부호를 재고,
+걸음당 최대 0.5 µm, 시작점 ±5 µm 안에서 움직인다. `AutoFocusZ` (`w`) 는 ±1 µm 를 0.25 µm 간격으로 Vollath 피크를 찾고,
+끝에 걸리면 ±5 µm 까지 넓히며, 곡선이 평평하면 DINO 점수로 방향을 고른다. `ZSweep` (`W`) 은 ±5 µm 진단 스윕이다.
+모두 `PiezoReader.move_z` 로 쓰고, 첫 쓰기 전에 컨트롤러 보안 수준을 User 로 바꿨다가 닫을 때 되돌린다.
+
+판단: **M1–M3 범위 밖이다** (PLAN v0.2 마일스톤으로는 M5 "초점 판정" 의 후보).
+- DINO 점수가 모션 명령의 입력이 된다. PLAN 6절 2·3항 (모델은 판정이지 Z 가 아님) 과 맞추려면, 서보 대신 T-003 판정
+  (`step_up` / `step_down`) 을 고전 지표가 확인한 뒤에만 한 걸음 가는 방식으로 다시 설계해야 한다.
+- 피에조 쓰기는 컨트롤러 보안 수준을 바꾼다. 백엔드 프로토콜 (T-002) 의 피에조 쓰기와 별도 게이트가 먼저 있어야 한다.
+- `AutoFocusZ` 의 Vollath 부분만 떼면 고전 미세 초점으로 쓸 수 있다. 이 부분은 `focus_100x` 의 고운 스윕과 겹친다.
+
+### 9.3 이 문서에 없는 것
+
+- 라이브 뷰 (`live`) 자체: 프레임 표시, 점수 패널, 맵 그리기는 T-004 (UI) 와 T-002 (프레임 이벤트) 의 몫이다.
+  이 문서는 라이브 뷰 안에서 모션을 내는 `edge_trace` 만 다룬다.
+- `b` / `u` 키 (손으로 경계점 찍기, 지우기): 모션이 없는 기록 명령이다. `map_flag` 와 같은 방식으로 다룰 수 있다.
 
 ## 10. 현미경 PC 에서 확인할 질문
 
@@ -344,3 +889,13 @@ FocusAxis (`C:\agentic_microscope\hardware\focus.py`) 를 읽거나 벤치에서
 | Q9 | `open_core` 의 Startup 프리셋 (`LappMainBranch1 State 1`) 은 눈에 보이는 변화가 있는가 | 엔진이 config 를 한 번만 로드해도 되는지 |
 | Q10 | Aura 마스터 State 0 만으로 모든 라인이 꺼지는가 | `all_off()` 의 정의 |
 | Q11 | XYStage readback 의 정상 오차 범위 | XY readback 비교 허용 오차 |
+| Q12 | F5 의 Y 이탈 방향과 거리 (15–20 mm), 재물대 Y 한계, 샘플의 24 mm 변 방향 | `escape_dy_um` 의 값과 preflight 의 한계 검사 (PLAN 10절) |
+| Q13 | 100x Oil 을 0 에서 2800 µm 로 올릴 때 안전한 `approach` 걸음과 걸린 시간. 원본처럼 2800 까지는 한 번에 가도 되는가 | `approach_step_um` 기본값 |
+| Q14 | `waitForDevice("Nosepiece")` 는 회전이 기계적으로 끝난 뒤 돌아오는가 | 4단계 readback 의 의미 |
+| Q15 | 100x 천장 `min(3200, centre + 0.4 × 130)` 은 어디서 계산되는가 (FocusAxis, 레지스트리). 기준이 plan 의 중심인가 | `focus_100x` plan 의 천장 표시와 상향 연장 범위 |
+| Q16 | 명시야 4x 에서 타일별 Vollath 스윕이 초점을 잡는가 (9/30 스캔은 Aura 형광에서 했다) | `sample_map` 의 `focus` 기본값 |
+| Q17 | 명시야 자동 노출의 목표 (천장의 50 % 는 형광 기준) | `sample_map` 의 `exposure_ms` |
+| Q18 | 약 6.7 µm 입자가 명시야 4x (1.625 µm/px) 모자이크에서 보이는가 | 입자 후보 검출의 가능 여부 |
+| Q19 | `PiezoReader` 를 여는 것만으로 컨트롤러에 바뀌는 것이 있는가. NanoBench 프로그램과 포트가 겹치면 어떻게 되는가 | `hardware_scan` 이 "아무것도 바꾸지 않음" 을 지키는지 |
+| Q20 | 100x Oil 에서 몇 mm 의 XY 이동 전에 Z 후퇴가 필요한가 (오일 막) | `goto_xy` 의 "큰 이동" 문턱과 `z_safe` |
+| Q21 | FocusAxis 에 단계 접근과 비슷한 함수가 이미 있는가 | `approach` 를 새로 만들지, 이식할지 |
