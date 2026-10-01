@@ -17,7 +17,8 @@ def test_picks_the_bright_regions_and_does_not_overlap():
     img = frame_with_patches([(300, 400, 500), (1500, 1800, 800), (2000, 200, 300)])
     tiles = select_tiles(img, k=3)
     assert len(tiles) == 3
-    for (y, x), t in zip([(1500, 1800), (300, 400), (2000, 200)], tiles):  # brightest first
+    expected = [(1500, 1800), (300, 400), (2000, 200)]  # brightest first
+    for (y, x), t in zip(expected, tiles, strict=True):
         oy = max(0, min(y + 150, t.y0 + 224) - max(y, t.y0))
         ox = max(0, min(x + 150, t.x0 + 224) - max(x, t.x0))
         assert oy * ox >= 0.5 * 150 * 150  # the tile holds most of its patch
