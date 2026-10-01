@@ -98,3 +98,8 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 - The return-only operation allowed while `awaiting_return` is `start("objective_change", {"resume": true})`.
   Every other motion operation is refused in preflight until it finishes.
+
+## From the T-002-1 review (7f62722)
+
+- `Command("start")` currently accepts `op=""`. Refuse an empty or unregistered operation name with a
+  refusal event (events.py is yours now).

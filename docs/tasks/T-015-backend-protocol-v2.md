@@ -40,3 +40,14 @@
 - Add an optional `notes: dict[str, str]` (default empty) to `Readback` and `BackendInfo`. Backends use it
   for markings such as `"unmeasured provisional"` and demo substitutions, so they never go into device or
   property names.
+
+## Required safety fix (reviewer, T-002-1 merge 7f62722)
+
+`Backend.set_property(device, prop, value)` takes no `MotionToken`, so code could write ZDrive / XYStage
+position, Nosepiece State or PFS through it and bypass `require_token` (PLAN 6절: safety is decided by code).
+
+- `set_property` refuses motion devices (ZDrive, XYStage, Nosepiece, PFS, and their demo names) with an
+  `UnguardedMotion` error. Keep the list in one constant next to the protocol.
+- Test it on `FakeBackend` here, and make the contract test parametrised so T-021 (mock) and T-023 (mm-demo)
+  run the same refusal test.
+- This is the first thing in T-015; send it for review on its own if the rest is not ready.
