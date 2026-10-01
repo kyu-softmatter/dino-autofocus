@@ -11,6 +11,10 @@
 
 권한은 앞 과제가 main 에 병합된 뒤 넘긴다.
 
+요청 접수:
+- T-022 (실행16): `dependencies` 에 `three`, `devDependencies` 에 `@types/three`. 래퍼 (@react-three/fiber 등) 없음.
+  T-010 1차 골격 병합 뒤 package.json 권한자가 넣는다.
+
 ## 후속 과제 후보
 
 - **WP-C 초점 이식에 같이 넣을 것** (실행2 메모, 2026-10-01): `focus/classical.py` 에
