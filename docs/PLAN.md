@@ -281,7 +281,7 @@ v0.9 결정: **에이전트 아키텍처는 그대로 두고, 데이터를 만�
       log\            실험 세션 로그
       records\        작업별 기록 (jsonl), sample_events.jsonl, flag, 수동 단계
       manifest.json   큰 파일 목록: 경로, 크기, sha256
-    simulation\runs\<run_id>\            시뮬레이션 쪽만 쓴다 (위치는 10절 미해결)
+    simulation\runs\<run_id>\            시뮬레이션 쪽만 쓴다 (실제 위치는 통합할 때 정한다)
     librarian\                           라이브러리언만 쓴다: 무엇을 언제 반영했는지
   D:\AutoFocus\data\<session_id>\        큰 데이터, git 밖: frames, stacks, 모자이크 원본
 ```
@@ -312,13 +312,21 @@ v0.9 결정: **에이전트 아키텍처는 그대로 두고, 데이터를 만�
 
 ```
   화면의 프롬프트 칸 --(질문 + 화면 문맥)--> Server /api/assistant
-      Server: Anthropic Python SDK, Tool Runner, 모델 claude-opus-5-5
+      Server: Anthropic Python SDK, 직접 짠 스트리밍 루프, 모델 claude-opus-5-5
       도구 = 엔진과 저장소 API 를 감싼 함수 (화면이 쓰는 API 와 같은 것)
   <--(스트리밍 답변, 도구 호출 표시, 실행 제안 카드)--
 ```
 
-- **구현면**: Anthropic Python SDK 의 Messages API + Tool Runner. 도구는 우리가 정의하고,
-  서버가 실행한다. Tool Runner 의 턴별 훅에서 승인 게이트와 기록을 건다.
+- **구현면 (2026-10-01 갱신)**: Anthropic Python SDK 의 Messages API 를 **직접 짠 스트리밍 루프**로 부른다.
+  Tool Runner 대신 직접 루프를 쓰는 이유는 승인 게이트를 우리 코드 안에 두고, 가짜 공급자 테스트가
+  실제 게이트를 그대로 지나게 하기 위해서다 (T-013). 루프가 지킬 것:
+  - 응답마다 `stop_reason` 을 먼저 본다. `refusal`, `max_tokens` 이면 도구를 실행하지 않는다.
+  - 한 응답의 도구 호출이 여럿이면 모두 실행하고, 결과는 **한 user 메시지**에 모아 돌려준다. 실패한 도구는 `is_error` 로 돌려준다.
+  - 대화 기록은 덧붙이기만 한다. 응답의 content 블록(생각 블록 포함)을 고치지 않고 그대로 다시 보낸다.
+  - 강제 도구 선택(`tool_choice` any/tool)은 쓰지 않는다. `claude-opus-5-5` 에서 400 이다. `auto` + 프롬프트 지시 + `strict: true`.
+  - `effort` 를 명시한다 (이 모델의 기본은 medium). thinking 은 끌 수 없으니 설정하지 않는다.
+  - 서버 측 거부 대체(`fallbacks`)를 기본으로 켠다.
+  - 도구 입력은 스키마로 검증한 뒤 실행한다.
 - **도구는 두 종류다.**
   - 읽기 도구: 하드웨어 상태, 샘플 기록, 맵, 질문과 카드, 시뮬레이션 진행률과 결과. 바로 실행한다.
   - 동작 도구: 이동, 광원, 렌즈 전환, 스캔 시작 등. **실행하지 않고 제안 카드만 만든다.**
@@ -402,7 +410,7 @@ soft-matter-agents 와의 대응 (통합 단계에서 다룸):
 | D3 | 엔진 프로세스 | **결정: 엔진은 FastAPI 서버 프로세스 안에서 돈다** (D1 에 따름). 엔진은 서버 없이도 import 된다 |
 | D4 | 첫 범위 | **결정: 모든 기능을 mock 으로 먼저** (사용자, 2026-10-01) |
 | D5 | 공개/비공개 | **결정: 통합할 때 이 저장소를 공개한다** (사용자, 2026-10-01). 그때까지 비공개 |
-| D6 | Claude 연동 방식 | **권고안으로 진행**: 서버의 Messages API + Tool Runner, 동작은 제안 카드. MCP 노출은 통합 단계 |
+| D6 | Claude 연동 방식 | **권고안으로 진행**: 서버의 Messages API, 직접 짠 스트리밍 루프 (T-013, 2026-10-01 총괄 승인), 동작은 제안 카드. MCP 노출은 통합 단계 |
 | D7 | Claude 에 보낼 수 있는 데이터 | **결정: 텍스트만, 이미지는 보내지 않는다** (사용자, 2026-10-01). 아래 정책 |
 | D8 | 비용 한도 | **결정: 우선 제한 없음** (사용자, 2026-10-01). 사용량은 계속 표시·기록한다. 모델 `claude-opus-5-5` |
 | D9 | 로그인 방식 | **결정: 계정 생성 때 쓴 이메일로 로그인** (사용자, 2026-10-01). 이메일 + 비밀번호로 구현. 관리자 계정 이메일은 사용자가 지정했고 로컬 설정에만 둔다 |
@@ -455,10 +463,8 @@ D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 
 | WP-H 샘플 로딩 (F3) | 지오메트리 데이터 모델, 입력 창, 로딩 확인 | `engine/sample.py` 의 지오메트리 부분, `server/api/sample.py`, `web/src/features/sample/` | WP-A |
 | WP-I 샘플 맵 (F4) | 투과광 모자이크, 입자 후보, flag, 클릭 이동 | `engine/operations/sample_map.py`, `server/api/map.py`, `web/src/features/map/` | WP-B mock, WP-C scan_4x |
 | WP-J 배율 전환 (F5) | 2절 F5 순서, XY 이탈/복귀, 수동 단계 | `engine/operations/objective_change.py`, `server/api/objective.py`, `web/src/features/objective/` | WP-A, WP-B mock |
-
 | WP-K 시뮬레이션 현황 (F6) | 진행률, 내려받기, 궤적 뷰어 2D(Canvas)·3D(Three.js), 결과 그래프. mock 실행 생성기 | `server/api/simulation.py`, `web/src/features/simulation/`, AgentStore 의 시뮬레이션 읽기 부분 | WP-F 어댑터, WP-D1·D2 |
-| WP-L Claude 연동 (X1, X2) | 도구 정의, Tool Runner, 가짜 공급자, 제안 카드 흐름, D7 데이터 정책, 사용량 표시, 기록, 공통 프롬프트 칸 | `assistant/`, `server/api/assistant.py`, `web/src/app/assistant/` | WP-A, WP-D1·D2. 실제 호출은 사용자가 API 키를 넣고 켤 때 |
-
+| WP-L Claude 연동 (X1, X2) | 도구 정의, 스트리밍 도구 루프, 가짜 공급자, 제안 카드 흐름, D7 데이터 정책, 사용량 표시, 기록, 공통 프롬프트 칸 | `assistant/`, `server/api/assistant.py`, `web/src/app/assistant/` | WP-A, WP-D1·D2. 실제 호출은 사용자가 API 키를 넣고 켤 때 |
 | WP-M 로그인과 로그 (X3, X4) | 계정, 역할, 로그인 쿠키, 잠금, 감사 로그, 앱 로그, 로그인 화면, exe 가 브라우저를 로그인 화면으로 열기 | `auth/`, `server/api/auth.py`, `web/src/app/login/`, `tools/launcher/` | WP-D1·D2 |
 | WP-N 실험 세션 (F7) | 세션 수명주기, 세션 폴더 레이아웃, 경로 지정 자동 커밋, manifest, 코드 버전 기록, 가짜 라이브러리언 반영, 세션 화면 | `records/`, `server/api/sessions.py`, `web/src/features/sessions/` | WP-A 기록 형식, WP-M 사용자 id |
 
@@ -479,7 +485,7 @@ D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 
 - F5 이탈 방향과 거리. 재물대 Y 한계와 샘플의 24 mm 변 방향을 측정한 뒤 정한다.
 - F5 에서 물 대물렌즈(40x WI)는 작동 거리 값이 없어 보류 (soft-matter-agents 과제 026 5절).
 - F7 시뮬레이션 데이터 위치: WSL 의 시뮬레이션이 `records\simulation\` 에 직접 쓸지, 지금 위치에 두고
-  라이브러리언과 화면이 그 경로를 읽을지. 현미경 PC 에서 정한다. mock 은 영향 없음.
+  라이브러리언과 화면이 그 경로를 읽을지. **통합할 때 정한다** (사용자, 2026-10-01). mock 은 영향 없음.
 - F6 진행률: WSL 의 시뮬레이션이 진행 상태를 파일로 남기는지, 궤적과 로그가 어디에 있는지 현미경 PC 에서 확인.
 - X2 와 soft-matter-agents 규칙: 그쪽 과제 026 은 외부 서비스 호출을 "사람의 결정, 미승인" 으로 둔다.
   이 저장소의 Claude 연동은 사용자가 요청한 것이고, 통합 시 그쪽 기록에도 남겨야 한다.
