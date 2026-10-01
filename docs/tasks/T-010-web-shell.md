@@ -19,6 +19,8 @@
 - 예외로 `web/src/features/live/` 는 이 과제 소유 (PLAN.md 9절 WP-D2 내용에 라이브 뷰가 있다.
   서버 쪽 프레임 브리지는 T-009 `ws.py`)
 - `web/.gitignore` (`node_modules/`, `dist/`). 루트 `.gitignore` 는 고치지 않는다
+- **제외 (v0.4)**: `web/src/app/assistant/` 는 T-014 (공통 프롬프트 칸) 소유다. 셸은 레이아웃에
+  프롬프트 칸이 들어갈 자리와 화면 문맥을 넘기는 훅의 이름만 정하고, 컴포넌트는 만들지 않는다
 
 ## 내용
 
