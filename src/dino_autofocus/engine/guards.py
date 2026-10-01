@@ -494,7 +494,8 @@ class OpScope:
 
 @contextmanager
 def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_sink,
-              args: dict | None = None, prefix: str | None = None) -> Iterator[OpScope]:
+              args: dict | None = None, prefix: str | None = None,
+              user_id: str | None = None, session_id: str | None = None) -> Iterator[OpScope]:
     """One operation's record folder, events, and lights-off on every exit path.
 
     Enter it before switching any light on, and switch lights through `scope.lights(...)`.
@@ -503,9 +504,11 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
 
     `lights_off()` itself needs no ownership: a pre-emptive lights-off command may call it
     while another operation holds the backend (the runner aborts that operation)."""
-    rec = OpRecord(parent, op, start_state=snapshot(backend), prefix=prefix)
+    rec = OpRecord(parent, op, start_state=snapshot(backend), prefix=prefix,
+                   user_id=user_id, session_id=session_id)
     scope = OpScope(rec.op_id, rec, fan_out(rec.sink, sink))
-    scope.emit(Event("started", rec.op_id, {"op": op, "args": args or {}}))
+    scope.emit(Event("started", rec.op_id, {"op": op, "args": args or {}, "user_id": user_id,
+                                            "session_id": session_id}))
     status, error = "finished", None
     try:
         yield scope

@@ -10,7 +10,7 @@ def profile(**devices):
 
 def test_profile_round_trips(tmp_path):
     p = profile(camera=(True, True, "Kinetix_red"), z_drive=(True, False, "ZDrive"))
-    p.confirmed["oil_objective_clean"] = "user-1 2026-10-01"
+    p.confirmed["oil_objective_clean"] = "operator@example.test 2026-10-01"
     assert HardwareProfile.from_json(p.save(tmp_path / "hardware_profile.json").read_text()) == p
 
 

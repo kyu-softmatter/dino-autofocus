@@ -3,7 +3,9 @@
 
 - `log.jsonl`: every event of the operation, one `Event.to_json()` per line, as emitted.
 - `summary.json`: op, op_id, status, start and end state, the lights-off readback (always
-  present: `finish` cannot be called without it), the result, and the error if any.
+  present: `finish` cannot be called without it), the result, the error if any, and
+  `user_id` / `session_id` (who ran it, in which experiment session; null when absent,
+  PLAN rule 12).
 
 Grades (field name `grade`, shared with focus/verdict.py, T-003). A number in a record says
 where it came from: `measured` (encoder z, readback, pixel statistics), `computed`
@@ -65,7 +67,8 @@ class OpRecord:
     """Folder, event log and summary of one operation. `sink` is an EventSink."""
 
     def __init__(self, parent: Path, op: str, when: str | None = None,
-                 start_state: dict | None = None, prefix: str | None = None):
+                 start_state: dict | None = None, prefix: str | None = None,
+                 user_id: str | None = None, session_id: str | None = None):
         parent.mkdir(parents=True, exist_ok=True)
         base, n = f"{prefix or op}_{when or stamp()}", 1
         name = base
@@ -76,6 +79,7 @@ class OpRecord:
         self.dir.mkdir()
         self.started = time.strftime("%Y-%m-%dT%H:%M:%S")
         self.start_state = start_state
+        self.user_id, self.session_id = user_id, session_id
         self.n_events = 0
         self._log = (self.dir / "log.jsonl").open("w", encoding="utf-8")
 
@@ -92,6 +96,7 @@ class OpRecord:
             raise ValueError(f"status {status!r} not in {STATUSES}")
         summary = {
             "op": self.op, "op_id": self.op_id, "status": status,
+            "user_id": self.user_id, "session_id": self.session_id,
             "started": self.started, "finished": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "start_state": self.start_state, "end_state": end_state,
             "lights_off": lights, "result": result, "error": error,
