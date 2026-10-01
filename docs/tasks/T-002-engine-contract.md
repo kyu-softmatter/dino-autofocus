@@ -156,3 +156,24 @@ Backend 프로토콜이 mm-demo 와 mm-real 을 둘 다 덮으려면 아래를 �
   에는 State 속성이 없어 셔터 API 로만 다룬다. 그래서 프로토콜의 조명 메서드는 "속성 쓰기" 가
   아니라 **의미 단위** (`lamp_on/off`, `aura_line_on(line, percent)`, `aura_off`, `all_off`) 로 두고,
   각 메서드가 readback 기록을 돌려준다.
+
+## v0.2 조정 (PLAN.md v0.2, 6ba1bc1)
+
+PLAN.md 9절에서 WP-A 소유에 `gates.py` 가 추가됐다. 골격만 만들고 규칙 내용은 WP-G 가 채운다.
+분량 목표는 그대로 작게 유지한다.
+
+- 소유 경로 추가: `src/dino_autofocus/engine/gates.py`, 테스트는 `tests/engine/test_contract_gates.py`.
+- `gates.py` 골격: 작업마다 필요한 장치와 조건을 선언하는 자료형 (`GateRequirement`), 하드웨어
+  구성 파일 (`hardware_profile.json`, 가칭) 의 최소 자료형 (탐지 시각, 장치별 상태, 사람이 확인한
+  항목), `evaluate(profile, requirements) -> {op: (enabled, reasons)}`. 꺼진 작업은 **이유 목록**과
+  함께 돌려준다 (UI 가 숨기지 않고 이유를 보여 준다). 게이트는 코드가 판정하고, 모델이나 UI
+  대화상자가 열지 않는다.
+- 가드 규칙 추가 (PLAN.md 2절 F4·F5, 5절):
+  - **큰 XY 이동은 Z 후퇴 상태가 읽기로 확인될 때만** 허용한다. "큰 이동" 기준과 후퇴 높이는 상수로
+    두고 값이 미정이면 docstring 에 "추후 측정" 으로 적는다 (F5 이탈은 Y 약 15–20 mm).
+  - **복귀 후 Z 는 목표로 점프하지 않고** 후퇴 위치에서 단계적으로 접근한다. 가드 Z 축에
+    단계 접근 메서드를 둔다 (이름 예: `approach(target_um, step_um)`), 매 단계 readback.
+- 이벤트와 기록: 수동 단계 (예: 액침액 로딩 후 "로딩 완료" 클릭) 를 명령 (`confirm`) 과 기록
+  항목으로 남긴다 (PLAN.md 6절 4항).
+- Backend 의 기본 구현은 이제 `mock` 시뮬레이터다 (T-007, 실행3). 프로토콜의 `info()` 에
+  대물렌즈 세트 (라벨, 배율, 픽셀 크기, 작동 거리) 와 재물대 한계를 담을 자리를 둔다.

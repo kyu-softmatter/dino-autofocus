@@ -53,3 +53,25 @@ FocusAxis 의 실제 구현(`C:\agentic_microscope`)은 이 PC 에 없다. 사�
   `git diff main --stat` 에 `docs/operations-spec.md` 만, 커밋 메시지 끝 `Session: AF 실행4`)
 - 위 대상 작업이 모두 1–8 항목을 갖고, 인자와 호출 순서가 코드와 일치한다
 - 끝나면 `[검토요청 T-006]` 를 검토 세션에
+
+## v0.2 조정 (PLAN.md v0.2, 6ba1bc1)
+
+총괄 지시로 대상 작업을 추가한다. 같은 1–8 항목 형식으로 쓴다.
+
+- `hardware_scan` (F2): Micro-Manager 에 로드된 장치, 장치별 속성, 읽기 확인 가능 여부, 대물렌즈
+  목록, 카메라 비트 깊이, 피에조 연결. 결과는 `hardware_profile.json` (가칭). 탐지만 하고 아무것도
+  움직이거나 켜지 않는다. 근거는 `scripts/mm_grab.py` 의 `open_core` 와 `positions`,
+  `scripts/change_objective.py` 의 `state`.
+- `sample_map` (F4): 투과광 4x 타일 스캔으로 모자이크, 입자 후보 (고전 이미지 처리), flag, 클릭
+  이동. `edge_trace` 와 `scan_4x` 를 재사용하는 방식으로 쓴다.
+- `objective_change` 의 **F5 순서**: PLAN.md 2절 F5 의 7단계 (현재 XY·Z·렌즈 기록 → PFS off → Z 후퇴
+  → PFS Out of Range 확인 → Y 이탈 → 렌즈 회전과 읽기 확인 → 사용자 액침액 로딩과 "로딩 완료" →
+  XY 복귀 → Z 단계 접근).
+
+가드 조건으로 반드시 적을 것:
+- **XY 큰 이동은 Z 후퇴가 읽기로 확인될 때만** 허용 (F4 클릭 이동, F5 이탈과 복귀).
+- **복귀 후 Z 는 목표로 점프하지 않고** 후퇴 위치에서 단계적으로 접근한다 (soft-matter-agents
+  과제 026 의 "넘겨받은 Z 는 목적지가 아니라 목표").
+
+초안 순서: 기존대로 `lights_off`, `status`, `scan_4x` 를 먼저 내고, 그다음 `objective_change` (F5),
+`hardware_scan`, `sample_map`, 나머지 순으로 이어서 커밋한다.
