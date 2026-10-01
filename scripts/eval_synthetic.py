@@ -1,4 +1,4 @@
-"""Frozen-DINOv2 vs classical focus features on psf-autofocus synthetic z-stacks.
+"""Frozen-DINOv2 vs classical focus features on synthetic z-stacks (scripts/make_dataset.py).
 
     uv run python scripts/eval_synthetic.py --data data/synth320 --model dinov2_vits14
 
@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import sys
 import time
 from pathlib import Path
 
@@ -24,13 +22,9 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-PSF_AUTOFOCUS = Path(os.environ.get("PSF_AUTOFOCUS", Path(__file__).parents[2] / "psf-autofocus"))
-sys.path.insert(0, str(PSF_AUTOFOCUS))
-
-from afocus.models.preprocess import normalise_cond  # noqa: E402
-from afocus.sim.metrics import RELIABLE, argmax_parabolic, focus_score  # noqa: E402
-
-from dino_autofocus.backbone import DinoExtractor  # noqa: E402
+from dino_autofocus.backbone import DinoExtractor
+from dino_autofocus.synth.models.preprocess import normalise_cond
+from dino_autofocus.synth.sim.metrics import RELIABLE, argmax_parabolic, focus_score
 
 KEYS = (
     "image",
@@ -175,6 +169,10 @@ def main() -> None:
     results["per_family_dino_mlp"] = per_family
 
     args.out.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        args.out / f"pred_{args.data.name}_{tag}.npz",
+        dz_dof=dz, pred_dz_dof=p, valid=valid, family=d["family"], scene_id=groups,
+    )
     out = args.out / f"eval_{args.data.name}_{tag}.json"
     out.write_text(json.dumps(results, indent=2))
     print(json.dumps(results, indent=2))

@@ -5,3 +5,9 @@ data/
 outputs/
 *.pth
 .env
+
+# synthetic images and other generated arrays (datasets live in data/, renders in outputs/)
+*.npz
+*.npy
+*.tif
+*.tiff

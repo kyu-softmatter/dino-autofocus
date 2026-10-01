@@ -12,6 +12,8 @@ dependencies = [
     "matplotlib>=3.6",
     "torch>=2.6",
     "torchvision>=0.21",
+    "pymmcore-plus==0.18.1",
+    "pymmcore==12.5.0.75.0",
 ]
 
 [dependency-groups]
@@ -35,6 +37,14 @@ packages = ["src/dino_autofocus"]
 
 [tool.ruff]
 line-length = 100
+# vendored from psf-autofocus; kept in its upstream style so the two stay diffable
+extend-exclude = [
+    "src/dino_autofocus/synth",
+    "tests/synth",
+    "scripts/make_dataset.py",
+    "scripts/show_system.py",
+    "scripts/preview_dataset.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
