@@ -10,6 +10,7 @@
 - v0.3: **D1 결정: 로컬 웹 앱 (FastAPI + React)**. D3 확정. 서버/웹 구조, API 규칙, 작업 묶음 WP-D 분할. Node 는 uv 그룹 `web`.
 - v0.4: F6 시뮬레이션 현황 상세, 공통 요구 X1 (모든 화면에 프롬프트 칸), X2 (Claude 연동).
   Claude 연동 설계 (5절), 결정 D6–D8, 작업 묶음 WP-K, WP-L.
+- v0.5: F6.3 궤적 뷰어를 2D 와 3D 둘 다 구현하기로 결정.
 
 ## 1. 목적과 범위
 
@@ -117,12 +118,14 @@
 |---|---|
 | F6.1 | 진행 중인 시뮬레이션의 진행률 (현재 step / 전체 step, 경과 시간, 예상 종료) |
 | F6.2 | 데이터를 쉽게 내려받는 버튼 (실행 폴더 단위 묶음) |
-| F6.3 | 시뮬레이션 시각화: 입자 궤적 재생 |
+| F6.3 | 시뮬레이션 시각화: 입자 궤적 재생. **2D (Canvas) 와 3D (Three.js) 뷰어를 둘 다 구현** (사용자, 2026-10-01) |
 | F6.4 | 주요 결과를 그래프로 보기: 로그 값 (에너지, 온도, 압력 등)과 관측량 |
 
 - 참고: [kyu-softmatter/HOOMD_GUI](https://github.com/kyu-softmatter/HOOMD_GUI). 같은 구조를 쓴다.
   FastAPI 로컬 러너, 루프백만 바인딩, Host 헤더 허용 목록, 같은 출처에서 웹과 API 제공.
-  뷰포트는 지금 Canvas 2D 이고, 3D 가 필요해지면 Three.js 인스턴싱으로 간다.
+  뷰어는 두 가지를 같이 만든다. 2D 는 Canvas 로 슬라이스나 투영, 3D 는 Three.js GPU 인스턴싱.
+  두 뷰어는 같은 궤적 프레임 형식과 재생 컨트롤(재생, 정지, 프레임 이동, 속도)을 공유하고,
+  화면에서 2D/3D 를 전환한다. 프레임은 서버가 GSD 에서 읽어 필요한 필드만 보낸다.
   진행률은 WebSocket 또는 server-sent events 로 받는다. 궤적은 GSD, 로그는 HDF5/CSV.
 - 데이터 출처: soft-matter-agents `simulation_agent/runs/<run_id>/` 의 `config.json`,
   `log.json`, `observables.json`, `trajectory_meta.json`. 궤적 파일 자체는 저장소에 없고 WSL 쪽에 있다.
@@ -343,7 +346,7 @@ D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 
 | WP-I 샘플 맵 (F4) | 투과광 모자이크, 입자 후보, flag, 클릭 이동 | `engine/operations/sample_map.py`, `server/api/map.py`, `web/src/features/map/` | WP-B mock, WP-C scan_4x |
 | WP-J 배율 전환 (F5) | 2절 F5 순서, XY 이탈/복귀, 수동 단계 | `engine/operations/objective_change.py`, `server/api/objective.py`, `web/src/features/objective/` | WP-A, WP-B mock |
 
-| WP-K 시뮬레이션 현황 (F6) | 진행률, 내려받기, 궤적 뷰어, 결과 그래프. mock 실행 생성기 | `server/api/simulation.py`, `web/src/features/simulation/`, AgentStore 의 시뮬레이션 읽기 부분 | WP-F 어댑터, WP-D1·D2 |
+| WP-K 시뮬레이션 현황 (F6) | 진행률, 내려받기, 궤적 뷰어 2D(Canvas)·3D(Three.js), 결과 그래프. mock 실행 생성기 | `server/api/simulation.py`, `web/src/features/simulation/`, AgentStore 의 시뮬레이션 읽기 부분 | WP-F 어댑터, WP-D1·D2 |
 | WP-L Claude 연동 (X1, X2) | 도구 정의, Tool Runner, 가짜 공급자, 제안 카드 흐름, 기록, 공통 프롬프트 칸 | `assistant/`, `server/api/assistant.py`, `web/src/app/assistant/` | WP-A, WP-D1·D2. 실제 호출은 D6–D8 결정 후 |
 
 - 기능별 화면은 `server/api/<영역>.py` 와 `web/src/features/<영역>/` 를 한 묶음이 함께 소유한다.
