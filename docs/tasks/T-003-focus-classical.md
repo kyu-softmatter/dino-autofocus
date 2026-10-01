@@ -72,6 +72,9 @@ soft-matter-agents 초점 과제(026)의 어휘를 그대로 쓴다 (PLAN.md 5�
 
 ### `tests/focus/`
 
+파일 이름은 `test_focus_*.py` 로 한다. `tests/` 에 `__init__.py` 가 없어 basename 이 겹치면
+pytest 가 충돌한다 (`tests/synth/test_metrics.py` 가 이미 있다).
+
 합성 입력(가우시안 점 + 노이즈, 블러 단계별)으로 각 지표가 초점에서 최대인지, 드롭아웃 필터,
 가장자리 판정, 두 매핑의 모든 분기, torch 미import.
 

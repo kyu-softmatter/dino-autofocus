@@ -140,3 +140,19 @@ WP-C 는 이 이름들이 `guards.py` 의 가드 Z 축에 있다고 기대한다
 WP-C 가 백엔드에서 필요로 하는 것: `snap()` → uint16 frame, property get/set + readback 기록,
 `aura_on(line, pct)` / `aura_off()`, DiaLamp on/off, XY goto/read, Z read, Nosepiece label 읽기,
 exposure get/set, image bit depth.
+
+## 부록 2: Micro-Manager 데모 장치 실측 (실행3 조사, 2026-10-01)
+
+Backend 프로토콜이 mm-demo 와 mm-real 을 둘 다 덮으려면 아래를 고려한다.
+
+- 데모 Z (DStage) 범위가 −300~+300 µm 이고 원점 이동이 안 된다. mm-demo 는 백엔드 안에서
+  오프셋을 둔다 (demo_z = z_um − 오프셋). **가드와 기록은 벤치 좌표 2800–3200 을 그대로 쓴다.**
+  즉 프로토콜의 z 는 항상 벤치 좌표다.
+- 데모 카메라 "Fluorescent Beads" 모드는 z 에 따라 결정적인 초점 곡선을 준다 (vollath4 기준 0 µm
+  17.5, ±5 µm 3.1, ±20 µm 0.04). 데스크톱에서 초점 작업 테스트가 가능하다.
+- 데모 XY 는 기본 속도에서 약 25 mm 넘는 이동이 코어 타임아웃 5 s 에 걸린다. 프로토콜의 XY
+  이동은 타임아웃을 인자 또는 백엔드 설정으로 둔다.
+- 광원 대응: DiaLamp 는 데모의 "White Light Shutter", Aura 는 LED 라벨과 LED Shutter. LED Shutter
+  에는 State 속성이 없어 셔터 API 로만 다룬다. 그래서 프로토콜의 조명 메서드는 "속성 쓰기" 가
+  아니라 **의미 단위** (`lamp_on/off`, `aura_line_on(line, percent)`, `aura_off`, `all_off`) 로 두고,
+  각 메서드가 readback 기록을 돌려준다.
