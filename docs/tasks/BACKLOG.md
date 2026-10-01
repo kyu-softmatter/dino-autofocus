@@ -15,6 +15,19 @@
 - T-022 (실행16): `dependencies` 에 `three`, `devDependencies` 에 `@types/three`. 래퍼 (@react-three/fiber 등) 없음.
   T-010 1차 골격 병합 뒤 package.json 권한자가 넣는다.
 
+## Review routing (manager, 2026-10-01)
+
+Dev seats send `[검토요청 T-NNN]` to the assistant for their task. One branch, one assistant.
+
+| Assistant | Tasks |
+|---|---|
+| AF 검토보조1 | T-002 (all stages), T-011, T-015 |
+| AF 검토보조2 | T-007, T-008, T-012, T-021, T-023 |
+| AF 검토보조3 | T-004, T-009, T-013, T-018, T-019 |
+| AF 검토보조4 | T-010, T-014, T-016, T-020, T-022 |
+
+New tasks get an assistant in their card. Unlisted tasks go to the least loaded assistant.
+
 ## 후속 과제 후보
 
 - **WP-C 초점 이식에 같이 넣을 것** (실행2 메모, 2026-10-01): `focus/classical.py` 에
