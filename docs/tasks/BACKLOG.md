@@ -29,6 +29,11 @@
 - **실험 세션 API·화면**: `server/api/sessions.py`, `web/src/features/sessions/`. T-019, T-009, T-010 뒤.
 - **WP-C 이식, WP-G, WP-H, WP-J**: T-002 병합 단계에 맞춰.
 
+- **런북 보강** (검토 세션 제안, T-003 병합 때): `docs/runbooks/train-focus-head.md` 1절에 DINOv2 가중치가
+  첫 실행 때 인터넷에서 받아진다는 점, 현미경 PC 가 오프라인이면 `~/.cache/torch/hub/checkpoints` 를
+  미리 복사해야 한다는 점을 넣는다.
+- **T-019 git 쪽 구현**: 세션별 브랜치/워크트리 대 한 브랜치 폴더별 커밋. 사용자 결정 뒤.
+
 ## 현미경 PC 확인 항목 (총괄에 넘김)
 
 - `docs/operations-spec.md` 10절 Q1–Q21 (실행4, T-006)
