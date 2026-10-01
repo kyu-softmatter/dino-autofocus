@@ -103,3 +103,16 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 - `Command("start")` currently accepts `op=""`. Refuse an empty or unregistered operation name with a
   refusal event (events.py is yours now).
+
+## Last-shutdown light readback (ui-spec 5.2, accepted)
+
+- On every engine stop, the final light readback is already recorded. On start, load the last one and put it
+  in `snapshot()` as `last_shutdown_lights` (readback dicts plus the time and whether every light read off).
+  The web shell shows it on the first screen (T-010).
+
+## D15 (PLAN v1.1, 6beb85a): lights at M3
+
+- `light_set` and `lights_off` are available from M3, on the microscope PC in read-only mode. Nothing moves.
+- Gate light commands exactly like motion: operator logged in with the control token, experiment session open.
+  `lights_off` as a stop stays exempt (always accepted, also when locked or remote under D13).
+- Allow-list unchanged: Aura lines; DiaLamp `State` and `Intensity` only. Every exit path turns the lights off.

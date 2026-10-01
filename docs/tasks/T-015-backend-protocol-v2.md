@@ -51,3 +51,9 @@ position, Nosepiece State or PFS through it and bypass `require_token` (PLAN 6ì 
 - Test it on `FakeBackend` here, and make the contract test parametrised so T-021 (mock) and T-023 (mm-demo)
   run the same refusal test.
 - This is the first thing in T-015; send it for review on its own if the rest is not ready.
+
+## D15 (PLAN v1.1, 6beb85a)
+
+- Light methods that switch something on or change intensity take the control token like motion methods.
+  `all_off` takes none (it is a stop). The light allow-list (Aura lines; DiaLamp State and Intensity) lives in
+  one constant next to the protocol, and `set_property` refuses light properties outside it.
