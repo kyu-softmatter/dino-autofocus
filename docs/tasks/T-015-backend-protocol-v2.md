@@ -21,7 +21,7 @@
 3. 연속 취득: `start_stream()` / `next_frame()` / `stop_stream()`. 라이브 뷰와 edge_trace 가 같은
    스트림을 쓴다. 프레임 메타는 `snap()` 과 같다.
 
-## 매니저가 정한 상수 (현미경 PC 측정 전 임시값, docstring 에 "provisional" 표시)
+## 매니저가 정한 상수 (총괄 승인. 현미경 PC 측정 전 임시값, 코드와 기록에 "unmeasured provisional" 표시)
 
 - **큰 XY 이동 문턱** = min(현재 렌즈 시야 1 배, 1 mm). 4x 에서는 1 mm 라 edge_trace 걸음 200 µm 보다
   크다. 100x 에서는 약 156 µm 라 더 작은 이동도 Z 후퇴를 요구한다. 의도된 보수적 값이다.

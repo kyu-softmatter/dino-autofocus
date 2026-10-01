@@ -7,7 +7,7 @@
 | 파일 | 지금 권한 | 다음 | 그다음 |
 |---|---|---|---|
 | `pyproject.toml`, `uv.lock` | T-009 (실행7: fastapi, uvicorn, pydantic, httpx) | T-013 (`anthropic`) | T-012 (`gsd`) |
-| `web/package.json`, `package-lock.json` | T-010 (실행4) | `three` (T-012 요청 시) | T-014 가 요청하는 것 |
+| `web/package.json`, `package-lock.json` | T-010 (실행4). 열려 있는 동안 요청받은 패키지를 이 과제가 넣는다 | 차트 라이브러리 (T-012 그래프) | `three` (3D 뷰어), 그다음 T-014 요청분 |
 
 권한은 앞 과제가 main 에 병합된 뒤 넘긴다.
 
@@ -19,10 +19,15 @@
 - **T-015 백엔드 프로토콜 확장 + MockBackend**: 실행12 에 묶어서 준다 (T-002 병합 뒤).
 - **WP-G 하드웨어 파악**: T-002, T-015 뒤.
 - **mm_demo.py 본체**: T-017 (실행11) 뒤, T-002 병합 뒤.
-- **3D 궤적 뷰어 (Three.js)**: T-012 (공통 프레임 형식, 컨트롤, 2D) 병합 뒤. 소유
+- **3D 궤적 뷰어 (Three.js)**: T-012 1단계 (프레임 형식) 병합 뒤, 2D 와 병렬. 소유
   `web/src/features/simulation/viewer3d/`. 시작할 때 `three` 를 package.json 권한자가 넣는다.
 - **T-014 공통 프롬프트 칸**: 실행13 예약, T-010 1차 골격 병합 뒤.
 - **서버의 EngineAPI 사본 교체**: T-011 병합 뒤, T-009 소유 세션.
+
+- **로그인 서버·화면**: `server/api/auth.py` (쿠키 HttpOnly, SameSite=Strict), `web/src/app/login/`.
+  T-018, T-009, T-010 뒤. 담당은 T-018 작성자 (실행13) 가 유력. 런처는 고치지 않는다 (첫 화면 주소만 연다).
+- **실험 세션 API·화면**: `server/api/sessions.py`, `web/src/features/sessions/`. T-019, T-009, T-010 뒤.
+- **WP-C 이식, WP-G, WP-H, WP-J**: T-002 병합 단계에 맞춰.
 
 ## 현미경 PC 확인 항목 (총괄에 넘김)
 
