@@ -221,3 +221,16 @@ T-002 는 열 개가 넘는 과제의 선행이다. 한 번에 끝내지 말고 
   정지는 항상 받음) 은 T-011 이 구현한다.
 - 측정 전 임시 상수 (큰 XY 이동 문턱, z_safe, F5 이탈 거리 등) 는 코드에서 **"unmeasured provisional"**
   로 표시하고, 그 값이 가드 판단에 쓰인 기록에도 같은 표시를 남겨 실측값과 구분한다.
+
+## Long-XY threshold (PLAN fa2bdcd, section 5 Guards, option (a)). Required in stage 2 before merge
+
+- The threshold lives in ONE per-objective table inside `guards.py`, as data (not code branches). It moves
+  to the person-owned limits file (soft-matter-agents `envelope/`) at integration.
+- Remove the caller override completely. Operations cannot pass `long_move_um`.
+- Values follow free working distance: 4x (20 mm WD) allows tile moves at sample Z (keeps the 2026-09-30
+  scan); 100x Oil (130 µm WD) needs Z retracted beyond min(FOV, 1 mm). Other objectives: derive from their
+  WD in `configs/ti2_*.yaml`, or use the strictest value if unsure.
+- The objective comes from readback. If it cannot be read or is not in the table, use the strictest value
+  (retract first). Fixtures cover both cases.
+- Every table value is marked "unmeasured provisional". The motion record's basis field names the table
+  row, never "caller".
