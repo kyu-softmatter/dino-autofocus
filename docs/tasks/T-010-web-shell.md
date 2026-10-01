@@ -1,6 +1,6 @@
 # T-010 WP-D2 웹 셸 (Vite + React + TypeScript)
 
-- 담당: 미정. 먼저 비는 실행 세션 (총괄: 실행8 추가는 사용자 확인 중)
+- 담당: AF 실행4 · 개발 (T-006 다음)
 - 묶음: WP-D2 (PLAN.md v0.3 9절)
 - 선행: main 1f131fc (`web` 그룹의 Node 22). 생성 타입 연결은 T-009 의 `--dump-openapi` 가 main 에
   들어온 뒤. 그 전에는 골격, 레이아웃, 내비게이션부터 한다
@@ -19,6 +19,8 @@
 - 예외로 `web/src/features/live/` 는 이 과제 소유 (PLAN.md 9절 WP-D2 내용에 라이브 뷰가 있다.
   서버 쪽 프레임 브리지는 T-009 `ws.py`)
 - `web/.gitignore` (`node_modules/`, `dist/`). 루트 `.gitignore` 는 고치지 않는다
+- **제외 (v0.4)**: `web/src/app/assistant/` 는 T-014 (공통 프롬프트 칸) 소유다. 셸은 레이아웃에
+  프롬프트 칸이 들어갈 자리와 화면 문맥을 넘기는 훅의 이름만 정하고, 컴포넌트는 만들지 않는다
 
 ## 내용
 
@@ -51,3 +53,10 @@
 - `uv run npm --prefix web ci`, `uv run npm --prefix web run build`, `uv run npm --prefix web test`,
   타입 검사가 모두 통과. `web/dist` 와 `node_modules` 는 커밋하지 않는다
 - 끝나면 `[검토요청 T-010]` 를 검토 세션에. package.json 변경이 있다는 것을 첫 줄에 적는다
+
+## v0.6 조정 (PLAN.md 4652b4b, D7)
+
+- 상태 표시줄에 **Claude 데이터 단계** (`prompt_only` | `text` | `images`) 와 공급자 (`fake` | `anthropic`)
+  를 항상 보이게 한다. 값은 T-013 의 `GET /api/assistant/status`. 아직 없으면 "assistant: unavailable".
+- v0.5 (047048c): 시뮬레이션 화면 (T-012) 이 3D 궤적 뷰어에 Three.js 를 쓴다. `web/package.json` 은 이
+  과제 소유이므로, T-012 가 요청하면 매니저를 거쳐 `three` 를 이 과제에서 추가한다 (BACKLOG 참조).
