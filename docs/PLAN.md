@@ -12,6 +12,8 @@
   Claude 연동 설계 (5절), 결정 D6–D8, 작업 묶음 WP-K, WP-L.
 - v0.5: F6.3 궤적 뷰어를 2D 와 3D 둘 다 구현하기로 결정.
 - v0.6: D7 (Claude 에는 텍스트만, 이미지 없음), D8 (비용 우선 제한 없음) 결정. D6 은 권고안으로 진행.
+- v0.7: X3 로그인, X4 로그, F7 실험 세션 (세션마다 폴더 + 브랜치/워크트리, 라이브러리언이 주기적으로 병합).
+  설계 (5절), 규칙 12, 결정 D9–D11, 작업 묶음 WP-M, WP-N.
 
 ## 1. 목적과 범위
 
@@ -142,10 +144,23 @@
 |---|---|
 | X1 | **모든 화면에 프롬프트로 요청할 수 있는 칸**을 둔다 |
 | X2 | **모든 프롬프트와 기능을 Claude 와 연동**한다 (설계는 5절 "Claude 연동") |
+| X3 | **실행파일을 켜면 사용자가 누구인지 정하고 로그인**한다 |
+| X4 | **로그 파일을 남긴다**: 누가 언제 무엇을 했는지 |
 
 - 프롬프트 칸은 공통 컴포넌트 하나로 만들고, 화면은 자기 문맥을 붙여 보낸다.
   예: 샘플 맵 화면은 선택된 샘플 id 와 클릭한 영역, 시뮬레이션 화면은 선택된 run id.
 - 답변과 제안은 그 화면 안에 보여 주고, 같은 대화 기록을 모든 화면에서 이어 볼 수 있다.
+
+### F7. 실험 세션 관리
+
+| | 기능 |
+|---|---|
+| F7.1 | 실험 하나를 **실험 세션**으로 연다. 로그인한 사용자, 샘플, 시작 시각이 붙는다 |
+| F7.2 | 실험 세션마다 **별도의 폴더**와 **별도의 git 브랜치 (워크트리)** 로 관리한다 |
+| F7.3 | 끝난 세션은 **라이브러리언 에이전트가 주기적으로 병합**한다 |
+| F7.4 | 이전 세션을 열어 보고, 같은 샘플로 새 세션을 이어 시작한다 |
+
+- "실험 세션" 은 현미경 측정 한 번을 말한다. Claude 개발 세션과는 다른 것이다.
 
 ## 3. 현재 상태
 
@@ -220,6 +235,59 @@ Python 환경 방침 (권고, **최종 결정은 현미경 PC 에서**):
   `web` (nodejs-wheel) 으로 넣는다.** `uv sync` 만으로 현미경 PC 와 개발 PC 에 같은 버전이 깔린다.
   실행은 `uv run npm ...`, `uv run node ...`.
 
+### 사용자와 로그인 (X3, X4)
+
+```
+  exe 실행 -> 서버 기동 -> 브라우저가 로그인 화면으로 열림
+  로그인 -> 사용자 선택/인증 -> 실험 세션 열기 또는 이전 세션 보기
+```
+
+- **계정**: 이 PC 의 로컬 사용자 목록. 저장소 밖 설정 폴더에 두고 git 에 넣지 않는다.
+  비밀번호는 표준 라이브러리 `hashlib.scrypt` 로 해시해 저장하고 원문은 어디에도 남기지 않는다.
+- **역할**: `admin` (사용자 관리), `operator` (장비를 움직일 수 있음), `viewer` (보기만).
+  처음 실행하면 admin 을 만든다. 원격 보기 접속도 로그인해야 한다.
+- **장비 제어권**: 장비를 움직이는 사용자는 한 번에 한 명이다. 다른 사람은 보기만 한다.
+- **인증 쿠키**: HttpOnly, SameSite=Strict. 일정 시간 입력이 없으면 잠긴다. 잠겨도 진행 중인 작업과
+  가드는 멈추지 않고, 정지(abort)는 누구나 누를 수 있다.
+- **로그 세 가지**
+  - 앱 로그: 서버 동작, 오류. 날짜별 파일, 오래된 것은 자동 정리.
+  - 감사 로그 (`audit.jsonl`): 로그인/로그아웃, 모든 명령의 제안·확인·실행·거부, Claude 대화.
+    모든 줄에 사용자 id 와 실험 세션 id 가 붙는다. 덧붙이기만 하고 고치지 않는다.
+  - 실험 세션 로그: 그 세션 폴더 안에 남고, 세션 브랜치에 커밋된다.
+- **mock**: 개발과 테스트는 저장소의 테스트용 시드 파일에 있는 가짜 사용자로 한다.
+  실제 계정 정보는 저장소에 넣지 않는다.
+
+### 실험 세션과 기록 저장소 (F7)
+
+```
+  기록 저장소 (git, 코드 저장소와 별개)   예: D:\AutoFocus\records
+    main                          라이브러리언이 병합한 결과
+    session/<날짜-시각>-<사용자>-<n>   실험 세션 하나 = 브랜치 하나
+  세션 폴더 (그 브랜치의 워크트리)        예: D:\AutoFocus\sessions\<session_id>
+    session.json   사용자, 샘플, 시작/종료, 코드 커밋 해시, 하드웨어 구성 파일 해시
+    log/           실험 세션 로그
+    records/       작업별 기록 (jsonl), 샘플 맵 변경, flag, 수동 단계
+    manifest.json  큰 파일 목록: 경로, 크기, sha256
+  큰 데이터 폴더 (git 밖)                 예: D:\AutoFocus\data\<session_id>
+    frames, stacks, 모자이크 원본
+```
+
+- **세션마다 별도 폴더와 브랜치**: 세션은 자기 폴더만 쓴다. 그래서 병합할 때 충돌이 없다.
+- **샘플 상태는 덧붙이기 이벤트로 쓴다.** 맵 변경, flag, 입자 위치를 세션 폴더의
+  `records/sample_events.jsonl` 에 덧붙인다. 같은 샘플을 여러 세션이 고쳐도 병합에서 충돌하지 않고,
+  샘플의 현재 상태는 이벤트를 모아 만든다.
+- **자동 커밋**: 작업이 끝날 때마다, 그리고 세션을 닫을 때 커밋한다. 작성자는 로그인한 사용자다.
+  git 작업은 별도 작업자에서 돌려 장비 루프를 막지 않는다. 커밋이 실패해도 측정은 계속되고 실패는 로그에 남는다.
+- **큰 파일은 git 에 넣지 않는다.** 크기 상한을 넘는 파일은 manifest 에 경로와 해시만 남긴다.
+- **코드 버전 기록**: 세션을 열 때 이 저장소의 커밋 해시와 미커밋 변경 여부를 `session.json` 에 남긴다.
+- **닫기**: 세션을 닫으면 `ready-to-merge` 표시를 남긴다. 그 뒤로 세션 폴더는 읽기 전용이다.
+- **병합은 라이브러리언 에이전트가 한다.** soft-matter-agents 에서 지식 저장소를 소유하는 것이
+  라이브러리언이므로 역할이 맞다. 주기적으로 `ready-to-merge` 브랜치를 `main` 에 병합하고,
+  병합한 기록을 지식 저장소에 반영한다. 이 앱은 브랜치를 병합 가능한 상태로 두기만 하고 직접 병합하지 않는다.
+- **mock**: 통합 전에는 가짜 라이브러리언 병합 스크립트로 같은 흐름을 검증한다.
+- **soft-matter-agents 와의 관계**: 실험 세션은 그쪽의 `runs/<run_id>/` 에 대응한다. 통합 단계에서
+  세션 id 와 run id 를 잇는 방법을 정한다.
+
 ### Claude 연동 (X2)
 
 권고 구조: **서버 안에서 Claude API 를 부르고, 앱 기능을 Claude 의 도구로 노출한다.**
@@ -265,11 +333,15 @@ src/dino_autofocus/agents/              store.py mock_store.py sma_files.py
 src/dino_autofocus/focus/               classical.py dino.py verdict.py
 src/dino_autofocus/server/              app.py api/ (영역별 라우터) ws.py schemas/ static.py
 src/dino_autofocus/assistant/           tools.py (읽기/제안 도구) runner.py providers/ (anthropic, fake) records.py
+src/dino_autofocus/auth/                users.py (계정, scrypt) sessions.py (로그인 쿠키) audit.py (감사 로그)
+src/dino_autofocus/records/             session.py (실험 세션) gitstore.py (브랜치/워크트리, 자동 커밋) manifest.py mock_librarian.py
 web/                                    package.json vite.config.ts
 web/src/app/                            셸: 레이아웃, 내비게이션, 상태 표시줄, API 클라이언트
 web/src/api/                            OpenAPI 에서 생성한 타입 (생성물, 손으로 고치지 않음)
 web/src/features/<영역>/                console hardware sample map objective live simulation
 web/src/app/assistant/                  모든 화면 공통 프롬프트 칸 컴포넌트
+web/src/app/login/                      로그인 화면, 사용자 표시, 잠금
+web/src/features/sessions/              실험 세션 열기/닫기/목록/이전 세션 보기
 tests/engine/  tests/agents/  tests/focus/  tests/server/   web/ 의 테스트는 vitest
 ```
 
@@ -289,6 +361,8 @@ tests/engine/  tests/agents/  tests/focus/  tests/server/   web/ 의 테스트�
     세션마다 재추적, 액침액 로딩 확인 대기, 100x 상향 연장은 사용자 승인 후.
 11. **Claude 는 제안만 한다.** 동작 도구는 사람이 확인해야 실행되고, 확인 뒤에도 엔진의 게이트와
     가드를 그대로 지난다. Claude 는 안전 판단과 모션 한계에 들어가지 않는다.
+12. **모든 명령과 기록에는 사용자 id 와 실험 세션 id 가 붙는다.** 로그인한 operator 와 열린 실험 세션이
+    없으면 장비를 움직이는 명령은 거부된다. 정지는 예외로 항상 받는다.
 
 soft-matter-agents 와의 대응 (통합 단계에서 다룸):
 
@@ -313,6 +387,9 @@ soft-matter-agents 와의 대응 (통합 단계에서 다룸):
 | D6 | Claude 연동 방식 | **권고안으로 진행**: 서버의 Messages API + Tool Runner, 동작은 제안 카드. MCP 노출은 통합 단계 |
 | D7 | Claude 에 보낼 수 있는 데이터 | **결정: 텍스트만, 이미지는 보내지 않는다** (사용자, 2026-10-01). 아래 정책 |
 | D8 | 비용 한도 | **결정: 우선 제한 없음** (사용자, 2026-10-01). 사용량은 계속 표시·기록한다. 모델 `claude-opus-5-5` |
+| D9 | 로그인 방식 | **권고: 로컬 계정 + 비밀번호** (scrypt 해시). 대안은 PIN, 또는 Windows 계정을 그대로 쓰기 |
+| D10 | 기록 저장소 위치 | **권고: 현미경 PC 의 로컬 git 저장소**. 비공개 원격으로 push 할지는 사용자 결정 |
+| D11 | 라이브러리언 병합 주기 | **결정: 라이브러리언이 주기적으로 병합** (사용자, 2026-10-01). 주기는 통합 단계에서 정한다 |
 
 D7 데이터 정책 (서버 설정 하나로 강제하고, 기본값은 `text`):
 
@@ -360,6 +437,9 @@ D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 
 
 | WP-K 시뮬레이션 현황 (F6) | 진행률, 내려받기, 궤적 뷰어 2D(Canvas)·3D(Three.js), 결과 그래프. mock 실행 생성기 | `server/api/simulation.py`, `web/src/features/simulation/`, AgentStore 의 시뮬레이션 읽기 부분 | WP-F 어댑터, WP-D1·D2 |
 | WP-L Claude 연동 (X1, X2) | 도구 정의, Tool Runner, 가짜 공급자, 제안 카드 흐름, D7 데이터 정책, 사용량 표시, 기록, 공통 프롬프트 칸 | `assistant/`, `server/api/assistant.py`, `web/src/app/assistant/` | WP-A, WP-D1·D2. 실제 호출은 사용자가 API 키를 넣고 켤 때 |
+
+| WP-M 로그인과 로그 (X3, X4) | 계정, 역할, 로그인 쿠키, 잠금, 감사 로그, 앱 로그, 로그인 화면, exe 가 브라우저를 로그인 화면으로 열기 | `auth/`, `server/api/auth.py`, `web/src/app/login/`, `tools/launcher/` | WP-D1·D2 |
+| WP-N 실험 세션 (F7) | 세션 수명주기, 기록 저장소 브랜치/워크트리, 자동 커밋, manifest, 코드 버전 기록, 가짜 라이브러리언 병합, 세션 화면 | `records/`, `server/api/sessions.py`, `web/src/features/sessions/` | WP-A 기록 형식, WP-M 사용자 id |
 
 - 기능별 화면은 `server/api/<영역>.py` 와 `web/src/features/<영역>/` 를 한 묶음이 함께 소유한다.
   셸(WP-D2)은 각 영역을 내비게이션에 붙이는 등록 지점 하나만 열어 두고, 영역 묶음은 그 파일을 고치지 않는다.
