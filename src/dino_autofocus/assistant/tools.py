@@ -19,6 +19,7 @@ switched on (`IMAGES_PERMITTED`).
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import threading
@@ -70,12 +71,36 @@ class ToolSpec:
     stub: bool = False  # answers from a placeholder until the real source lands
 
     def definition(self) -> dict:
-        """What the provider sends: name, description, schema. Nothing else."""
+        """What the provider sends: name, description, strict schema. Nothing else.
+
+        `strict: true` makes the API keep arguments schema-valid (forced `tool_choice` is a
+        400 on claude-opus-5-5, so this is the guarantee). Strict schemas take no numeric
+        limits, so the sent schema carries them as text; `validate` still checks the full
+        `input_schema` before anything runs.
+        """
         return {
             "name": self.name,
             "description": self.description,
-            "input_schema": self.input_schema,
+            "input_schema": strict_schema(self.input_schema),
+            "strict": True,
         }
+
+
+_NUMERIC_LIMITS = (("minimum", ">="), ("maximum", "<="), ("exclusiveMinimum", ">"))
+
+
+def strict_schema(schema: dict) -> dict:
+    """`schema` without the keywords strict tool use rejects, each limit moved into the
+    property's description."""
+    props = {}
+    for name, p in schema.get("properties", {}).items():
+        q = {k: v for k, v in p.items() if k not in dict(_NUMERIC_LIMITS)}
+        limits = [f"{op} {p[k]:g}" for k, op in _NUMERIC_LIMITS if k in p]
+        if limits:
+            text = "Must be " + " and ".join(limits) + "."
+            q["description"] = f"{q['description']} {text}" if "description" in q else text
+        props[name] = q
+    return {**schema, "properties": props}
 
 
 @dataclass
@@ -537,7 +562,7 @@ class ToolSet:
         self._definitions = tuple(s.definition() for s in offered)
 
     def definitions(self) -> list[dict]:
-        return [dict(d) for d in self._definitions]
+        return copy.deepcopy(list(self._definitions))
 
     def spec(self, name: str) -> ToolSpec | None:
         return self._specs.get(name)

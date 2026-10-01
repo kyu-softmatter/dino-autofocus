@@ -355,3 +355,70 @@ def test_import_loads_neither_anthropic_nor_torch():
         "assert not bad, bad\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+# --------------------------------------------------------------------------- loop conditions
+# (PLAN.md 5절 D6: the conditions under which the loop is ours rather than the Tool Runner)
+
+
+def test_refusal_runs_no_tools():
+    a, provider, engine = make(
+        [
+            {
+                "content": [tool_use("propose_lights_off", reason="r")],
+                "stop_reason": "refusal",
+            }
+        ]
+    )
+    ans = a.ask("q")
+    assert ans.stop_reason == "refusal" and ans.proposals == [] and len(provider.requests) == 1
+    assert a.proposals.list() == [] and engine.submitted == []
+
+
+def test_several_tool_calls_answer_in_one_user_message():
+    a, provider, engine = make(
+        [
+            [
+                tool_use("get_hardware_state"),
+                tool_use("get_sample", sample_id=7),  # wrong type: fails validation
+                tool_use("propose_lights_off", reason="r"),
+            ],
+            [text("done")],
+        ]
+    )
+    ans = a.ask("q")
+    msgs = provider.requests[1].messages
+    assert [m["role"] for m in msgs] == ["user", "assistant", "user"]
+    results = msgs[-1]["content"]
+    assert [b["type"] for b in results] == ["tool_result"] * 3
+    ids = [b["id"] for b in provider.requests[1].messages[1]["content"]]
+    assert [b["tool_use_id"] for b in results] == ids
+    assert [b.get("is_error", False) for b in results] == [False, True, False]
+    assert engine.snapshots == 1 and len(ans.proposals) == 1
+
+
+def test_history_is_append_only_and_keeps_thinking_blocks():
+    thinking = {"type": "thinking", "thinking": "", "signature": "sig-abc"}
+    turn1 = [dict(thinking), text("Looking. "), tool_use("get_hardware_state")]
+    a, provider, _ = make([turn1, [text("Z is 2950.")], [text("again")]])
+    cid = a.ask("q1").conversation_id
+    a.ask("q2", conversation_id=cid)
+    first, second, third = provider.requests
+    sent_back = second.messages[1]["content"]
+    assert sent_back[0] == thinking and sent_back[1] == text("Looking. ")
+    # every later request starts with every earlier one, unchanged
+    assert second.messages[: len(first.messages)] == first.messages
+    assert third.messages[: len(second.messages)] == second.messages
+
+
+def test_system_prompt_and_tools_are_byte_stable():
+    def sent_bytes():
+        a, provider, _ = make([[tool_use("get_hardware_state")], [text("x")]])
+        a.ask("q", context={"area": "live", "t": 1.5})
+        return [
+            json.dumps([r.system, r.tools], ensure_ascii=False).encode() for r in provider.requests
+        ]
+
+    one, two = sent_bytes(), sent_bytes()
+    assert len(set(one + two)) == 1  # same bytes across calls and across instances
+    assert "datetime" not in SYSTEM_PROMPT and "{" not in SYSTEM_PROMPT

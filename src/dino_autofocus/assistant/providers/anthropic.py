@@ -12,8 +12,12 @@ Request shape, per call:
 - the system prompt as one text block with a cache breakpoint, after the tool list, which is
   the same list in the same order on every call; tools render before system, so one
   breakpoint caches both. Top-level `cache_control` caches the conversation so far.
-- `output_config.effort`; thinking is left at the model's default (adaptive on Opus 5.5).
-- `eager_input_streaming` on every tool: inputs are validated in `tools.validate` anyway.
+- `output_config.effort` always set; no `thinking` field, so the model's default (adaptive on
+  Opus 5.5) stands and nothing disables it.
+- `tool_choice` auto, `strict` on every tool (from `ToolSpec.definition`), and
+  `eager_input_streaming`: inputs are validated in `tools.validate` before anything runs.
+- the content blocks come back as dicts and go into the history unchanged, thinking blocks
+  included (append-only history).
 - refusal fallback (`fallbacks="default"`), on by default.
 The loop around it (tool calls, proposals) is `assistant.runner`'s, shared with the fake.
 """
@@ -98,6 +102,9 @@ class AnthropicProvider:
                 {"type": "text", "text": request.system, "cache_control": {"type": "ephemeral"}}
             ],
             "tools": [{**t, "eager_input_streaming": True} for t in request.tools],
+            # never "any"/"tool" (a 400 on claude-opus-5-5); the system prompt says when to
+            # call tools and `strict` keeps the arguments schema-valid
+            "tool_choice": {"type": "auto"},
             "messages": request.messages,
             "output_config": {"effort": request.effort},
             "cache_control": {"type": "ephemeral"},

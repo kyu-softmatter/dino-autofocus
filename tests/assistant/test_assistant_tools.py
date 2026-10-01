@@ -109,9 +109,27 @@ def test_definitions_are_fixed_and_carry_only_api_fields():
     ts = ToolSet()
     a, b = ts.definitions(), ts.definitions()
     assert a == b and [d["name"] for d in a] == [s.name for s in TOOL_SPECS]
-    assert all(set(d) == {"name", "description", "input_schema"} for d in a)
+    assert all(set(d) == {"name", "description", "input_schema", "strict"} for d in a)
+    assert all(d["strict"] is True for d in a)
     a[0]["name"] = "changed"
+    a[-1]["input_schema"]["properties"].clear()
     assert ts.definitions() == b  # callers cannot change the cached list
+
+
+def test_sent_schemas_are_strict_compatible_and_keep_limits_as_text():
+    for d in ToolSet().definitions():
+        s = d["input_schema"]
+        assert s["additionalProperties"] is False
+        for p in s["properties"].values():
+            assert not {"minimum", "maximum", "exclusiveMinimum"} & set(p)
+    scan = next(d for d in ToolSet().definitions() if d["name"] == "propose_scan_4x")
+    assert (
+        scan["input_schema"]["properties"]["overlap"]["description"] == "Must be >= 0 and <= 0.9."
+    )
+    # the full schema, limits included, is still what validates the model's input
+    assert (
+        ToolSet().call("propose_scan_4x", {"sample_id": "s", "reason": "r", "overlap": 2}).is_error
+    )
 
 
 def test_prompt_only_offers_no_read_tools():

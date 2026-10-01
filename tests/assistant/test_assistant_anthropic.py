@@ -131,3 +131,37 @@ def test_same_proposal_gate_with_the_real_provider_shape():
     assert second["system"] == client.calls[0]["system"]
     assert second["messages"][-1]["content"][0]["tool_use_id"] == "toolu_1"
     assert ans.usage["input_tokens"] == 2400
+
+
+def test_no_forced_tool_choice_and_strict_tools():
+    a = Assistant(provider=AnthropicProvider(client=object()), records=RecordLog())
+    kw = a.provider.request_kwargs(request(tools=a.tools.definitions(), effort=a.config.effort))
+    assert kw["tool_choice"] == {"type": "auto"}
+    assert all(t["strict"] is True and t["eager_input_streaming"] is True for t in kw["tools"])
+    assert kw["output_config"] == {"effort": "medium"}  # set explicitly, never left to default
+
+
+def test_thinking_blocks_go_back_unchanged_and_prefix_bytes_stay_put():
+    import json
+
+    think = Obj(type="thinking", thinking="", signature="sig-1")
+    client = Client(
+        [
+            (
+                [think, Obj(type="tool_use", id="toolu_9", name="get_hardware_state", input={})],
+                "tool_use",
+            ),
+            ([Obj(type="text", text="2950 um")], "end_turn"),
+        ]
+    )
+    a = Assistant(provider=AnthropicProvider(client=client), records=RecordLog())
+    a.ask("where?")
+    first, second = client.calls
+    assert second["messages"][1]["content"][0] == {
+        "type": "thinking",
+        "thinking": "",
+        "signature": "sig-1",
+    }
+    assert second["messages"][: len(first["messages"])] == first["messages"]
+    for key in ("system", "tools", "tool_choice", "output_config"):
+        assert json.dumps(first[key]).encode() == json.dumps(second[key]).encode()
