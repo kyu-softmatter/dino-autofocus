@@ -18,6 +18,13 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
+web = [
+    "nodejs-wheel>=22,<23",
+]
+
+[tool.uv]
+# `uv sync` installs Node (web group) too, so the React build needs no system Node.
+default-groups = ["dev", "web"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu126" }

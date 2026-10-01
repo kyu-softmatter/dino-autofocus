@@ -15,7 +15,7 @@ Two interpreters are used:
 | Interpreter | Runs | Install |
 |---|---|---|
 | System Python 3.12 (`%LOCALAPPDATA%\Programs\Python\Python312`, or on PATH) | `scripts/launcher.py` (tkinter UI) and the hardware scripts it starts | python.org installer, then `python -m pip install numpy pillow opencv-python pymmcore==12.5.0.75.0 pymmcore-plus==0.18.1` |
-| Repo uv env (`.venv`) | plots, the DINO focus scorer, dataset generation, training | `uv sync` in the repo (pulls torch cu126) |
+| Repo uv env (`.venv`) | plots, the DINO focus scorer, dataset generation, training, and Node 22 for the web UI build | `uv sync` in the repo (pulls torch cu126 and, via the `web` group, Node; run it as `uv run npm ...`) |
 
 ## 3. DINOv2 backbone (only for the focus scorer / training)
 

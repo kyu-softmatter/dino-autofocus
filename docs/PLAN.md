@@ -7,6 +7,7 @@
 - v0.1: 목표, 구조, 설계 규칙, 결정 D1–D5, 작업 묶음 WP-A–E.
 - v0.2: 사용자 요구사항 F1–F5 추가 (2026-10-01). **모든 기능을 mock 으로 먼저 구축**.
   Python 환경 방침 추가. 작업 묶음 WP-F–J 추가. D1 권고 갱신. D5 결정 (통합 시 공개).
+- v0.3: **D1 결정: 로컬 웹 앱 (FastAPI + React)**. D3 확정. 서버/웹 구조, API 규칙, 작업 묶음 WP-D 분할. Node 는 uv 그룹 `web`.
 
 ## 1. 목적과 범위
 
@@ -26,7 +27,7 @@
 
 ### F1. 유저 인터페이스
 
-기술은 제한 없음 (PySide6, pymmcore-widgets, tkinter, HTML/CSS/React 등). 결정은 D1.
+기술: **로컬 웹 앱, FastAPI 백엔드 + React 프런트** (D1, 사용자 결정 2026-10-01). 구조는 5절.
 
 | | 기능 | 데이터 출처 |
 |---|---|---|
@@ -140,10 +141,12 @@ Python 환경 방침 (권고, **최종 결정은 현미경 PC 에서**):
 ## 5. 아키텍처
 
 ```
-  UI  (에이전트 콘솔 + 현미경 화면, 확인 대화상자)     <- 하드웨어 로직 없음
-     | commands                 ^ events / frames
-     v                          |
-  Engine  (operations + guards + gates + records)       <- UI 없이 import 가능, 통합 대상
+  Web (React + TypeScript, 브라우저)                   <- 하드웨어 로직 없음, API 만 부른다
+     | REST: commands, queries       ^ WebSocket: events, live frames
+     v                               |
+  Server (FastAPI, 하나의 Python 프로세스)               <- 엔진을 소유, 요청을 엔진 명령으로 옮김
+     |
+  Engine  (operations + guards + gates + records)       <- 웹/서버 없이 import 가능, 통합 대상
      |                     |
   Backend                  AgentStore
   mock | mm-demo | mm-real   mock | soft-matter-agents 파일 (읽기 전용)
@@ -163,6 +166,22 @@ Python 환경 방침 (권고, **최종 결정은 현미경 PC 에서**):
 - **Focus**: 고전 지표가 기본이고 최종 판정자다. DINO 점수는 보조이며 torch 는 쓸 때만 import 한다.
 - 기존 `scripts/*` 는 이식이 끝날 때까지 그대로 둔다.
 
+웹 앱 규칙:
+- **Server** 는 엔진의 유일한 소유자다. 프로세스 하나, 코어 하나. 서버는 판단하지 않고
+  요청을 엔진 명령으로 옮기고, 엔진 이벤트를 WebSocket 으로 내보낸다.
+- **API 계약은 한 곳에서 정한다.** 명령, 이벤트, 응답은 Python 쪽 pydantic 모델로 정의하고,
+  FastAPI 가 만드는 OpenAPI 에서 TypeScript 타입을 생성한다. 손으로 쓴 사본을 두지 않는다.
+- **라이브 영상**: 서버가 비닝해 약 800 px JPEG 로 WebSocket 에 보낸다. 목표 10 fps.
+  원본 프레임은 디스크 기록에만 남는다.
+- **접속 범위**: 기본은 `127.0.0.1` 에만 바인딩한다. 다른 PC 에서 보기는 설정으로 켠다.
+  원격 접속에서는 읽기만 허용하고, 움직이는 명령은 현미경 PC 의 브라우저에서만 받는다.
+- **배포**: React 는 빌드 결과(`web/dist`)를 FastAPI 가 정적 파일로 제공한다.
+  실행에는 Node 가 필요 없고 빌드에만 필요하다. `web/dist` 는 git 에 넣지 않는다.
+- **런처**: 데스크톱 exe 는 서버를 띄우고 브라우저를 연다. 기존 tkinter 런처는 이식 후 정리한다.
+- 툴체인: Node 22 LTS, Vite, React, TypeScript, npm. **Node 는 시스템에 설치하지 않고 uv 의존성 그룹
+  `web` (nodejs-wheel) 으로 넣는다.** `uv sync` 만으로 현미경 PC 와 개발 PC 에 같은 버전이 깔린다.
+  실행은 `uv run npm ...`, `uv run node ...`.
+
 디렉터리:
 
 ```
@@ -172,8 +191,12 @@ src/dino_autofocus/engine/operations/   status.py hardware_scan.py edge_trace.py
                                         sample_map.py objective_change.py focus_100x.py lights_off.py
 src/dino_autofocus/agents/              store.py mock_store.py sma_files.py
 src/dino_autofocus/focus/               classical.py dino.py verdict.py
-src/dino_autofocus/ui/                  (D1 결정 후)
-tests/engine/  tests/agents/  tests/focus/  tests/ui/
+src/dino_autofocus/server/              app.py api/ (영역별 라우터) ws.py schemas/ static.py
+web/                                    package.json vite.config.ts
+web/src/app/                            셸: 레이아웃, 내비게이션, 상태 표시줄, API 클라이언트
+web/src/api/                            OpenAPI 에서 생성한 타입 (생성물, 손으로 고치지 않음)
+web/src/features/<영역>/                console hardware sample map objective live
+tests/engine/  tests/agents/  tests/focus/  tests/server/   web/ 의 테스트는 vitest
 ```
 
 ## 6. 설계 규칙 (통합 대비)
@@ -206,18 +229,17 @@ soft-matter-agents 와의 대응 (통합 단계에서 다룸):
 
 | # | 질문 | 상태 / 권고 |
 |---|---|---|
-| D1 | UI 기술 | **권고 갱신: 로컬 웹 앱** (Python FastAPI 백엔드 + React 프런트). 이유는 아래 |
+| D1 | UI 기술 | **결정: 로컬 웹 앱, FastAPI + React** (사용자, 2026-10-01). 이유는 아래 |
 | D2 | Python 환경 | 4절 방침. **현미경 PC 에서 최종 결정** (사용자, 2026-10-01) |
-| D3 | 엔진 프로세스 | D1 이 웹이면 엔진은 백엔드 서버 프로세스 안에서 돈다. 규칙 7 로 어느 쪽이든 대응 |
+| D3 | 엔진 프로세스 | **결정: 엔진은 FastAPI 서버 프로세스 안에서 돈다** (D1 에 따름). 엔진은 서버 없이도 import 된다 |
 | D4 | 첫 범위 | **결정: 모든 기능을 mock 으로 먼저** (사용자, 2026-10-01) |
 | D5 | 공개/비공개 | **결정: 통합할 때 이 저장소를 공개한다** (사용자, 2026-10-01). 그때까지 비공개 |
 
-D1 권고가 바뀐 이유: v0.1 에서는 현미경 화면만 범위여서 PySide6 를 권했다. F1 로 범위가
+D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 PySide6 를 권했다. F1 로 범위가
 에이전트 콘솔까지 넓어졌다. 질문 입력, 카드와 실행 기록 열람, 샘플 맵 클릭, 상태 대시보드는
 웹이 만들기 쉽다. 같은 화면을 WSL 이나 다른 PC 의 브라우저에서도 열 수 있다. 엔진이 HTTP API
 뒤에 있으면 나중에 에이전트가 같은 API 를 쓰기도 쉽다. 대가는 두 언어(Python, TypeScript)와
 라이브 영상 스트리밍이다. 라이브 영상은 서버에서 비닝해 약 800 px JPEG 로 보내면 10 fps 가 가능하다.
-PySide6 를 택해도 엔진 규칙(6절 7, 8)은 그대로다.
 
 ## 8. 마일스톤
 
@@ -237,15 +259,18 @@ PySide6 를 택해도 엔진 규칙(6절 7, 8)은 그대로다.
 | WP-A 엔진 계약 | Backend 프로토콜, 이벤트, 기록, 가드/게이트 골격 | `engine/{backend,events,records,guards,gates,sample}.py` | 없음. 가장 먼저 |
 | WP-B 백엔드 | **mock 시뮬레이터 우선**, replay, mm-demo, mm-real | `engine/backends/` | WP-A |
 | WP-C 기존 작업 이식 | status, lights_off, edge_trace, scan_4x, focus_100x | `engine/operations/` 의 해당 파일 | WP-A, WP-B mock |
-| WP-D UI 셸 | 앱 골격, 내비게이션, 라이브 뷰, 상태 표시줄 | `ui/` 의 셸 부분 | D1 |
+| WP-D1 서버 골격 | FastAPI 앱, 라우터 구조, WebSocket 이벤트/프레임 브리지, 정적 파일 제공, 접속 범위 설정 | `server/{app,ws,static}.py`, `server/schemas/` 공통, `tests/server/` | WP-A 이벤트 형식 |
+| WP-D2 웹 셸 | Vite + React + TS 프로젝트, 레이아웃, 내비게이션, 상태 표시줄, 생성 타입 클라이언트, 라이브 뷰 | `web/` 전체 중 `web/src/features/` 제외 | Node 설치, WP-D1 OpenAPI |
 | WP-E 초점 + 학습 런북 | 고전 지표, DINO 래퍼, 판정 매핑, 현미경 PC 학습 절차 | `focus/`, `docs/runbooks/` | 없음 |
-| WP-F 에이전트 콘솔 (F1) | AgentStore 어댑터, mock 저장소, 질문/이전 질문/시뮬레이션/실험 화면 | `agents/`, `ui/` 의 콘솔 화면 | 어댑터는 없음, 화면은 WP-D |
-| WP-G 하드웨어 파악 (F2) | 탐지, 구성 파일 형식, 게이트 판정 | `engine/operations/hardware_scan.py`, `engine/gates.py` 의 규칙 | WP-A |
-| WP-H 샘플 로딩 (F3) | 지오메트리 데이터 모델, 입력 창, 로딩 확인 | `engine/sample.py` 의 지오메트리 부분, `ui/` 의 샘플 창 | WP-A |
-| WP-I 샘플 맵 (F4) | 투과광 모자이크, 입자 후보, flag, 클릭 이동 | `engine/operations/sample_map.py`, `ui/` 의 맵 화면 | WP-B mock, WP-C scan_4x |
-| WP-J 배율 전환 (F5) | 2절 F5 순서, XY 이탈/복귀, 수동 단계 | `engine/operations/objective_change.py`, `ui/` 의 전환 화면 | WP-A, WP-B mock |
+| WP-F 에이전트 콘솔 (F1) | AgentStore 어댑터, mock 저장소, 질문/이전 질문/시뮬레이션/실험 화면 | `agents/`, `server/api/console.py`, `web/src/features/console/` | 어댑터는 없음, 화면은 WP-D1·D2 |
+| WP-G 하드웨어 파악 (F2) | 탐지, 구성 파일 형식, 게이트 판정 | `engine/operations/hardware_scan.py`, `engine/gates.py` 의 규칙, `server/api/hardware.py`, `web/src/features/hardware/` | WP-A |
+| WP-H 샘플 로딩 (F3) | 지오메트리 데이터 모델, 입력 창, 로딩 확인 | `engine/sample.py` 의 지오메트리 부분, `server/api/sample.py`, `web/src/features/sample/` | WP-A |
+| WP-I 샘플 맵 (F4) | 투과광 모자이크, 입자 후보, flag, 클릭 이동 | `engine/operations/sample_map.py`, `server/api/map.py`, `web/src/features/map/` | WP-B mock, WP-C scan_4x |
+| WP-J 배율 전환 (F5) | 2절 F5 순서, XY 이탈/복귀, 수동 단계 | `engine/operations/objective_change.py`, `server/api/objective.py`, `web/src/features/objective/` | WP-A, WP-B mock |
 
-- `ui/` 는 화면별 하위 폴더로 나눠 소유를 분리한다. 구체 경로는 D1 결정 후 매니저가 정한다.
+- 기능별 화면은 `server/api/<영역>.py` 와 `web/src/features/<영역>/` 를 한 묶음이 함께 소유한다.
+  셸(WP-D2)은 각 영역을 내비게이션에 붙이는 등록 지점 하나만 열어 두고, 영역 묶음은 그 파일을 고치지 않는다.
+- `web/package.json`, `web/package-lock.json` 은 `pyproject.toml` 과 같은 규칙이다. 매니저를 통해 한 세션만 고친다.
 - `engine/gates.py` 와 `engine/sample.py` 는 WP-A 가 골격을 만들고, 이후 내용은 G 와 H 가
   나눠 맡는다. 동시에 같은 파일을 배정하지 않는다.
 - 공유 파일: `pyproject.toml`, `uv.lock` 은 매니저를 통해 한 세션만 고친다.
