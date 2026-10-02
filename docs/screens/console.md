@@ -18,7 +18,7 @@ All are mounted at `/api/console` by T-009's area-router mechanism. Bodies are t
 
 | Method, path | Query / body | Response | AgentStore |
 |---|---|---|---|
-| `GET /capabilities` | | `{store, can_submit, submit_reason}` (see "Rules") | `store.source`, `writable` (gap 1) |
+| `GET /store` | | `{store, writable}`: `"mock"` / `"soft-matter-agents"` (see "Rules") | store kind, `writable` (gap 1) |
 | `GET /questions` | `agent=microscope\|simulation`, optional. Omitted: both, merged newest first | `QuestionSummary[]` | `list_questions(agent)`, once per agent |
 | `GET /questions/{qid}` | `version=N`, optional. Omitted: latest | `QuestionDetail` (`summary.versions` lists the others) | `get_question(qid, version)` |
 | `GET /runs` | `agent=`, optional, as for questions | `RunSummary[]` | `list_runs(agent)` |
@@ -46,22 +46,21 @@ Reads (`GET`) are open to every logged-in user, local or remote, any role (ui-sp
 
 Submit is refused in this order; the first reason is the one shown (ui-spec 7.0 "비활성 이유"):
 
-The screen shows the ui-spec text below, not the server's `detail` (T-009's middleware detail is
-`"commands are accepted only on the microscope PC (...)"`); `GET /capabilities` returns the screen text.
+Before anyone clicks, the screen asks the shared `GET /api/permissions?ops=submit_question` (T-009b, backed
+by T-011's check and T-018's `SUBMIT_QUESTION` plus loopback) and shows its `reason` as written. The console
+router computes no role, control, session or remote rule itself; it adds only its own rule, the read-only
+store, through `GET /api/console/store`. The screen shows the permission reason first, then the store's.
 
-| Check | Where | Status | Screen text |
+| Check | Where | Status on submit | Screen text |
 |---|---|---|---|
-| Request is not from the microscope PC | T-009 middleware (non-GET from non-loopback) | 403 | `"Read-only: remote view"` |
-| Not logged in, or screen locked | `control.authorize(SUBMIT_QUESTION, ...)` | 403 | the decision's reason |
-| Role below operator (viewer) | same, D16 | 403 | `"Needs the operator role"` |
-| Store is not the mock store | `ReadOnlyStoreError` | 409 | `"Submitting to soft-matter-agents is not connected yet (read-only)"` |
+| Request is not from the microscope PC | `/api/permissions`; T-009 middleware on the POST | 403 | `"Read-only: remote view"` (the permission reason) |
+| Not logged in, screen locked, role below operator | `/api/permissions`; `authorize(SUBMIT_QUESTION)` on the POST, D16 | 403 | the permission reason, e.g. `"Needs the operator role"` |
+| Store is not the mock store | `/api/console/store`; `ReadOnlyStoreError` on the POST | 409 | `"Submitting to soft-matter-agents is not connected yet (read-only)"` |
 
-- D16: the route calls `authorize(Action.SUBMIT_QUESTION, login_token, local=<loopback>)`. Hiding or
-  disabling the button is only the display of that result. Device control (the control token) is not
-  needed: submitting moves nothing. An open experiment session is not needed either (PLAN 6절 12항 covers
-  commands that move hardware); `session_id` is recorded when one is open, else null.
-- `GET /capabilities` runs the same checks without writing and returns the first failing reason in
-  `submit_reason`, so the form is disabled with its reason before anyone clicks.
+- D16: the POST route still calls `authorize(Action.SUBMIT_QUESTION, login_token, local=<loopback>)` on the
+  server. Disabling the button is only the display of the permission answer. Device control (the control
+  token) is not needed: submitting moves nothing. An open experiment session is not needed either (PLAN
+  6절 12항 covers commands that move hardware); `session_id` is recorded when one is open, else null.
 - Every submit attempt, accepted or refused, goes to the audit log with `user_id`, `session_id`, `target`
   and the new `qid` (PLAN 5절 "로그 세 가지", gap 4).
 
@@ -98,3 +97,7 @@ no card bodies and no images (D7).
 6. ~~T-010 / T-012~~: closed. The link is `#/simulation/runs/<run_id>`; the shell passes `#/<area>/<rest>`
    through (no link helper) and T-012 stage 2 reads the suffix.
 7. ~~T-014~~: resolved by the shell's `useScreenContext` (T-010); nothing waits on T-014.
+8. **T-008 / T-025, store**: ui-spec 7.1 list columns that the summaries do not carry: `purpose`, `intent`,
+   `observable.name` of the latest goal (`QuestionSummary`), and `approval.kind` of the log (`RunSummary`).
+   Request them as optional summary fields. Until then the lists show the summary fields only and the
+   detail shows the rest.
