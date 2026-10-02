@@ -6,7 +6,7 @@
 
 | 파일 | 지금 권한 | 다음 | 그다음 |
 |---|---|---|---|
-| `pyproject.toml`, `uv.lock` | T-009 (실행7: fastapi, uvicorn, pydantic, httpx) | T-013 (`anthropic`) | T-012 (`gsd`) |
+| `pyproject.toml`, `uv.lock` | T-012 (실행9: `gsd`), since T-013b (anthropic) merged 2026-10-02 | 다음 요청자 (매니저 경유) | |
 | `web/package.json`, `package-lock.json` | T-010 (실행4). 열려 있는 동안 요청받은 패키지를 이 과제가 넣는다 | 차트 라이브러리 (T-012 그래프) | `three` (3D 뷰어), 그다음 T-014 요청분 |
 
 권한은 앞 과제가 main 에 병합된 뒤 넘긴다.
