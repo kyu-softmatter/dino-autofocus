@@ -10,11 +10,11 @@ export interface Loaded<T> {
 }
 
 /**
- * Load `fetcher()` when `key` changes, and again every `everyMs` while `everyMs` is set (a running
- * simulation). Progress is polled for now; it moves to the server's event stream (T-009) when the
- * router lands. Stale answers for an old key are dropped.
+ * Load `fetcher()` when `key` changes, again every `everyMs` while `everyMs` is set (a running
+ * simulation), and once more when `refresh` changes (keeping what is shown meanwhile). Stale
+ * answers for an old key are dropped.
  */
-export function usePolled<T>(key: string | null, fetcher: () => Promise<T>, everyMs: number | null): Loaded<T> {
+export function usePolled<T>(key: string | null, fetcher: () => Promise<T>, everyMs: number | null, refresh: unknown = null): Loaded<T> {
   const [state, setState] = useState<Loaded<T> & { key: string | null }>({ data: null, error: null, loading: false, key: null });
   const fetchRef = useRef(fetcher);
   fetchRef.current = fetcher;
@@ -37,7 +37,7 @@ export function usePolled<T>(key: string | null, fetcher: () => Promise<T>, ever
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, [key, everyMs]);
+  }, [key, everyMs, refresh]);
 
   if (state.key !== key) return { data: null, error: null, loading: key !== null };
   return { data: state.data, error: state.error, loading: state.loading };
