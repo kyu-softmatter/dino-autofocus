@@ -87,6 +87,7 @@ def test_scan_reads_every_section_of_the_fake(fake: FakeBackend) -> None:
     assert rows[5].working_distance_um == 130.0 and rows[5].wd_source == "guards.FREE_WD_UM"
     assert p.objective == "1-Plan Apo LmbdD20 4x"
     assert all(d.write_verified is None for d in p.device_list)
+    assert p.bench is False  # a simulated kind with bench False (backend.is_bench)
     assert p.errors == {}
     json.loads(p.to_json())
 
@@ -100,9 +101,16 @@ def test_scan_of_the_mock_backend_opens_every_gate() -> None:
         p = scan(ReadOnly(b), piezo_port="")
     finally:
         b.close()
-    assert p.backend_kind == "mock"
+    assert p.backend_kind == "mock" and p.bench is False
     assert {k: r.reasons for k, r in evaluate(p).items() if not r.enabled} == {}
     assert next(r for r in p.objective_rows if r.state == 1).wd_source == "backend"
+
+
+def test_an_unreadable_info_is_the_bench(fake, monkeypatch) -> None:
+    monkeypatch.setattr(fake, "info", lambda: (_ for _ in ()).throw(OSError("no core")))
+    p = scan(fake, piezo_port="")
+    assert p.bench is True and p.backend_kind == "unknown" and "info" in p.errors
+    assert p.camera == {} and p.camera_bit_depth is None
 
 
 def test_a_failed_read_is_a_field_and_the_rest_still_reads(fake, monkeypatch) -> None:

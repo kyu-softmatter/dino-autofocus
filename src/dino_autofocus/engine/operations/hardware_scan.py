@@ -32,7 +32,7 @@ from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
 
-from ..backend import Backend, DeviceInfo, NosepieceLabel
+from ..backend import Backend, DeviceInfo, NosepieceLabel, is_bench
 from ..gates import (
     GATES,
     ROLE_LABELS,
@@ -153,7 +153,7 @@ def scan(backend: Backend, *, include_properties: bool = True,
         camera_bit_depth=getattr(info, "bit_depth", None),
         confirmed=dict(confirmed or {}),
         host=host if host is not None else socket.gethostname(),
-        bench=bool(getattr(info, "bench", False)),
+        bench=is_bench(info),  # the shared rule: no info or unknown kind = the bench
         objective=objective if isinstance(objective, str) else None,
         config=cfg,
         device_list=[DeviceRow(d.label, d.type, d.library, d.description, role_of.get(d.label),

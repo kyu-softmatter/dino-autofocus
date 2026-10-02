@@ -104,7 +104,7 @@ class HardwareProfile:
     #: item -> {"value", "by", "at"} (`hardware_confirm`); the operator's word, not a detection
     confirmed: dict[str, Any] = field(default_factory=dict)
     host: str = ""
-    bench: bool = False  # BackendInfo.bench: the real stand
+    bench: bool = True  # backend.is_bench(info): the real stand, the strict default
     objective: str | None = None  # nosepiece label at detection time
     config: dict = field(default_factory=dict)  # path, sha256, changed_during_load, ...
     device_list: list[DeviceRow] = field(default_factory=list)
