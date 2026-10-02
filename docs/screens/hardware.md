@@ -53,7 +53,10 @@ Why a button is off comes from the shared `GET /api/permissions?ops=hardware_sca
 endpoint, which returns `{op: {allowed, reason}}` (T-009b, backed by T-011 `check()`). That endpoint covers remote,
 role, control, session and the running operation. If the permission allows the op, the screen adds this area's
 own gate reason from `/api/hardware/gates`. The screen re-reads permissions after every `started`, `finished`,
-`aborted`, `error` and `preflight_failed` event. A refusal that reaches a click anyway (a 403 `detail`, or a
+`aborted`, `error` and `preflight_failed` event. If `/api/permissions` cannot be read, every control is off with the
+reason `"Permission check unavailable"` (the rule for all screens). This screen's `"Lights off"` stays on, like the
+shell's Abort and Lights off. The lights panel follows `light_changed` only: the end of an operation does not
+mean the lights are off, because a `light_set` survives the next op (T-011). A refusal that reaches a click anyway (a 403 `detail`, or a
 `preflight_failed` / `error` event) is shown next to the button. Neither the router nor the screen works out
 role, control, session or remote rules itself.
 

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ScreenContextProvider, useCurrentScreenContext } from "../../app/screenContext";
 import {
@@ -7,6 +7,7 @@ import {
   type FakeHardwareApi,
   type GateRow,
   HardwareApiContext,
+  httpHardwareApi,
   type HardwareProfileOut,
   type Permissions,
   refuseAll,
@@ -161,6 +162,10 @@ describe("hardware screen", () => {
       }),
     );
     expect(state.textContent).toContain("DiaLamp OFF · Aura GREEN 1 %");
+
+    // the end of an operation does not imply lights off; only a read-back changes the panel
+    act(() => api.emit({ kind: "finished", op_id: "op-2", data: { op: "status", summary: {} } }));
+    expect(state.textContent).toContain("DiaLamp OFF · Aura GREEN 1 %");
   });
 
   it("re-reads permissions when an operation starts and ends, and names it on Lights off", async () => {
@@ -212,5 +217,19 @@ describe("hardware screen", () => {
       gate: "sample_map",
       gate_reasons: ["xy_stage detected but its state did not read back"],
     });
+  });
+});
+
+describe("http client permission fallback", () => {
+  it("turns controls off with the shared reason when /api/permissions cannot be read", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 404 })));
+    try {
+      const p = await httpHardwareApi.permissions(SCREEN_OPS);
+      expect(p.hardware_scan).toEqual({ allowed: false, reason: "Permission check unavailable" });
+      expect(p.light_set.reason).toBe("Permission check unavailable");
+      expect(p.lights_off).toEqual({ allowed: true, reason: null }); // a stop stays available
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

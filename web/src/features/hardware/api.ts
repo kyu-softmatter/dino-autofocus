@@ -152,9 +152,23 @@ async function getJson<T>(path: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-/** Every op refused with one reason: used when the permission endpoint cannot be read. */
+/** Every op refused with one reason. */
 export function refuseAll(ops: readonly string[], reason: string): Permissions {
   return Object.fromEntries(ops.map((op) => [op, { allowed: false, reason }]));
+}
+
+/** The rule for every screen when `/api/permissions` cannot be read. */
+export const PERMISSION_CHECK_UNAVAILABLE = "Permission check unavailable";
+
+/**
+ * When `/api/permissions` cannot be read, every control is off with the shared reason.
+ * The exception is `lights_off`: a stop stays available, the same as the shell's Abort and
+ * Lights off, and the server still refuses it where D2 says so.
+ */
+export function permissionsUnavailable(ops: readonly string[]): Permissions {
+  const out = refuseAll(ops.filter((op) => op !== "lights_off"), PERMISSION_CHECK_UNAVAILABLE);
+  if (ops.includes("lights_off")) out.lights_off = { allowed: true, reason: null };
+  return out;
 }
 
 export const httpHardwareApi: HardwareApi = {
@@ -165,8 +179,8 @@ export const httpHardwareApi: HardwareApi = {
   async permissions(ops) {
     try {
       return await getJson<Permissions>(`/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`);
-    } catch (e) {
-      return refuseAll(ops, `permissions unavailable (${String(e)})`);
+    } catch {
+      return permissionsUnavailable(ops);
     }
   },
   async submit(cmd) {
