@@ -62,6 +62,9 @@ export interface Permission {
 }
 export type Permissions = Record<string, Permission>;
 
+/** Shown on every control when /api/permissions cannot be read (rule for all screens). */
+export const PERMISSION_UNAVAILABLE = "Permission check unavailable";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -94,6 +97,8 @@ export interface FakeOptions {
   user?: { user_id: string; role: "admin" | "operator" | "viewer" };
   /** the shared check's answer for every op; default: all allowed */
   permission?: (op: string) => Permission;
+  /** make the permission check fail, as when /api/permissions cannot be read */
+  permissionsDown?: boolean;
   now?: () => string;
 }
 
@@ -206,6 +211,7 @@ export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
       return sample;
     },
     async permissions(ops) {
+      if (opts.permissionsDown) throw new ApiError(503, "permissions unavailable");
       return Object.fromEntries(ops.map((op) => [op, permission(op)]));
     },
   };

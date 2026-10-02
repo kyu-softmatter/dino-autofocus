@@ -85,6 +85,10 @@ Refusals use the ui-spec 7.0 strings:
 | Detail | Fields of `session.json` (code commit, dirty, hardware hash as recorded); log tail; record files with line counts; manifest summary and entries; reflected or not |
 | Actions | `"Open experiment session for <current sample>"` (no sample field: the sample is picked in the `sample` area), `"Close"` with a note, `"Continue with this sample"` on a closed session (F7.4, reopens that sample). They are disabled with the shared check's reason for their op first, then this area's: no current sample, a session already open, the session closed |
 
+If `/api/permissions` cannot be read, every control is disabled with `"Permission check unavailable"`
+(rule for all screens); the list and the detail stay available. While the check is loading, controls are
+disabled with `"Checking permissions"`.
+
 UI text is in English. Remote viewers and viewers can read everything and change nothing.
 
 ## 5. Gaps (requests via AF 업무분배보조 to the manager)

@@ -10,6 +10,7 @@ import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
 import {
   ApiError,
+  PERMISSION_UNAVAILABLE,
   type Permissions,
   SESSION_OPS,
   type SessionDetail,
@@ -45,7 +46,8 @@ export default function SessionsScreen() {
   const [list, setList] = useState<SessionSummary[]>([]);
   const [current, setCurrent] = useState<SessionSummary | null>(null);
   const [sample, setSample] = useState<string | null>(null);
-  const [perms, setPerms] = useState<Permissions>({});
+  // null while loading; "unavailable" when /api/permissions cannot be read (every control off)
+  const [perms, setPerms] = useState<Permissions | "unavailable" | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -54,13 +56,17 @@ export default function SessionsScreen() {
 
   useEffect(() => {
     let live = true;
-    Promise.all([client.list(filter), client.current(), client.currentSample(), client.permissions(SESSION_OPS)])
-      .then(([l, c, s, a]) => {
+    // permissions load on their own: if they fail, the list and detail stay available
+    client
+      .permissions(SESSION_OPS)
+      .then((p) => live && setPerms(p))
+      .catch(() => live && setPerms("unavailable"));
+    Promise.all([client.list(filter), client.current(), client.currentSample()])
+      .then(([l, c, s]) => {
         if (!live) return;
         setList(l);
         setCurrent(c);
         setSample(s);
-        setPerms(a);
       })
       .catch((e) => live && setError(errorText(e)));
     return () => {
@@ -115,7 +121,11 @@ export default function SessionsScreen() {
   );
 
   // shared reasons first (role, control, remote: GET /api/permissions), then this area's own
-  const denied = (op: string) => (perms[op] && !perms[op].allowed ? perms[op].reason ?? "Not allowed" : null);
+  const denied = (op: string): string | null => {
+    if (perms === null) return "Checking permissions";
+    if (perms === "unavailable" || !perms[op]) return PERMISSION_UNAVAILABLE;
+    return perms[op].allowed ? null : perms[op].reason ?? "Not allowed";
+  };
   const openReason =
     denied("session_open") ??
     (current ? `${current.session_id} is open; close it first` : null) ??

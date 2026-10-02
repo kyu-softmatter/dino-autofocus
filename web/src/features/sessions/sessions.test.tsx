@@ -106,6 +106,17 @@ describe("sessions screen", () => {
     expect(screen.getAllByText("Read-only: remote view").length).toBeGreaterThanOrEqual(3);
   });
 
+  it("turns every control off when the permission check cannot be read, keeping list and detail", async () => {
+    show(createFakeClient({ sessions: [CLOSED], currentSample: "x", permissionsDown: true }), `#/sessions/${CLOSED.session_id}`);
+    const detail = await screen.findByRole("article", { name: "Session detail" });
+    expect(within(detail).getByText("abcdef123456")).toBeTruthy();
+    expect(within(screen.getByRole("table", { name: "Sessions" })).getByText(CLOSED.session_id)).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText("Permission check unavailable").length).toBe(3));
+    expect(button(/Open experiment session/).disabled).toBe(true);
+    expect(button("Close").disabled).toBe(true);
+    expect(button("Continue with this sample").disabled).toBe(true);
+  });
+
   it("refuses closing someone else's session with the router's reason", async () => {
     const other = fakeDetail({
       session_id: "s-other",
