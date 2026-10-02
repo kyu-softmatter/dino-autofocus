@@ -265,3 +265,14 @@
   answers `/api/sessions` with 503 `no_records`. T-009i passes the GitFolderStore at the backend-dependent root
   (above) and an AutoCommitter on it. Test: `main([...])`'s app has `app.state.records` and `app.state.committer`, and
   opening a session through the API succeeds.
+
+## T-009j (AF 실행7, after T-009i; review AF 검토보조2) — replay start-up and where op records go
+
+- `--backend replay` exits "not available yet", but `engine/backends/replay.py` (T-034, on main) exists. Wire it:
+  `--backend replay --replay-source <path>` (anything `stacks.load_stacks` reads); non-bench, so the mock records
+  root applies. Test with a tiny synth source in tmp_path.
+- Operation records (manager decision): while an experiment session is open, each op's record goes into that
+  session through the session's operation-record API (`records/session.py`, `layout.operation_record`), so it is
+  committed with the session. With no session open (status, hardware_scan, z_retract is refused without one),
+  `<data root>/engine_records` outside git is fine. If the runner cannot route per session today, say so in the review
+  request and I card the runner side (T-011g, 실행15).
