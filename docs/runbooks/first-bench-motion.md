@@ -145,10 +145,16 @@ that, and only after 2a has passed once on the stand.
 
 Do not use the other operations instead:
 - **`objective_change`: do not run it on the stand**, including a turn to a dry lens without `escape`.
-  **The code does not stop it yet.** After the unlock it would run on `mm-real`, including the climb back
-  to 2800 µm. Its "clearance" callback is a software bounds check, not a sensor: it checks the Z window
-  and cap, the lens readback and abort. An enforcing card will follow, making `mm-real` refuse it until
-  the approach is measured. Until then this is a user rule.
+  Refused by the code (T-029d) until `BENCH_APPROACH` is flipped. While it reads `"UNMEASURED"`, the
+  guards refuse on the stand any approach above 2800 µm and any approach on a lens other than the 4x.
+  The flip is a separate reviewed commit, after the bench measurements (Q13, Q20, stage limits) and the
+  director's confirmation. Two points:
+  - Its "clearance" callback is software bounds (Z window and cap, lens readback, abort), not a contact
+    or oil sensor. The runner's bench check does not refuse it, because it has that callback.
+  - Until T-029d is on main, nothing in the code stops it: treat this as a user rule.
+
+  A turn to the 4x that climbs back to 2800 µm on the 4x is neither above 2800 nor on another lens. Do
+  that turn by hand (2b).
 - `scan_4x` is refused on `mm-real` by the runner: it approaches with no clearance callback (T-011b
   `approach_clearance`).
 - `scripts/*`: never (see the top of this runbook).
@@ -160,7 +166,8 @@ Enforced by:
 - T-011b: the bench clearance check in the runner's preflight (refuses `scan_4x`, not
   `objective_change`);
 - `guards.XYAxis`: box, long-move rule, readback;
-- the "no `objective_change` on the stand" rule: this runbook only, until the enforcing card lands.
+- T-029d: `BENCH_APPROACH` refuses approaches on the stand while `"UNMEASURED"`. Until it merges, the
+  "no `objective_change` on the stand" rule is this runbook only.
 
 ## Step 3. No 100x Oil approach yet
 
@@ -172,21 +179,29 @@ Do not raise Z under the 100x Oil (0 -> 2800 -> sample window) until two questio
 - **Q20**: how long an XY move may be on the 100x before Z must retract (the oil film), and `z_safe`. Today
   `Z_SAFE_UM` is 0 for every lens and the 100x long-move row is 156 um (*provisional*).
 
-**The code does not stop all of this yet.** What it does stop, and what it does not:
-- Stopped: `approach` above 2800 µm under the 100x Oil. Its `FREE_WD_UM` (130 µm) does not cover the
-  window, so a higher approach target is refused (T-027b, T-029).
+Refused by the code (T-029d) until `BENCH_APPROACH` is flipped. While it reads `"UNMEASURED"`, the guards
+refuse on the stand any approach on a lens other than the 4x. That covers:
+- `objective_change` to the 100x;
+- `focus_100x`;
+- the non-4x paths of `scan_4x`.
+
+The flip comes only after Q13, Q20 and the stage limits are measured, as a reviewed commit the director
+confirms. The clearance callbacks are software bounds (Z window and cap, lens readback, abort), not a
+contact or oil sensor.
+
+Until T-029d is on main, only part of this is in the code:
+- Stopped: an approach above 2800 µm under the 100x Oil. Its `FREE_WD_UM` (130 µm) does not cover the
+  window (T-027b, T-029).
 - Not stopped: `objective_change` to the 100x still climbs 0 -> 2800 µm, the very move Q13 is about.
-  Its clearance callback is a software bounds check, not a sensor.
-- Not stopped: `focus_100x` sweeps inside the window with ordinary guarded moves, not `approach`, so
-  the runner's bench clearance check does not apply to it.
+- Not stopped: `focus_100x` sweeps with ordinary guarded moves, not `approach`, so the runner's bench check
+  does not apply to them.
 
-So this is a user rule: do not run `objective_change` to the 100x or `focus_100x` on the stand. An
-enforcing card will follow, making `mm-real` refuse both until Q13 and Q20 are answered.
+Treat the rest as a user rule until then.
 
-Enforced today by:
+Enforced by:
+- T-029d (`BENCH_APPROACH`);
 - T-027b and T-029: the approach cap above 2800 µm;
-- `guards.OBJECTIVE_LIMITS` (*provisional*);
-- for the rest, this runbook.
+- `guards.OBJECTIVE_LIMITS` (*provisional*).
 
 ## Step 4. No F5 objective change on the stand yet
 
