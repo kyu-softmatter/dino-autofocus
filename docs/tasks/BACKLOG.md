@@ -28,6 +28,12 @@ Dev seats send `[검토요청 T-NNN]` to the assistant for their task. One branc
 
 New tasks get an assistant in their card. Unlisted tasks go to the least loaded assistant.
 
+## Manager to-do on events
+
+- T-009 and T-010 first skeletons merged → tell AF 업무분배보조 (screen stage B starts).
+- 실행14 (T-020) or 실행5 (T-004) review cleared → offer the seat to AF 업무분배보조 for T-103 / T-104.
+- T-018 merged → 실행13 starts T-105 (screen manager). T-019 merged → 실행2 starts T-106.
+
 ## 후속 과제 후보
 
 - **WP-C 초점 이식에 같이 넣을 것** (실행2 메모, 2026-10-01): `focus/classical.py` 에
