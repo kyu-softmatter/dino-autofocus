@@ -62,6 +62,9 @@ RETRACT_Z_UM, RETURN_Z_UM = 0.0, 2800.0  # change_objective.py
 WD_FRACTION = 0.4
 FREE_WD_UM = {"4x": 20000.0, "100x-Oil": 130.0}  # lens spec; add a lens only once known
 XY_BOX_MARGIN_UM = 1000.0
+# Backends with no real stage. Any other kind (mm-real, or one this file does not know) is
+# a bench: approach() there refuses to run without a clearance check.
+SIMULATED_KINDS = frozenset({"mock", "fake", "replay", "mm-demo"})
 
 # unmeasured provisional (checklist Q20 / Q12); every use is marked in the record
 Z_SAFE_UM = 0.0  # z_safe: full retract, for every lens
@@ -306,6 +309,12 @@ class FocusAxis:
                            k is not None and 0 < k < len(pts) - 1,
                            k is not None and k == len(pts) - 1 and len(pts) > 1)
 
+    def _simulated(self) -> bool:
+        try:
+            return self.b.info().kind in SIMULATED_KINDS
+        except Exception:  # noqa: BLE001 - an unreadable backend counts as a bench
+            return False
+
     def _check_plan(self, plan: SweepPlan) -> None:
         """A plan is re-checked here, so a hand-built one cannot pass the ceiling."""
         z = [plain(v, "plan z") for v in plan.z_um]
@@ -330,10 +339,14 @@ class FocusAxis:
         then steps of at most the objective's `approach_step_um` (a smaller `step_um` may
         be asked for, never a larger one). After every move the readback must match and
         rise, and `clearance(z_read)` must return True, or the approach stops with
-        GuardError. Above the target it descends straight there."""
+        GuardError. On a bench backend (kind not in SIMULATED_KINDS) `clearance` is
+        required. Above the target it descends straight there."""
         z = plain(target_um, "approach target")
         if not self.window[0] <= z <= self.window[1]:
             raise GuardError(f"approach target {z:.2f} um is outside the window {self.window}")
+        if clearance is None and not self.dry_run and not self._simulated():
+            raise GuardError("approach on a bench backend needs a clearance check "
+                             "(clearance=callable(z_read) -> bool)")
         row, name = limits_for(self.key)
         step = row.approach_step_um
         if step_um is not None:
@@ -570,6 +583,18 @@ class OpScope:
                 return ok
 
 
+def _emit_safely(ev: Event, rec: OpRecord, sink: EventSink, error: str | None) -> str | None:
+    """Emit to the record and the external sink; a failure in either is noted in `error`
+    instead of replacing the operation's own exception."""
+    for name, target in (("record writer", rec.sink), ("event sink", sink)):
+        try:
+            target(ev)
+        except Exception as exc:  # noqa: BLE001 - the operation's own error comes first
+            note = f"{name} failed on {ev.kind}: {type(exc).__name__}: {exc}"
+            error = note if error is None else f"{error}; {note}"
+    return error
+
+
 @contextmanager
 def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_sink,
               args: dict | None = None, prefix: str | None = None,
@@ -596,12 +621,7 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
         raise
     except BaseException as exc:
         status, error = "error", f"{type(exc).__name__}: {exc}"
-        ev = Event("error", rec.op_id, {"error": error})
-        rec.sink(ev)
-        try:
-            sink(ev)
-        except Exception as sink_exc:  # noqa: BLE001 - keep the operation's own error
-            error += f"; event sink failed on error: {type(sink_exc).__name__}: {sink_exc}"
+        error = _emit_safely(Event("error", rec.op_id, {"error": error}), rec, sink, error)
         raise
     finally:
         lights = lights_off(backend)
@@ -610,10 +630,5 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
         if status != "error":
             closing.append(Event(status, rec.op_id, {"error": error}))
         for ev in closing:
-            rec.sink(ev)
-            try:
-                sink(ev)
-            except Exception as exc:  # noqa: BLE001 - the record must still be written
-                note = f"event sink failed on {ev.kind}: {type(exc).__name__}: {exc}"
-                error = note if error is None else f"{error}; {note}"
+            error = _emit_safely(ev, rec, sink, error)
         rec.finish(status, lights=lights, end_state=end, result=scope.result, error=error)

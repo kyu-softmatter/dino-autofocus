@@ -217,3 +217,20 @@ def test_relative_xy_moves_go_through_the_absolute_guard(fake):
     with pytest.raises(GuardError, match="needs Z retracted"):
         xy.goto_rel(200.0, 0.0)
     assert not any(c[0] == "move_xy_rel" for c in fake.calls)
+
+
+@pytest.mark.parametrize("kind", ["mm-real", "something-new"])
+def test_approach_on_a_bench_needs_a_clearance_check(fake, kind):
+    real_info = fake.info
+
+    def bench_info():
+        info = real_info()
+        info.kind = kind
+        return info
+    fake.info = bench_info  # a bench-flagged FakeBackend
+    fake.z = 0.0
+    a = axis(fake, OIL)
+    with pytest.raises(GuardError, match="needs a clearance check"):
+        a.approach(2840)
+    assert not any(c[0] == "move_z" for c in fake.calls)
+    assert a.approach(2840, clearance=lambda z: True) == 2840
