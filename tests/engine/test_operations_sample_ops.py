@@ -215,3 +215,36 @@ def test_objective_changes_project_into_objectives_used_and_sample_json(store, r
     assert view.summary()["objectives_used"] == ["4x", "100x-Oil", "60x-Oil"]
     write_derived_views(view, root)
     assert json.loads(json_path.read_text())["objectives_used"] == ["4x", "100x-Oil", "60x-Oil"]
+
+
+
+def test_a_removed_flag_is_kept_retired_with_its_history(store, root):
+    s = ExperimentSession.open(store, USER, LEGACY)
+    s.sample_event("flag_set", flag_id="f1", name="good area", x_um=1.0, y_um=2.0)
+    s.sample_event("flag_set", flag_id="f2", name="debris", x_um=3.0, y_um=4.0)
+    s.sample_event("flag_remove", flag_id="f2")
+    view = read_sample(store, LEGACY, root)
+    assert set(view.flags) == {"f1", "f2"}  # remove, then list: f2 is still there
+    f2 = view.flags["f2"]
+    assert f2["retired"] and f2["name"] == "debris"
+    assert [h["kind"] for h in f2["history"]] == ["flag_set", "flag_remove"]
+    assert all(h["by"] == USER and h["at"] for h in f2["history"])
+    assert set(view.active_flags()) == {"f1"}
+    s.sample_event("flag_set", flag_id="f2", name="debris after all", x_um=3.0, y_um=4.0)
+    again = read_sample(store, LEGACY, root).flags["f2"]
+    assert not again["retired"] and len(again["history"]) == 3
+
+
+def test_confirm_then_reject_keeps_both_in_the_candidate_history(store, root):
+    s = ExperimentSession.open(store, USER, LEGACY)
+    s.sample_event("particle", particle_id="p1", status="candidate", x_um=1.0, y_um=1.0)
+    s.sample_event("particle", particle_id="p1", status="confirmed", x_um=1.0, y_um=1.0)
+    other = "second@example.test"
+    s.info.user_id = other  # a second person rejects it in the same session
+    s.sample_event("particle", particle_id="p1", status="rejected", x_um=1.0, y_um=1.0)
+    view = read_sample(store, LEGACY, root)
+    p1 = view.candidates["p1"]
+    assert p1["status"] == "rejected" and "p1" not in view.open_candidates()
+    assert [(h["status"], h["by"]) for h in p1["history"]] == [
+        ("candidate", USER), ("confirmed", USER), ("rejected", other)]
+    assert all(h["at"] for h in p1["history"])

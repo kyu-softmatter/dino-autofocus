@@ -35,7 +35,8 @@ def test_fold_rules():
     st = fold(events, "s1")
     assert st.hole["diameter_mm"] == 6.144
     assert [(p["x_um"], p["y_um"]) for p in st.boundary] == [(2, 2)]
-    assert set(st.flags) == {"f1"}
+    assert set(st.flags) == {"f1", "f2"} and st.flags["f2"]["retired"]  # T-027c: kept
+    assert {k for k, f in st.flags.items() if not f["retired"]} == {"f1"}
     assert st.particles["p1"]["status"] == "confirmed" and st.particles["p1"]["z_um"] == 3012.9
     assert len(st.visits) == 1 and [n["text"] for n in st.notes] == ["oil added"]
     assert st.other[0]["kind"] == "future_kind"

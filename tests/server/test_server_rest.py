@@ -4,7 +4,9 @@ import importlib
 import pkgutil
 import sys
 
+import pytest
 from fastapi import APIRouter, FastAPI
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from dino_autofocus.agents import MockStore
@@ -116,20 +118,58 @@ def test_area_router_discovery(tmp_path, monkeypatch, engine, agent_store, seat,
         raise AssertionError("a module without a router must be refused")
 
 
+def assert_mounted(app: FastAPI, name: str, router: APIRouter) -> int:
+    """Every HTTP route of `router` is served at /api/<name>/... Read from the app's OpenAPI
+    paths, not `app.routes`: with FastAPI 0.142 / Starlette 1.7 an included router is one
+    `_IncludedRouter` entry without a path there. Returns how many routes were checked."""
+    paths = app.openapi()["paths"]
+    checked = 0
+    for route in router.routes:
+        if isinstance(route, APIRoute) and route.include_in_schema:
+            assert f"/api/{name}{route.path}" in paths, (name, route.path, sorted(paths))
+            checked += 1
+    return checked
+
+
+def area_modules(package: str) -> list[str]:
+    pkg = importlib.import_module(package)
+    return sorted(m.name for m in pkgutil.iter_modules(pkg.__path__)
+                  if not m.name.startswith("_") and not m.ispkg)
+
+
 def test_every_area_module_is_mounted_under_its_name(engine, make_client):
     """Whatever areas exist in server/api (none named here): each non-underscore module has a
     module-level APIRouter, and create_app mounts every one of its routes at /api/<module>."""
-    import dino_autofocus.server.api as api_pkg
-
-    names = sorted(m.name for m in pkgutil.iter_modules(api_pkg.__path__)
-                   if not m.name.startswith("_") and not m.ispkg)
-    assert include_area_routers(FastAPI()) == names
-    paths = {getattr(r, "path", "") for r in make_client(engine).app.routes}
+    names = area_modules("dino_autofocus.server.api")
+    app = make_client(engine).app
     for name in names:
         router = importlib.import_module(f"dino_autofocus.server.api.{name}").router
         assert isinstance(router, APIRouter), name
-        for route in router.routes:
-            assert f"/api/{name}{route.path}" in paths, (name, route.path)
+        assert_mounted(app, name, router)
+
+
+def test_the_mount_check_sees_a_real_area(tmp_path, monkeypatch, engine, make_client):
+    """The same check on a temporary package with a real router, so it is exercised (and
+    would fail) on a main with no areas, exactly as it will with real ones."""
+    pkg = tmp_path / "mount_areas"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "demo.py").write_text(
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "@router.get('/things/{thing_id}')\n"
+        "def thing(thing_id: str) -> dict:\n"
+        "    return {'id': thing_id}\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    c = make_client(engine)
+    assert include_area_routers(c.app, "mount_areas") == ["demo"] == area_modules("mount_areas")
+    c.app.openapi_schema = None  # routes were added after create_app
+    router = importlib.import_module("mount_areas.demo").router
+    assert assert_mounted(c.app, "demo", router) == 1
+    assert c.get("/api/demo/things/7").json() == {"id": "7"}  # and it really answers there
+    with pytest.raises(AssertionError):
+        assert_mounted(c.app, "elsewhere", router)  # the check can fail
 
 
 def test_agent_store_on_app_state(engine, make_client, agent_store):
