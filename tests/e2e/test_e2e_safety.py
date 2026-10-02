@@ -77,12 +77,20 @@ def test_abort_mid_trace_switches_everything_off(bench):
     bench.ready()
     op_id = tracing(bench)
     bench.submit("abort", op_id=op_id, grant=None)
-    ended_all_off(bench, bench.wait_end(op_id), "aborted")
-    # the edge_trace code's own record (the one whose result has the trace's start) agrees
-    records = [json.loads(p.read_text(encoding="utf-8"))
-               for p in bench.sample.dir.glob("edge_trace_*/summary.json")]
-    (inner,) = [r for r in records if "start_um" in (r["result"] or {})]
-    assert inner["status"] == "aborted" and inner["lights_off"]["verified"]
+    end = bench.wait_end(op_id)
+    ended_all_off(bench, end, "aborted")
+    # the runner's one edge_trace record agrees, and the trace's own last word in its log is
+    # the abort (the registered EdgeTraceOp runs inside the runner's record; T-032b, manager)
+    folder = Path(end.data["record_dir"])
+    assert [p.parent for p in bench.sample.dir.glob("edge_trace_*/summary.json")] == [folder]
+    rec = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
+    assert rec["status"] == "aborted" and rec["lights_off"]["verified"]
+    log = [json.loads(line) for line in
+           (folder / "log.jsonl").read_text(encoding="utf-8").splitlines()]
+    trace = [e["data"] for e in log
+             if e["kind"] == "progress" and e["data"].get("op") == "edge_trace"]
+    assert trace[-1]["status"] == "track_stop" and trace[-1]["data"]["why"] == "aborted"
+    assert all(t["status"] != "track_start" for t in trace[1:])  # a start comes first, if any
 
 
 def test_lights_off_preempts_a_running_trace(bench):
