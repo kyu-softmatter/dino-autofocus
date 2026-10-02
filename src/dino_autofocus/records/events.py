@@ -107,7 +107,10 @@ def _history(prev: dict[str, Any] | None, e: SampleEvent, **extra: Any) -> list[
 
 
 def fold(events: Iterable[SampleEvent], sample_id: str) -> SampleState:
-    """Current state of `sample_id` from events of any sessions, in any order."""
+    """Current state of `sample_id` from events of any sessions, in any order.
+
+    A `flag_remove` for a flag_id no `flag_set` made leaves a retired stub
+    (`{"flag_id", "retired": True, "history"}`) rather than being dropped."""
     st = SampleState(sample_id=sample_id)
     mine = sorted((e for e in events if e.sample_id == sample_id), key=lambda e: e.order)
     for e in mine:
