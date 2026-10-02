@@ -50,3 +50,15 @@
 
 - Write sample events `objective_stepped_out` on the Y step-out and `objective_stepped_back` on the return
   (constants STEPPED_OUT / STEPPED_BACK in `engine/sample.py`); `read_sample().awaiting_return` reads the latest.
+
+## Approach cap (manager, from 검토보조1's rejection of 002a32f)
+
+- SAFETY: preflight refuses `approach_target_um` above `RETURN_Z_UM` (2800) unless the target lens's `FREE_WD_UM` is
+  known and covers the window above it (today only 4x). Refuse, do not clamp; `plan()` shows the reason. Test the
+  100x-Oil 3200 case. The same rule goes into `FocusAxis.approach()` in T-027b (실행1); keep both layers.
+- Rotation targets: a lens without a `FREE_WD_UM` entry (10x-60x, 40x WI today) is not a rotation target. Keep
+  refusing with the reason "free working distance not measured". The values are a microscope-PC item.
+- `objectives_used`: after a successful rotation write the sample event `objective_changed`
+  `{from_key, to_key, label}` through `session.sample_event()`. Use the literal kind until T-027b adds the
+  `OBJECTIVE_CHANGED` constant to `engine/sample.py`, then switch to it at your next `git merge main`. Do not edit
+  `sample.py`.
