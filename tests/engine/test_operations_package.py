@@ -8,7 +8,7 @@ import pkgutil
 import subprocess
 import sys
 
-from conftest import FakeBackend
+from engine_fakes import FakeBackend
 
 import dino_autofocus.engine.operations as ops
 from dino_autofocus.engine.runner import OPERATIONS, Runner, RunnerConfig
