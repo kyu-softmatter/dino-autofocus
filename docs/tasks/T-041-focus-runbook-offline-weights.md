@@ -18,3 +18,9 @@
 ## Done when
 
 - Docs only, no tests. Send `[검토요청 T-041]` to AF 검토보조1. Trailer `Session: AF 실행3`.
+
+## T-041b (AF 실행3; review AF 검토보조1) — no account name in paths
+
+- `docs/runbooks/train-focus-head.md:109` writes the user's Windows account name in a cache path. Use
+  `%USERPROFILE%\.cache\torch\hub\checkpoints` (and `~/.cache/...` where the text is shell-neutral). Check the rest
+  of docs/runbooks for the same.
