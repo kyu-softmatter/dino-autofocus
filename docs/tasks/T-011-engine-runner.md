@@ -230,3 +230,12 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 ## T-011c (from T-031, small)
 
 - OpContext gets a public `record_dir` (ops read `ctx._op.record.dir` today). Owner AF 실행15, review AF 검토보조1.
+
+## T-011e (AF 실행15, after T-011d; review AF 검토보조2) — one light shape on the wire
+
+- guards.py (`operation()`, `exclusive()`, `check_lights`) and `operations/light_set.py` emit `light_changed` as
+  `{readbacks, verified, error}` or `{switched_off, state, ...}`; the web reads only `_light_payload`'s shape and
+  shows "lights: unknown" otherwise (검토보조4, T-010-6).
+- Fix at the choke point: every `light_changed` that leaves the runner (event sink → /ws/events, records) is
+  normalised to `_light_payload`'s shape, keeping the emitter's readbacks as `records` and `verified`/`error`.
+  Emitters do not change. Tests: a guards light event and a light_set event both come out in the one shape.
