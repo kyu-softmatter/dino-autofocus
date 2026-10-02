@@ -91,3 +91,8 @@
 - When the event socket drops, the status bar must not keep showing the last lights and XY/Z readings as current.
   Mark them stale/unknown (greyed, "last known at <time>"), especially an old "lights off". Restore on reconnect
   from `GET /api/state`. Test with a fake socket drop.
+
+## vitest under load (from T-100)
+
+- Set vitest `pool: "threads"` and a small `maxWorkers` (e.g. 2) in the web test config; forks workers time out when
+  the machine is loaded by other seats.
