@@ -141,6 +141,21 @@ describe("objective change", () => {
     expect(api.sent).toHaveLength(0);
   });
 
+  it("says Checking permissions… while the first check loads", async () => {
+    await setup({ permissionsPending: true });
+    await screen.findByLabelText("Plan");
+    expect(screen.getAllByText("Checking permissions…").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", true);
+  });
+
+  it("counts an op missing from the permissions answer as unavailable", async () => {
+    await setup({ permissionsOmit: ["objective_change"], z4xFocusUm: 3048.7 });
+    await screen.findByLabelText("Plan");
+    expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", true);
+    expect(screen.getAllByText("Permission check unavailable").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("button", { name: "Find 100x focus" })).toHaveProperty("disabled", false);
+  });
+
   it("never offers Loading done to a remote client, even one allowed to command", async () => {
     const api = await setup({ remote: true });
     emitAll(api, scriptToLoading("op-4"));

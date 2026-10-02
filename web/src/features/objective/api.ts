@@ -146,6 +146,10 @@ export interface FakeOptions {
   remote?: boolean;
   /** GET /api/permissions fails (network, server error) */
   permissionsFail?: boolean;
+  /** GET /api/permissions never answers (the first check stays loading) */
+  permissionsPending?: boolean;
+  /** ops left out of the permissions answer */
+  permissionsOmit?: string[];
   /** engine refusal of the Y step-out (e.g. a stage Y limit); default: allowed */
   escapeRefusal?: string;
   state?: Partial<ObjectiveState>;
@@ -241,7 +245,9 @@ export function createFakeApi(opts: FakeOptions = {}): FakeApi {
     },
     async getPermissions(ops: string[]) {
       if (opts.permissionsFail) throw new Error("permissions unavailable");
-      return fakePermissions(ops, opts.denyAll);
+      if (opts.permissionsPending) return new Promise<Permissions>(() => {});
+      const omit = opts.permissionsOmit ?? [];
+      return fakePermissions(ops.filter((op) => !omit.includes(op)), opts.denyAll);
     },
     async send(cmd: Command) {
       sent.push(cmd);

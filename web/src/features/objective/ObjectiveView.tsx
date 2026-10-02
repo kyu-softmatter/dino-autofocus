@@ -35,8 +35,8 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
   const [change, dispatchChange] = useReducer(reduceChange, undefined, initialChange);
   const [focus, dispatchFocus] = useReducer(reduceFocus, undefined, initialFocus);
   const [message, setMessage] = useState<string | null>(null);
-  // null: the permission check could not be read (every control off, progress stays)
-  const [perms, setPerms] = useState<Permissions | null>({});
+  // undefined: first check loading; null: it could not be read (every control off, progress stays)
+  const [perms, setPerms] = useState<Permissions | null | undefined>(undefined);
   const [permsTick, setPermsTick] = useState(0);
 
   useEffect(() => {
@@ -86,8 +86,7 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
   useScreenContext(details);
 
   if (state === null) return <p className="muted">Loading objective…</p>;
-  const perm = (op: string): Permission =>
-    perms === null ? PERMISSION_UNAVAILABLE : (perms[op] ?? { allowed: false, reason: "checking permissions" });
+  const perm = (op: string): Permission => permissionOf(perms, op);
   const changePerm = perm("objective_change");
   const awaiting = state.awaiting_return !== null || change.ended?.state === "awaiting_return";
 
@@ -121,8 +120,16 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
 /** ops whose permission the screen asks for (GET /api/permissions) */
 const PERMISSION_OPS = ["objective_change", "focus_100x", "confirm"];
 
-/** the one fallback for every screen when /api/permissions cannot be read */
+/** the one fallback for every screen when /api/permissions cannot be read, or leaves an op out */
 export const PERMISSION_UNAVAILABLE: Permission = { allowed: false, reason: "Permission check unavailable" };
+/** while the first permission check is loading (same text on every screen) */
+export const PERMISSION_LOADING: Permission = { allowed: false, reason: "Checking permissions…" };
+
+export function permissionOf(perms: Permissions | null | undefined, op: string): Permission {
+  if (perms === undefined) return PERMISSION_LOADING;
+  if (perms === null) return PERMISSION_UNAVAILABLE;
+  return perms[op] ?? PERMISSION_UNAVAILABLE;
+}
 
 function startChange(args: Record<string, unknown>): Command {
   return { kind: "start", op: "objective_change", args };
