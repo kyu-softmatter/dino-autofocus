@@ -243,3 +243,7 @@ T-002 는 열 개가 넘는 과제의 선행이다. 한 번에 끝내지 말고 
   Lights are switched off by the existing exit path.
 - Tests on FakeBackend. Review: AF 검토보조1.
 - T-015 (실행12) may edit the token calls in `tests/engine/test_contract_records.py` and `test_contract.py`.
+- Also in T-002-4: add an `approach_step_um` column to the per-objective guards table (director, checklist
+  Q13, 1623710): 10 µm for every objective to start (100x Oil about WD/13), marked "unmeasured provisional".
+  The approach keeps the bench procedure: one move 0 → 2800 µm (bottom of the sample Z window), then steps up
+  from 2800 with the clearance check live at every step. Must be confirmed before M4 bench use.

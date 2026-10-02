@@ -1,6 +1,6 @@
 # T-029 WP-J: objective change with immersion loading (engine side)
 
-- Owner: unassigned (next free engine seat)
+- Owner: AF 실행3 (after T-007)
 - Prerequisites: T-002 stages 2 and 3, T-011, T-021 (MockBackend)
 - Branch: `execN/T-029-objective-change`
 - Review: AF 검토보조1
@@ -22,6 +22,8 @@
 
 - PLAN 2 F5 seven steps, the guards from T-002 (large XY only with Z retracted, stepwise Z approach),
   `awaiting_return` on interruption after escape or rotation.
-- `escape_dy_um` has no default (preflight refuses). `approach_step_um`: see the checklist; until measured,
-  use the guards table value marked "unmeasured provisional".
-- The F5 Y step-out sign is still open with the user. Take it from the guards table, not a literal.
+- `escape_dy_um` has no default (preflight refuses). `approach_step_um` comes from the per-objective guards
+  table column (T-002-4, 10 µm, "unmeasured provisional"). Approach: one move 0 → 2800 µm, then steps up
+  with the clearance check live at every step.
+- The F5 Y step-out sign is still open with the user. Until it is set, the step-out refuses in preflight
+  (no default sign). Take it from the guards table, not a literal.
