@@ -26,11 +26,12 @@ Gap numbers (G1-G9) refer to section 7.
 ## 2. Read endpoints (`server/api/map.py`, all GET, everyone incl. remote and viewer)
 
 Storage (manager decision D1, G1): boundary points, flags and candidates are append-only events in
-the open experiment session's `records/sample_events.jsonl`; one engine reader folds them into the
-sample state (`engine/sample.py`, T-027). `sample.json` and `map.json` are derived views in the
+the open experiment session's `records/sample_events.jsonl`. `records.events.fold()` (T-019) is the
+only fold; `engine/sample.py` (T-027) projects it into one named view (boundary, flags, candidates,
+among others), and `map.py`'s single reader function calls that view. `sample.json` and `map.json` are derived views in the
 legacy root `D:\AutoFocus\samples\<sample_id>\`, which also holds the large files the result
-endpoints read (`scan4x_*/`, `sample_map_*/`, tiles, `mosaic.npy`). The router calls only that reader,
-behind one function in `map.py`, so a storage change is a one-place change.
+endpoints read (`scan4x_*/`, `sample_map_*/`, tiles, `mosaic.npy`). A storage change is then a
+one-place change.
 Response bodies are pydantic models; the TypeScript types are generated from OpenAPI (PLAN.md 5절).
 
 | Route | Returns |
@@ -48,8 +49,8 @@ the right and +y up, matching `x0..x1`, `y0..y1`. It does not flip by `M` a seco
 explicit the server requires `mosaic.json` to say so (G4); if the field is missing it refuses
 with 409 rather than guess.
 
-The current sample id, position, objective and lights come from `GET /api/state` and `/ws/events`
-(T-009, T-010), not from `map.py`.
+The current sample comes from `snapshot()["sample"]` (T-011), i.e. `GET /api/state`; position,
+objective and lights come from `/api/state` and `/ws/events` (T-009, T-010), not from `map.py`.
 
 ## 3. Commands
 
@@ -145,7 +146,7 @@ shows the reason. Field names in this table are assumed (G6).
 
 | # | Gap | Status |
 |---|---|---|
-| G1 | Where boundary points, flags and candidates are stored | **Decided (D1)**: append-only events in the open session's `records/sample_events.jsonl`, folded by one engine reader; `sample.json` / `map.json` are derived views. Writes need an open session (section 3.2) |
+| G1 | Where boundary points, flags and candidates are stored | **Decided (D1)**: append-only events in the open session's `records/sample_events.jsonl`, folded only by `records.events.fold()` (T-019) and projected by `engine/sample.py` (T-027); `sample.json` / `map.json` are derived views. Writes need an open session (section 3.2) |
 | G2 | `/api/commands` would bypass D16 | In T-009 (main 176b4c3): refuses `map_flag`, `map_flag_retire`, `candidate_confirm`, `candidate_reject` |
 | G3 | Claude proposals for the same ops | In T-013: the proposal-confirm path checks `WRITE_MAP_FLAG` |
 | G4 | `mosaic.json` lacks `orientation: "stage"`, `M_px_per_um`, `objective`, `n_tiles`; `scan_4x` writes no mosaic | Future engine card. Until then the server refuses (409) a mosaic without `orientation` |
