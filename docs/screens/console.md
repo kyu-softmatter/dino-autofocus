@@ -63,6 +63,11 @@ client (`useClient().get`); the screen re-reads when the event socket reconnects
 | Role below operator (viewer), D16 | `/api/permissions`; `server_action_why(me, "submit_question")` in the route | 403 `role` | the permission reason, shown next to the form |
 | Store is not the mock store | `/api/console/store`; `store.writable` in the route | 409 `read_only_store` | `"Submitting to soft-matter-agents is not connected yet (read-only)"` |
 
+- "Mock store only" is enforced through `AgentStore.writable`, not `isinstance(store, MockStore)`. This is
+  deliberate: T-025 added `writable` (gap 1) so routes need not test the class. Today `MockStore` is the
+  only writable store and `SmaFiles` is False. A real soft-matter-agents writer, if one is ever added
+  (integration, PLAN 10절 F1.1), must also change the 409 rule here and the ui-spec 7.1 text.
+
 - D16: the POST route calls `server_action_why` (T-018 `SUBMIT_QUESTION` plus loopback) on the server.
   Disabling the button is only the display of the permission answer. Device control (the control token)
   is not needed: submitting moves nothing. An open experiment session is not needed either (PLAN 6절 12항
