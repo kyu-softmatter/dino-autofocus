@@ -125,13 +125,36 @@ describe("post", () => {
     expect(client.readOnly.get().readOnly).toBe(false);
   });
 
-  it("reads a plain-string detail too (T-009 ApiError)", async () => {
-    const { transport } = fakeTransport({ "/api/x": () => ({ status: 409, body: { detail: "held by Bea" } }) });
-    await expect(new Client(transport, "127.0.0.1").post("/api/x")).rejects.toMatchObject({
+  it("reads the server's ApiError {detail: {code, message}}", async () => {
+    const { transport } = fakeTransport({
+      "/api/auth/control/acquire": () => ({
+        status: 409,
+        body: { detail: { code: "control_held", message: "held by Bea" } },
+      }),
+    });
+    await expect(new Client(transport, "127.0.0.1").post("/api/auth/control/acquire")).rejects.toMatchObject({
       status: 409,
-      code: null,
+      code: "control_held",
       detail: "held by Bea",
     });
+  });
+
+  it("reads FastAPI's own errors: a plain string (404) and a validation list (422), with no code", async () => {
+    const { transport } = fakeTransport({
+      "/api/x": () => ({ status: 404, body: { detail: "Not Found" } }),
+      "/api/commands": () => ({
+        status: 422,
+        body: { detail: [{ loc: ["body", "kind"], msg: "Input should be 'start' or 'abort'", type: "literal_error" }] },
+      }),
+    });
+    const client = new Client(transport, "127.0.0.1");
+    await expect(client.post("/api/x")).rejects.toMatchObject({ status: 404, code: null, detail: "Not Found" });
+    await expect(client.command({ kind: "start" })).rejects.toMatchObject({
+      status: 422,
+      code: null,
+      detail: "Input should be 'start' or 'abort'",
+    });
+    expect(client.readOnly.get().readOnly).toBe(false);
   });
 });
 
