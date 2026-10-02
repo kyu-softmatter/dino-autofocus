@@ -25,3 +25,8 @@
 ## Done when
 
 - Common criteria, trailer `Session: AF 실행10`. Send `[검토요청 T-032]` to AF 검토보조2.
+
+## edge_trace follow-up (owned path addition: `engine/operations/edge_trace.py`, this change only)
+
+- edge_trace writes a stable `hole["closed_loop"] = True | False` at finish, so `sample.hole_loop()` (T-027) need
+  not match the stop text. Keep `trace_stop` and `arc_deg` as they are.

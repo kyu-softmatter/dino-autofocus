@@ -40,3 +40,8 @@
 - `plan(cmd)` for `objective_change` returns `escape = {allowed, reason, sign, dy_um, mark, default}`: `mark` is
   "unmeasured provisional"; `default` is true for an immersion target and false for dry-to-dry (ui-spec 7.5);
   `allowed`/`reason` come from `step_out_target` (stage Y limit). The screen reads the refusal from the plan.
+
+## Pre-step: mock world lens key (from T-021 review; owned path addition `engine/backends/mock_world.py`, this change only)
+
+- mock_world's 40x uses key "40x-Water"; guards use "40x-WI". Use the guards key so the mock 40x gets its own
+  table row. One-line change plus a test that every mock lens maps to a non-strictest row.

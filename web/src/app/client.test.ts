@@ -35,6 +35,40 @@ describe("read-only", () => {
   });
 });
 
+describe("post", () => {
+  it("posts JSON to an area route and returns the reply", async () => {
+    const { transport, calls } = fakeTransport({
+      "/api/console/questions": () => ({ status: 201, body: { qid: "q-1" } }),
+    });
+    const client = new Client(transport, "127.0.0.1");
+    await expect(client.post("/api/console/questions", { text: "hi" })).resolves.toEqual({ qid: "q-1" });
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ text: "hi" });
+  });
+
+  it("returns null for 204 and sends no body when given none", async () => {
+    const { transport, calls } = fakeTransport({ "/api/sessions/s1/close": () => ({ status: 204 }) });
+    await expect(new Client(transport, "127.0.0.1").post("/api/sessions/s1/close")).resolves.toBeNull();
+    expect(calls[0].init?.body).toBeUndefined();
+  });
+
+  it("follows the same 403 and 401 / 423 rules as command", async () => {
+    const { transport } = fakeTransport({
+      "/api/map/flags": () => ({ status: 403, body: { detail: "remote view" } }),
+      "/api/sessions/open": () => ({ status: 401, body: { detail: "log in" } }),
+      "/api/sample/open-folder": () => ({ status: 423, body: { detail: "locked" } }),
+    });
+    const client = new Client(transport, "127.0.0.1");
+    const auth = vi.fn();
+    client.onAuthFailure(auth);
+    await expect(client.post("/api/map/flags", {})).rejects.toMatchObject({ status: 403 });
+    expect(client.readOnly.get().readOnly).toBe(true);
+    await expect(client.post("/api/sessions/open", {})).rejects.toMatchObject({ status: 401 });
+    await expect(client.post("/api/sample/open-folder")).rejects.toMatchObject({ status: 423 });
+    expect(auth.mock.calls.map((c) => c[0])).toEqual([401, 423]);
+  });
+});
+
 describe("EventStream", () => {
   it("delivers engine events and ignores other messages", () => {
     const { transport, sockets } = fakeTransport({});

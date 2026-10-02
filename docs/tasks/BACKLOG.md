@@ -21,8 +21,8 @@ Dev seats send `[검토요청 T-NNN]` to the assistant for their task. One branc
 
 | Assistant | Tasks |
 |---|---|
-| AF 검토보조1 | T-002 (all stages), T-008 (done), T-011, T-015, T-025, T-027, T-028 |
-| AF 검토보조2 | T-007, T-012, T-021, T-023, T-024, T-030, T-031, T-032 |
+| AF 검토보조1 | T-002 (all stages), T-008 (done), T-011, T-015, T-025, T-027, T-028, T-035 |
+| AF 검토보조2 | T-007, T-012, T-021, T-023, T-024, T-030, T-031, T-032, T-033, T-034 |
 | AF 검토보조3 | T-004, T-009, T-013, T-018, T-019 |
 | AF 검토보조4 | T-010, T-014, T-016, T-020, T-022 |
 
@@ -33,6 +33,14 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - T-009 and T-010 first skeletons merged → tell AF 업무분배보조 (screen stage B starts).
 - 실행14 (T-020) or 실행5 (T-004) review cleared → offer the seat to AF 업무분배보조 for T-103 / T-104.
 - T-018 merged → 실행13 starts T-105 (screen manager). T-019 merged → 실행2 starts T-106.
+
+- T-009 merged → T-010 reruns gen:api (schema.ts from T-009 b9fb6cc); T-026 stage 2 (실행10); screen routers start;
+  T-009b starts (실행7).
+- T-009 + T-105 merged → user browser check of the live view and login (via the director).
+
+- Merge order: T-009b (remote_view mark) and T-010 stage 4 (client rule) before any screen router (T-100..T-106 stage B).
+
+- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard and T-011's bench check are both on main. Tell the director when they are.
 
 ## 후속 과제 후보
 
@@ -63,6 +71,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   - WP-G: `hardware_confirm` for human-confirmed profile items (ui-spec 7.2).
   - Server/web: first-screen notice of the last shutdown's light readback (ui-spec 5.2).
   - Piezo keys f / w / W stay disabled until M5 (operations-spec 9.2).
+- **ops-spec nit (next touch of docs/operations-spec.md):** escape_dy_um direction is decided: +Y, 15 mm, unmeasured provisional (PLAN v1.3, fbc1e08).
 - **ui-spec nit (next touch of docs/ui-spec.md):** image check grade is "computed", not "classical". 4.0 transport row still calls abort open; D13 decided it. `update` stays in the command table (T-011 adds it to COMMAND_KINDS).
 - **Waiting on the director/user:** real `light_set`/`lights_off` at M3 instead of M4; whether viewers
   may submit questions to the mock store and write flags (default: local operator only).
@@ -84,6 +93,10 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - 4x focus plane at the current XY (default centre for focus_100x, T-104 gap 6): owner WP-C focus port.
 - Lens table: engine data inside guards (fa2bdcd). Q8 only asks where FocusAxis keeps its WD values, so the
   provisional rows can cite their source. Moves to the person-owned envelope at integration.
+
+- **T-107 (screen manager, later):** browser M1 walk-through in `web/e2e/` (not tests/e2e/, which is T-035). Needs a
+  headless browser package decision (downloads binaries) with the director, then T-010's package.json order.
+- **Free seat:** 실행16 after T-022b.
 
 ## 현미경 PC 확인 항목 (총괄에 넘김)
 
