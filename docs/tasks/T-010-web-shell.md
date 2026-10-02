@@ -119,3 +119,11 @@
 - Add a shared default in `src/test/fakes.ts`: `/api/auth/me` answers a logged-in operator (`*@example.test`), opt-out
   per test. Rewrite the auth test as "uses the login gate when present" (stub login module). Works with and without
   T-105 on the branch.
+
+## T-010-8 (AF 실행4, after T-010-7; review AF 검토보조4) — lock messages on the event stream
+
+- T-009c adds `{"type": "lock", "locked": bool}` on `/ws/events` (sent on connect and on change; while locked, no
+  `event` messages). The shared EventStream drops non-`event` messages today. Add
+  `client.events.onLock(fn) -> unsubscribe` for `type: "lock"`, and reload `useEngineStatus` (`/api/state`) when
+  `useAuth().resumed` changes after unlock. T-105's gate already calls `client.events.onLock` when present.
+  Regenerate schema.ts after T-009c merges so `WsLock` is typed.
