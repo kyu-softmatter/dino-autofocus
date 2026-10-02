@@ -22,7 +22,7 @@ Dev seats send `[검토요청 T-NNN]` to the assistant for their task. One branc
 | Assistant | Tasks |
 |---|---|
 | AF 검토보조1 | T-002 (all stages), T-008 (done), T-011, T-015, T-025, T-027, T-028 |
-| AF 검토보조2 | T-007, T-012, T-021, T-023, T-024, T-030, T-031 |
+| AF 검토보조2 | T-007, T-012, T-021, T-023, T-024, T-030, T-031, T-032 |
 | AF 검토보조3 | T-004, T-009, T-013, T-018, T-019 |
 | AF 검토보조4 | T-010, T-014, T-016, T-020, T-022 |
 
@@ -63,7 +63,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   - WP-G: `hardware_confirm` for human-confirmed profile items (ui-spec 7.2).
   - Server/web: first-screen notice of the last shutdown's light readback (ui-spec 5.2).
   - Piezo keys f / w / W stay disabled until M5 (operations-spec 9.2).
-- **ui-spec nit (next touch of docs/ui-spec.md):** 4.0 transport row still calls abort open; D13 decided it. `update` stays in the command table (T-011 adds it to COMMAND_KINDS).
+- **ui-spec nit (next touch of docs/ui-spec.md):** image check grade is "computed", not "classical". 4.0 transport row still calls abort open; D13 decided it. `update` stays in the command table (T-011 adds it to COMMAND_KINDS).
 - **Waiting on the director/user:** real `light_set`/`lights_off` at M3 instead of M4; whether viewers
   may submit questions to the mock store and write flags (default: local operator only).
 

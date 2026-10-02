@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 import { type AreaId, DEFAULT_AREA, isAreaId } from "./areas";
 
@@ -16,7 +16,7 @@ export interface Route {
 
 export function parseHash(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
-  const m = /^([^/?]*)(?:[/]?)(.*)$/.exec(path) ?? ["", "", ""];
+  const m = /^([^/?]*)\/?(.*)$/.exec(path) ?? ["", "", ""];
   const id = m[1];
   if (!isAreaId(id)) return { area: DEFAULT_AREA, rest: "" };
   return { area: id, rest: m[2] };
@@ -37,26 +37,49 @@ export function hashOfArea(id: AreaId): string {
   return areaHref(id);
 }
 
-function useHashRoute(): Route {
-  const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
-  useEffect(() => {
-    const onHash = () => setRoute(parseHash(window.location.hash));
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-  return route;
+// One route store for the app. A navigation from code updates it at once; the
+// browser's own hashchange (back button, typed URL, links) updates it too, and is
+// a no-op when it only echoes a navigation already applied.
+let current: Route = parseHash(typeof window === "undefined" ? "" : window.location.hash);
+const listeners = new Set<() => void>();
+
+function update(next: Route): void {
+  if (next.area === current.area && next.rest === current.rest) return;
+  current = next;
+  listeners.forEach((fn) => fn());
 }
 
-function setHash(next: string): void {
-  if (window.location.hash !== next) window.location.hash = next;
-  // jsdom and some browsers fire hashchange late; tell listeners now
-  window.dispatchEvent(new HashChangeEvent("hashchange"));
+function onHashChange(): void {
+  update(parseHash(window.location.hash));
+}
+
+function subscribe(fn: () => void): () => void {
+  if (listeners.size === 0) window.addEventListener("hashchange", onHashChange);
+  listeners.add(fn);
+  // the hash may have changed while nobody listened (tests, first mount)
+  onHashChange();
+  return () => {
+    listeners.delete(fn);
+    if (listeners.size === 0) window.removeEventListener("hashchange", onHashChange);
+  };
+}
+
+const getRoute = (): Route => current;
+
+/** Open a route from code. */
+export function navigate(href: string): void {
+  if (window.location.hash !== href) window.location.hash = href;
+  update(parseHash(href));
+}
+
+function useRoute(): Route {
+  return useSyncExternalStore(subscribe, getRoute);
 }
 
 /** For the shell: the area in view and a way to open another. */
 export function useArea(): [AreaId, (id: AreaId) => void] {
-  const { area } = useHashRoute();
-  const go = useCallback((id: AreaId) => setHash(areaHref(id)), []);
+  const { area } = useRoute();
+  const go = useCallback((id: AreaId) => navigate(areaHref(id)), []);
   return [area, go];
 }
 
@@ -65,7 +88,7 @@ export function useArea(): [AreaId, (id: AreaId) => void] {
  * keeps the area. `const [rest, setRest] = useAreaPath();`
  */
 export function useAreaPath(): [string, (rest: string) => void] {
-  const { area, rest } = useHashRoute();
-  const set = useCallback((r: string) => setHash(areaHref(area, r)), [area]);
+  const { area, rest } = useRoute();
+  const set = useCallback((r: string) => navigate(areaHref(area, r)), [area]);
   return [rest, set];
 }
