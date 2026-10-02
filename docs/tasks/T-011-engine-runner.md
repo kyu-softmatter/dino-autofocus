@@ -165,3 +165,51 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - Session and sample rule (manager decision, answers 실행1): one sample per experiment session (T-019 as
   written). `sample_open` and `sample_new` run with no session open (they pick the sample for the next
   session; nothing moves); with a session open they refuse unless the sample is the session's own.
+
+## Frame hand-over to the server (from T-009)
+
+- Optional `FrameSource.latest_frame() -> (uint16 ndarray, meta) | None`, read by the server on `frame_ready`.
+  The engine keeps only the newest frame for it. `EngineAPI.shutdown(reason)` is blocking (lights off first).
+
+## Sample block in the snapshot (from T-106, G9)
+
+- `snapshot()["sample"] = {sample_id, reserved, session_id}`, so the server can open a session for the current
+  sample.
+
+## Bench backends need a clearance callback (from T-002-4 pre-review)
+
+- When the backend is a bench backend (mm-real), the runner refuses any op that calls `approach()` without a
+  clearance callback. Before M4.
+
+## Permission check for the screens (from T-103)
+
+- `check(ops, context) -> {op: {allowed, reason}}`, computed from the one permission table plus engine state
+  (running op, awaiting_return, open session, control holder). The server adds remote and auth state
+  (T-009b `GET /api/permissions`). Screens never compute these reasons themselves.
+
+## Light payload shape (from T-010 stage 2; manager decision)
+
+- `light_changed` and the snapshot's lights use one shape: `{dialamp: {state, intensity}, aura: {state, lines:
+  {<LINE>: percent}}, verified, records}` (ui-spec 4.4 names plus the readback fields). Drop the generic
+  `{state: {device: read}}` form.
+
+## Permission classes (manager, confirms 실행15's table)
+
+| op | class | control | session |
+|---|---|---|---|
+| hardware_scan, status | read | yes | no |
+| hardware_confirm, sample_open, sample_new | record | yes (hardware_confirm: local operator only) | no |
+| sample_geometry_set, loading_confirm_person, loading_check_image | record | yes | yes |
+| boundary_mark/undo/reset, map_flag, map_flag_retire, candidate_confirm/reject | record (beside a hardware op) | no; local operator (D16) | yes |
+| score_tare | record | yes | yes |
+| light_set | light | yes | yes |
+| edge_trace, scan_4x, sample_map, goto_xy, focus_100x, objective_change | motion | yes | yes |
+| unknown op | motion (strictest) | yes | yes |
+| abort, lights_off | stop | no (D13: remote abort only) | no |
+
+## Exit-path lights (manager decision, from T-030 review)
+
+- A normal op exit (finished) restores the lights to their state before the op: it turns off what that
+  op turned on and leaves a light set by `light_set` alone. `error`, `abort`, `lights_off`, `shutdown`, D14 auto-abort and
+  closing the experiment session turn everything off (PLAN rule 5, aa32fcf). Record which rule applied. Test: `light_set` then
+  `status` keeps the light on; `light_set` then `abort` turns it off.
