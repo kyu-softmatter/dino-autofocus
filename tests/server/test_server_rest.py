@@ -14,7 +14,9 @@ def test_health_and_state(engine, make_client):
     c = make_client(engine, remote_view=True)
     assert c.get("/api/health").json() == {
         "status": "ok", "engine": "fake", "remote_view": True, "remote_abort": True}
-    assert c.get("/api/state").json() == engine.snapshot()
+    state = c.get("/api/state").json()
+    assert state["positions"]["z_um"] == 3000.0 and state["running"] == []
+    assert state["owner"] is None and state["session"] is None  # typed defaults
 
 
 def test_command_round_trip(engine, make_client):
@@ -37,7 +39,8 @@ def test_bad_commands(engine, make_client):
     assert c.post("/api/commands", json={"kind": "move_z"}).status_code == 422
     r = c.post("/api/commands", json={"kind": "start", "op": "unknown_op"})
     assert r.status_code == 400
-    assert "unknown_op" in r.json()["detail"]
+    assert r.json()["detail"]["code"] == "refused"
+    assert "unknown_op" in r.json()["detail"]["message"]
     assert engine.commands == []
 
 
@@ -47,7 +50,8 @@ def test_remote_may_read_but_not_command(engine, make_client):
     assert c.get("/api/state").status_code == 200
     r = c.post("/api/commands", json={"kind": "lights_off"})
     assert r.status_code == 403
-    assert "192.168.1.20" in r.json()["detail"]
+    assert r.json()["detail"]["code"] == "remote_view"
+    assert r.headers["X-DinoAF-Refusal"] == "remote_view"
     # any non-read method, on any path, including area routers and unknown paths
     assert c.put("/api/anything", json={}).status_code == 403
     assert c.delete("/api/anything").status_code == 403
@@ -67,7 +71,7 @@ def test_commands_refused_from_foreign_pages(engine, make_client):
     assert len(engine.commands) == 2
 
 
-def test_area_router_discovery(tmp_path, monkeypatch, engine, agent_store):
+def test_area_router_discovery(tmp_path, monkeypatch, engine, agent_store, seat, log_in_as):
     pkg = tmp_path / "fake_areas"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("")
@@ -88,12 +92,15 @@ def test_area_router_discovery(tmp_path, monkeypatch, engine, agent_store):
     app = FastAPI()
     app.state.engine = engine
     app.state.agent_store = agent_store
+    app.state.auth = seat
     assert include_area_routers(app, "fake_areas") == ["demo"]
     local = TestClient(app, client=("127.0.0.1", 1))
-    assert local.get("/api/demo/ping").json() == {"pong": None, "local": True,
+    log_in_as(local, "otto@example.test")
+    assert local.get("/api/demo/ping").json() == {"pong": [], "local": True,
                                                   "store": "MockStore"}
     assert local.put("/api/demo/note").json() == {"ok": True}
     remote = TestClient(app, client=("10.0.0.5", 1))
+    log_in_as(remote, "otto@example.test")
     assert remote.get("/api/demo/ping").json()["local"] is False
     assert remote.put("/api/demo/note").status_code == 403
 

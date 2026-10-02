@@ -25,7 +25,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.requests import HTTPConnection
 
-from .api import is_local
+from .api import Refusal, command_refusal, logged_in_refusal, login_state
 from .schemas import (
     EngineAPI,
     Event,
@@ -43,19 +43,59 @@ log = logging.getLogger(__name__)
 EVENT_QUEUE_MAX = 1000  # a client this far behind is closed (1013) and should reload /api/state
 CLOSE_TRY_AGAIN = 1013
 CLOSE_UNSUPPORTED = 1003
+CLOSE_REFUSED = 4000  # + the HTTP status: 4401 login_required, 4423 locked
 
-Refuse = Callable[[HTTPConnection, str | None, str], str | None]  # (conn, kind, op) -> why not
+
+def _ws_error(why: Refusal) -> str:
+    return WsError(status=why.status, detail=why.message, code=why.code).model_dump_json()
+
+
+async def _admitted(websocket: WebSocket) -> bool:
+    """Accept, then require a live unlocked login (the cookie travels with the upgrade). A
+    refusal is sent as a WsError before the close, so the browser can read the reason."""
+    await websocket.accept()
+    if why := logged_in_refusal(login_state(websocket)):
+        await websocket.send_text(_ws_error(why))
+        await websocket.close(CLOSE_REFUSED + why.status, why.code)
+        return False
+    return True
+
+
+class LocalViewers:
+    """D14: the engine learns how many microscope-PC browsers watch (`/ws/events` from
+    loopback, logged in). The count is reported on every change."""
+
+    def __init__(self, engine: EngineAPI) -> None:
+        self._engine = engine
+        self.count = 0
+
+    def _report(self) -> None:
+        try:
+            self._engine.set_local_viewers(self.count)
+        except Exception:
+            log.exception("could not report %d local viewers", self.count)
+
+    def joined(self) -> None:
+        self.count += 1
+        self._report()
+
+    def left(self) -> None:
+        self.count -= 1
+        self._report()
 
 
 def install(
-    app: FastAPI, engine: EngineAPI, *, refuse: Refuse, stopped: Callable[[], bool] = lambda: False
+    app: FastAPI, engine: EngineAPI, *, stopped: Callable[[], bool] = lambda: False
 ) -> None:
     frames = FrameBridge(engine)
+    viewers = LocalViewers(engine)
     app.state.frames = frames
+    app.state.local_viewers = viewers
 
     @app.websocket("/ws/events")
     async def events(websocket: WebSocket) -> None:
-        await websocket.accept()
+        if not await _admitted(websocket):
+            return
         loop = asyncio.get_running_loop()
         out: asyncio.Queue[str | None] = asyncio.Queue(maxsize=EVENT_QUEUE_MAX)
 
@@ -90,32 +130,40 @@ def install(
             try:
                 msg = WsCommand.model_validate_json(text)
             except ValidationError as e:
-                return WsError(status=422, detail=str(e))
-            why = refuse(conn, msg.command.kind, msg.command.op)
-            if why is not None:
-                return WsError(status=403, detail=why)
+                return WsError(status=422, detail=str(e), code="invalid")
+            # login and lock are read again for every command: the socket outlives a lock
+            if why := command_refusal(conn, msg.command.kind, msg.command.op):
+                return WsError(status=why.status, detail=why.message, code=why.code)
             if stopped():
-                return WsError(status=503, detail="the server is shutting down")
+                return WsError(status=503, detail="the server is shutting down",
+                               code="shutting_down")
+            me = login_state(conn)
+            cmd = msg.command.to_engine(remote=not me.local, user_id=me.user_id,
+                                        control_grant=conn.app.state.auth.grant_for(me.info))
             try:
-                cmd = msg.command.to_engine(remote=not is_local(conn))
                 op_id = await asyncio.to_thread(engine.submit, cmd)
-            except ValueError as e:
-                return WsError(status=400, detail=str(e))
+            except ValueError as e:  # runner.CommandRefused
+                return WsError(status=400, detail=str(e), code="refused")
             return WsAccepted(op_id=op_id)
 
+        local = login_state(websocket).local
         unsubscribe = engine.subscribe(sink)
+        if local:
+            viewers.joined()
         try:
             await _until_first_done(send(), receive())
         finally:
             unsubscribe()
+            if local:
+                viewers.left()
 
     @app.websocket("/ws/frames")
     async def live_frames(websocket: WebSocket) -> None:
-        await websocket.accept()
+        if not await _admitted(websocket):
+            return
         if not isinstance(engine, FrameSource):
-            await websocket.send_text(
-                WsError(status=501, detail="this engine provides no frames").model_dump_json()
-            )
+            await websocket.send_text(WsError(status=501, detail="this engine provides no frames",
+                                              code="no_frames").model_dump_json())
             await websocket.close(CLOSE_UNSUPPORTED)
             return
         slot: asyncio.Queue[tuple[str, bytes]] = asyncio.Queue(maxsize=1)

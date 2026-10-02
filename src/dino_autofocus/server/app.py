@@ -5,14 +5,17 @@ Access scope (PLAN.md 5, D13, D16; the rules live in `server/api/__init__.py`):
 - The server listens on 127.0.0.1 only; `remote_view` opens it to other PCs for viewing.
 - The Host header must be in an allow-list (loopback names, plus this PC's names and
   addresses under remote view), so a page that rebinds its own domain to 127.0.0.1 is refused.
-- A request that could move hardware (any HTTP method other than GET/HEAD/OPTIONS, and
-  command messages on `/ws/events`) is accepted only from the microscope PC itself, and only
-  from a page served by this server or a loopback dev server (or a non-browser client), so a
-  web page open in another tab cannot drive the stage.
-- D13: a remote viewer may send `abort` and nothing else (`remote_abort`, default on).
-- Exception: the six login routes `POST /api/auth/{login, logout, lock, unlock, activity, signup}`
-  are open to remote viewers (they must log in); none of them reaches the engine.
+- Every `/api/*` route and `/ws/*` needs a live login (the `dinoaf_session` cookie), except
+  `GET /api/health`, the login routes `POST /api/auth/{login, logout, lock, unlock,
+  activity, signup}`, `POST /api/shutdown` from the microscope PC (the launcher has no login),
+  and the stops `abort` / `lights_off` from the microscope PC.
+- A write (any method other than GET/HEAD/OPTIONS, and command messages on `/ws/events`) is
+  accepted only from the microscope PC itself, and only from a page served by this server or
+  a loopback dev server (or a non-browser client), so a page in another tab cannot drive the
+  stage. D13: a logged-in remote viewer may send `abort` and nothing else (`remote_abort`).
 - D16: map writes are refused on `/api/commands`; they go through `/api/map`.
+- The server stamps every engine Command with who sent it, from where and with which control
+  grant (T-018); the browser never sees the grant.
 """
 
 from __future__ import annotations
@@ -24,16 +27,35 @@ import threading
 from collections.abc import AsyncIterator, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
 from pydantic.json_schema import models_json_schema
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..agents import AgentStore, MockStore
+from ..engine.operations import sample_ops  # registers the sample operations (T-027)
 from . import static, ws
-from .api import Engine, command_refusal, include_area_routers, is_local, origin_refusal
+from .api import (
+    MAP_WRITE_OPS,
+    SERVER_ACTIONS,
+    STOPS,
+    Auth,
+    AuthSeat,
+    Engine,
+    Refusal,
+    SessionSeat,
+    command_refusal,
+    command_why,
+    include_area_routers,
+    is_local,
+    logged_in_refusal,
+    login_state,
+    origin_refusal,
+    remote_view,
+    server_action_why,
+)
 from .schemas import (
     WS_MODELS,
     ApiError,
@@ -41,8 +63,10 @@ from .schemas import (
     CommandIn,
     EngineAPI,
     Health,
+    PermissionOut,
     ShutdownAccepted,
     ShutdownIn,
+    Snapshot,
 )
 
 log = logging.getLogger(__name__)
@@ -50,6 +74,8 @@ log = logging.getLogger(__name__)
 READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 COMMANDS_PATH = "/api/commands"  # checked in the endpoint, which knows the command kind
+SHUTDOWN_PATH = "/api/shutdown"
+OPEN_READS = frozenset({"/api/health"})
 # remote viewers must be able to log in (PLAN.md 5); T-018 adds the routes in server/api/auth.py
 AUTH_OPEN_PATHS = frozenset(
     f"/api/auth/{name}" for name in ("login", "logout", "lock", "unlock", "activity", "signup")
@@ -88,6 +114,39 @@ class EngineStopper:
             log.exception("engine shutdown (%s) failed", reason)
 
 
+SHUTTING_DOWN = Refusal(503, "shutting_down", "the server is shutting down")
+
+
+def _shutdown_refusal(request: Request) -> Refusal | None:
+    """The launcher stops the server from this PC without a login; no D13 exception."""
+    if not is_local(request):
+        return remote_view("remote view: only the microscope PC may stop the server")
+    return origin_refusal(request)
+
+
+def _http_refusal(request: Request) -> Refusal | None:
+    """The cookie check and the write rule for every `/api/*` request but the commands
+    route, which needs the command kind and checks in its handler."""
+    path = request.url.path
+    if request.method in READ_METHODS:
+        return None if path in OPEN_READS else logged_in_refusal(login_state(request))
+    if path in AUTH_OPEN_PATHS:
+        return origin_refusal(request)
+    if path == COMMANDS_PATH:
+        return None
+    if path == SHUTDOWN_PATH:
+        return _shutdown_refusal(request)
+    return command_refusal(request)  # any other write: loopback, logged in, unlocked
+
+
+def install_sample_seat(engine: EngineAPI, records: Any, samples_root: Path | None,
+                        sessions: SessionSeat) -> None:
+    """The one seam between the server and the sample operations (T-027)."""
+    seat = sample_ops.SampleSeat(records, Path(samples_root or sample_ops.SAMPLES_ROOT),
+                                 sessions.session_for)
+    sample_ops.install_sample_seat(engine, seat)
+
+
 def _package_version() -> str:
     try:
         return version("dino-autofocus")
@@ -99,15 +158,22 @@ def create_app(
     engine: EngineAPI,
     *,
     agent_store: AgentStore | None = None,
+    auth: AuthSeat | None = None,
+    records: Any = None,
+    samples_root: Path | None = None,
     remote_view: bool = False,
     remote_abort: bool = True,
     allowed_hosts: Sequence[str] = (),
     engine_name: str = "unknown",
     web_dist: Path | None = None,
 ) -> FastAPI:
-    """`agent_store` defaults to a `MockStore` (dev). `allowed_hosts` adds Host header names
-    beyond the loopback ones; under remote view the launcher passes this PC's host names and
-    addresses."""
+    """`agent_store` defaults to a `MockStore` (dev); `auth` to an `AuthSeat` with no accounts
+    in a temporary folder (nobody can log in; the launcher passes `AuthSeat.from_config()`).
+    `records` (a T-019 RecordsStore) installs the engine's sample seat (T-027): the sample
+    operations write through the server's one open ExperimentSession (`app.state.sessions`,
+    set by the sessions router). Without it the sample operations refuse.
+    `allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
+    launcher passes this PC's host names and addresses."""
     stopper = EngineStopper(engine)
 
     @contextlib.asynccontextmanager
@@ -118,18 +184,19 @@ def create_app(
     app = FastAPI(title="dino-autofocus", version=_package_version(), lifespan=lifespan)
     app.state.engine = engine
     app.state.agent_store = agent_store if agent_store is not None else MockStore()
+    app.state.auth = auth if auth is not None else AuthSeat.throwaway()
+    app.state.sessions = SessionSeat()
+    if records is not None:
+        install_sample_seat(engine, records, samples_root, app.state.sessions)
     app.state.remote_view = remote_view
     app.state.remote_abort = remote_abort
     app.state.stop_engine = stopper
     app.state.request_exit = None  # set by the launcher: makes the server process exit
 
     @app.middleware("http")
-    async def writes_from_this_pc_only(request: Request, call_next):
-        path = request.url.path
-        if request.method not in READ_METHODS and path != COMMANDS_PATH:
-            why = origin_refusal(request) if path in AUTH_OPEN_PATHS else command_refusal(request)
-            if why is not None:
-                return JSONResponse({"detail": why}, status_code=403)
+    async def access(request: Request, call_next):
+        if request.url.path.startswith("/api/") and (why := _http_refusal(request)):
+            return why.response()
         return await call_next(request)
 
     # added last, so it runs first, for HTTP and WebSocket alike
@@ -140,28 +207,59 @@ def create_app(
     def health() -> Health:
         return Health(engine=engine_name, remote_view=remote_view, remote_abort=remote_abort)
 
-    @app.get("/api/state", tags=["server"])
-    def state(eng: Engine) -> dict:
-        """The engine's snapshot: positions, lights, running operation."""
-        return eng.snapshot()
+    @app.get("/api/state", response_model=Snapshot, tags=["server"])
+    def state(eng: Engine) -> Snapshot:
+        """The engine's snapshot: positions, lights, running operations, session, sample..."""
+        return Snapshot.model_validate(eng.snapshot())
+
+    @app.get("/api/permissions", response_model=dict[str, PermissionOut], tags=["server"])
+    def permissions(request: Request, eng: Engine, seat: Auth,
+                    ops: str = "") -> dict[str, PermissionOut]:
+        """`?ops=a,b,c` -> may I do each now, and if not, why. Engine operations and the stops
+        come from the engine's `check()` with login, loopback, role and D13 on top; the
+        session actions and `submit_question` from the T-018 permissions plus loopback."""
+        me = login_state(request)
+        names = list(dict.fromkeys(n.strip() for n in ops.split(",") if n.strip()))
+        engine_ops = [n for n in names if n not in SERVER_ACTIONS]
+        checked = (eng.check(engine_ops, {"user_id": me.user_id,
+                                          "control_grant": seat.grant_for(me.info)})
+                   if engine_ops else {})
+        out = {}
+        for n in names:
+            if n in SERVER_ACTIONS or n in MAP_WRITE_OPS:
+                why = server_action_why(me, n)
+            else:
+                why = command_why(me, n if n in STOPS else "start", n,
+                                  remote_abort=remote_abort)
+            if why is not None:
+                out[n] = PermissionOut(allowed=False, reason=why.message, code=why.code)
+            elif n in SERVER_ACTIONS:
+                out[n] = PermissionOut(allowed=True)
+            else:
+                e = checked.get(n) or {"allowed": False, "reason": "the engine did not answer"}
+                out[n] = PermissionOut(allowed=bool(e.get("allowed")), reason=e.get("reason"))
+        return out
 
     @app.post(
         COMMANDS_PATH,
         response_model=CommandAccepted,
-        responses={400: {"model": ApiError}, 403: {"model": ApiError}},
+        responses={400: {"model": ApiError}, 401: {"model": ApiError},
+                   403: {"model": ApiError}, 423: {"model": ApiError},
+                   503: {"model": ApiError}},
         tags=["server"],
     )
-    def commands(cmd: CommandIn, request: Request, eng: Engine) -> CommandAccepted:
+    def commands(cmd: CommandIn, request: Request, eng: Engine, seat: Auth) -> CommandAccepted:
         """Hand a command to the engine. Whether it runs is reported by events."""
-        why = command_refusal(request, cmd.kind, cmd.op)
-        if why is not None:
-            raise HTTPException(status_code=403, detail=why)
+        if why := command_refusal(request, cmd.kind, cmd.op):
+            raise why.http()
         if stopper.done:
-            raise HTTPException(status_code=503, detail="the server is shutting down")
+            raise SHUTTING_DOWN.http()
+        me = login_state(request)
         try:
-            op_id = eng.submit(cmd.to_engine(remote=not is_local(request)))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+            op_id = eng.submit(cmd.to_engine(remote=not me.local, user_id=me.user_id,
+                                             control_grant=seat.grant_for(me.info)))
+        except ValueError as e:  # runner.CommandRefused
+            raise Refusal(400, "refused", str(e)).http() from e
         return CommandAccepted(op_id=op_id)
 
     @app.post(
@@ -173,9 +271,8 @@ def create_app(
     def shutdown(body: ShutdownIn, request: Request, tasks: BackgroundTasks) -> ShutdownAccepted:
         """Stop the engine (lights off with readback, abort, finish records), then exit. The
         launcher calls this before any hard kill. Microscope PC only, no D13 exception."""
-        why = command_refusal(request)
-        if why is not None:
-            raise HTTPException(status_code=403, detail=why)
+        if why := _shutdown_refusal(request):
+            raise why.http()
         request_exit = app.state.request_exit
         try:
             stopped = stopper(body.reason)
@@ -183,13 +280,13 @@ def create_app(
             log.exception("engine shutdown failed")
             if request_exit is not None:
                 request_exit()  # exit anyway; the atexit hook tries the engine once more
-            raise HTTPException(status_code=500, detail=f"engine shutdown failed: {e}") from e
+            raise Refusal(500, "shutdown_failed", f"engine shutdown failed: {e}").http() from e
         if request_exit is not None:
             tasks.add_task(request_exit)  # after the response has gone out
         return ShutdownAccepted(reason=stopper.reason or body.reason, already=not stopped)
 
     include_area_routers(app)
-    ws.install(app, engine, refuse=command_refusal, stopped=lambda: stopper.done)
+    ws.install(app, engine, stopped=lambda: stopper.done)
     static.mount_web(app, web_dist)
 
     def openapi() -> dict:

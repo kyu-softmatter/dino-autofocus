@@ -8,14 +8,16 @@ from dino_autofocus.server.__main__ import PlaceholderEngine, main
 from dino_autofocus.server.schemas import Command
 
 COMMON = {"CommandIn", "CommandAccepted", "EventOut", "Health", "ApiError",
-          "WsEvent", "WsCommand", "WsAccepted", "WsError", "WsFrame"}
+          "WsEvent", "WsCommand", "WsAccepted", "WsError", "WsFrame", "RefusalDetail",
+          "Snapshot", "PermissionOut", "OpSummary", "Lights", "Positions"}
 
 
 def test_dump_openapi(tmp_path, capsys):
     out = tmp_path / "openapi.json"
     assert main(["--dump-openapi", str(out)]) == 0
     spec = json.loads(out.read_text(encoding="utf-8"))
-    assert {"/api/health", "/api/state", "/api/commands"} <= set(spec["paths"])
+    assert {"/api/health", "/api/state", "/api/commands", "/api/permissions",
+            "/api/shutdown"} <= set(spec["paths"])
     schemas = spec["components"]["schemas"]
     assert set(schemas) >= COMMON
     assert schemas["CommandIn"]["properties"]["kind"]["enum"][:2] == ["start", "abort"]
