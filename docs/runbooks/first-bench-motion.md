@@ -154,30 +154,36 @@ that, and only after 2a has passed once on the stand.
 
 Do not use the other operations instead:
 - **`objective_change`: do not run it on the stand**, including a turn to a dry lens without `escape`.
-  Refused by the code (T-029d, the "Bench approach lock" below) until `BENCH_APPROACH` is flipped.
+  Since the partial unlock (2026-10-02, "Bench approach lock" below) the code refuses only its climbs above
+  2800 µm on a lens other than the 4x, 10x and 20x; the climb 0 -> 2800 is no longer refused. Keep this as
+  a user rule until Q13 and Q20 are measured.
   - Its "clearance" callback is software bounds (Z window and cap, lens readback, abort), not a contact
     or oil sensor. The runner's bench check does not refuse it, because it has that callback.
   - A turn to the 4x that climbs back only to 2800 µm on the 4x is not above 2800. Do that turn by hand
     (2b).
 - `scan_4x` is refused on `mm-real`:
   - by the runner, because it approaches with no clearance callback (T-011b `approach_clearance`);
-  - by T-029d, because its 4x sweeps climb above 2800.
-  Any step that sweeps or scans stays blocked until the flip.
+  - no longer by T-029d: since the partial unlock the 4x may sweep above 2800.
+  Any step that sweeps or scans stays blocked by the runner's check.
 
-**Bench approach lock (T-029d).** T-029d is in its final review; until it is on main, nothing in the code
-stops `objective_change` or `focus_100x`, so treat these as user rules.
+**Bench approach lock (T-029d), partially unlocked.** The user unlocked it on 2026-10-02
+(`BENCH_APPROACH = "MEASURED"`), before Q13, Q20 and the stage limits were measured. It was planned as a
+reviewed commit after those measurements.
 
-While `BENCH_APPROACH` reads `"UNMEASURED"`, the guards refuse on the stand:
-- any upward Z move (`approach`, `move_to` and sweeps) above 2800 µm;
-- any upward Z move on a lens other than the 4x.
+Now the guards refuse on the stand any upward Z move (`approach`, `move_to` and sweeps) above the lens's
+approach ceiling:
+- 3200 µm for the 4x, 10x and 20x, whose free working distance covers the 400 µm window;
+- 2800 µm for the 40x WI, 60x Oil, 100x Oil and an unreadable lens.
 
-Downward moves and `z_retract` stay allowed. That covers:
-- `objective_change`, both to the 100x and the climb back after a turn to any lens but the 4x;
-- `focus_100x`;
-- `scan_4x`'s sweeps.
+A sweep climbs to its start in one move with no clearance check, so this rule covers sweeps and `move_to`
+too, not only `approach`. Downward moves and `z_retract` stay allowed.
 
-The flip is a separate reviewed commit, after the bench measurements (Q13, Q20, stage limits) and the
-director's confirmation.
+What that leaves possible on the stand (once the motion lock is off):
+- every lens may climb 0 -> 2800 µm, the move Q13 is about;
+- the 4x, 10x and 20x may sweep and approach up to 3200 µm;
+- `focus_100x` and the 100x approach above 2800 are still refused.
+
+Until Q13 and Q20 are measured, the old rules stay user rules: no upward Z on a lens other than the 4x.
 - `scripts/*`: never (see the top of this runbook).
 
 Enforced by:
@@ -187,8 +193,9 @@ Enforced by:
 - T-011b: the bench clearance check in the runner's preflight (refuses `scan_4x`, not
   `objective_change`);
 - `guards.XYAxis`: box, long-move rule, readback;
-- T-029d: `BENCH_APPROACH`, refusing upward Z above 2800 µm or on a non-4x lens on the stand while
-  `"UNMEASURED"`. Until it merges, the "no `objective_change` on the stand" rule is this runbook only.
+- T-029d: `BENCH_APPROACH`. Partially unlocked on 2026-10-02: it refuses upward Z above the lens's
+  approach ceiling on the stand (2800 µm except the 4x, 10x and 20x). The "no `objective_change` on the
+  stand" rule is this runbook only.
 
 ## Step 3. No 100x Oil approach yet
 
@@ -200,20 +207,10 @@ Do not raise Z under the 100x Oil (0 -> 2800 -> sample window) until two questio
 - **Q20**: how long an XY move may be on the 100x before Z must retract (the oil film), and `z_safe`. Today
   `Z_SAFE_UM` is 0 for every lens and the 100x long-move row is 156 um (*provisional*).
 
-Refused by the code (T-029d, "Bench approach lock" in step 2) until `BENCH_APPROACH` is flipped. Under the
-100x every upward Z move is on a lens other than the 4x, so `objective_change` to the 100x and
-`focus_100x` are refused.
-
-The flip comes only after Q13, Q20 and the stage limits are measured, as a reviewed commit the director
-confirms. The clearance callbacks are software bounds (Z window and cap, lens readback, abort), not a
+Since the partial unlock (T-029d, "Bench approach lock" in step 2) the code refuses only the part above
+2800 µm under the 100x: its approach above 2800 and `focus_100x`. The climb 0 -> 2800 µm under the 100x is
+no longer refused by the code, so this step is a user rule. The clearance callbacks are software bounds (Z window and cap, lens readback, abort), not a
 contact or oil sensor.
-
-Until T-029d is on main, only part of this is in the code:
-- Stopped: an approach above 2800 µm under the 100x Oil. Its `FREE_WD_UM` (130 µm) does not cover the
-  window (T-027b, T-029).
-- Not stopped: `objective_change` to the 100x still climbs 0 -> 2800 µm, the very move Q13 is about.
-- Not stopped: `focus_100x` sweeps with ordinary guarded moves, not `approach`, so the runner's bench check
-  does not apply to them.
 
 Treat the rest as a user rule until then.
 
