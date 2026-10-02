@@ -721,7 +721,7 @@ def run_edge_trace(backend: Backend, sample: Sample, args: dict, sink: EventSink
         for w in warnings:
             scope.emit(Event("log", scope.op_id, {"level": "warning", "text": w}))
         if a.light == "brightfield":
-            scope.lights(switch(backend, LightRequest("brightfield")))
+            scope.lights(switch(backend, scope, LightRequest("brightfield")))
         if a.exposure_ms is not None:
             backend.set_exposure(a.exposure_ms)
         binfo = backend.info()

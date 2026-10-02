@@ -15,8 +15,10 @@ everything off again and the operation ends in `error`. On success the light sta
 Who may run it (D15: M3, operator with the control grant, open session) is the runner's
 permission table (`light_set` is a light action there), not this module.
 
-Until T-015 / T-002-4 land: `switch` calls the backend light methods directly. It is the one
-place to change when the methods take the control token and the guarded helpers exist.
+Light-on takes the control token (T-015), which only `engine.guards` may hold. `switch` goes
+through the operation scope's guarded helpers `OpScope.lamp_on()` / `OpScope.aura_line_on()`
+(T-002-4). Until those are on main, switching a light on raises GuardError naming them;
+switching off needs no token and always works.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from pathlib import Path
 
 from ..backend import Backend, Readback
 from ..events import Event, EventSink, fan_out, null_sink
-from ..guards import lights_off, snapshot
+from ..guards import GuardError, OpScope, lights_off, snapshot
 from ..records import OpRecord
 
 NAME = "light_set"
@@ -80,12 +82,21 @@ def plan(args: dict) -> dict:
     return {"op": NAME, "text": req.describe(), "request": asdict(req)}
 
 
-def switch(backend: Backend, req: LightRequest) -> list[Readback]:
-    if req.mode == "brightfield":
-        return backend.lamp_on()
-    if req.mode == "aura":
-        return backend.aura_line_on(req.line, req.percent)
-    return backend.all_off()
+def guarded_light_available() -> bool:
+    """True once guards' OpScope has the light-on helpers (T-002-4)."""
+    return all(hasattr(OpScope, n) for n in ("lamp_on", "aura_line_on"))
+
+
+def switch(backend: Backend, scope: OpScope, req: LightRequest) -> list[Readback]:
+    """The one place lights are switched by meaning. On through the scope's guarded helpers
+    (they carry the token), off straight through the backend (a stop needs no token)."""
+    if req.mode == "off":
+        return backend.all_off()
+    name = "lamp_on" if req.mode == "brightfield" else "aura_line_on"
+    helper = getattr(scope, name, None)
+    if helper is None:
+        raise GuardError(f"switching a light on needs OpScope.{name} (T-002-4, not on main yet)")
+    return helper() if req.mode == "brightfield" else helper(req.line, req.percent)
 
 
 def run_light_set(backend: Backend, parent: Path, args: dict, sink: EventSink = null_sink, *,
@@ -97,11 +108,13 @@ def run_light_set(backend: Backend, parent: Path, args: dict, sink: EventSink = 
     rec = OpRecord(parent, NAME, start_state=snapshot(backend), user_id=user_id,
                    session_id=session_id)
     emit = fan_out(rec.sink, sink)
+    # a scope without operation(): its exit path would switch the light straight off again
+    scope = OpScope(rec.op_id, rec, emit)
     emit(Event("started", rec.op_id, {"op": NAME, "args": dict(args), "user_id": user_id,
                                       "session_id": session_id}))
     status, error, result, lights = "error", None, None, None
     try:
-        rbs = switch(backend, req)
+        rbs = switch(backend, scope, req)
         emit(Event("light_changed", rec.op_id, {"readbacks": [asdict(r) for r in rbs]}))
         bad = [f"{r.device}.{r.prop} wanted {r.wanted}, read {r.read}" for r in rbs
                if not r.verified]

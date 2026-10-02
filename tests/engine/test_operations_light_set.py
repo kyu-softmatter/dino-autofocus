@@ -8,7 +8,16 @@ from pathlib import Path
 import pytest
 from conftest import FakeBackend
 
-from dino_autofocus.engine.operations.light_set import parse, plan, run_light_set
+from dino_autofocus.engine.guards import GuardError
+from dino_autofocus.engine.operations.light_set import (
+    guarded_light_available,
+    parse,
+    plan,
+    run_light_set,
+)
+
+needs_helpers = pytest.mark.skipif(not guarded_light_available(),
+                                   reason="OpScope light-on helpers come with T-002-4")
 
 
 @pytest.mark.parametrize("args, why", [
@@ -38,6 +47,7 @@ def test_plan_text_touches_no_backend() -> None:
         "DiaLamp off, Aura GREEN at 1 %")
 
 
+@needs_helpers
 def test_brightfield_stays_on_after_finish(fake: FakeBackend, tmp_path) -> None:
     events = []
     out = run_light_set(fake, tmp_path, {"mode": "brightfield"}, events.append)
@@ -50,6 +60,7 @@ def test_brightfield_stays_on_after_finish(fake: FakeBackend, tmp_path) -> None:
     assert summary["result"]["verified"] is True
 
 
+@needs_helpers
 def test_aura_line_percent_goes_per_mille(fake: FakeBackend, tmp_path) -> None:
     run_light_set(fake, tmp_path, {"mode": "aura", "line": "GREEN", "percent": 1})
     assert fake.props[("Aura", "GREEN_Intensity")] == "10"
@@ -62,6 +73,7 @@ def test_off_mode(fake: FakeBackend, tmp_path) -> None:
     assert fake.lights == {"DiaLamp": "0", "Aura": "0"}
 
 
+@needs_helpers
 def test_unverified_readback_switches_off_and_errors(fake: FakeBackend, tmp_path) -> None:
     fake.stuck.add("DiaLamp")  # DiaLamp State ignores the write
     events = []
@@ -76,10 +88,22 @@ def test_backend_failure_still_switches_off(fake: FakeBackend, tmp_path, monkeyp
     def boom(*_a):
         raise OSError("light engine not answering")
 
-    monkeypatch.setattr(fake, "aura_line_on", boom)
+    monkeypatch.setattr(fake, "all_off", boom)
     with pytest.raises(OSError):
-        run_light_set(fake, tmp_path, {"mode": "aura", "line": "RED", "percent": 2})
+        run_light_set(fake, tmp_path, {"mode": "off"})
     (folder,) = tmp_path.iterdir()
     summary = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
     assert summary["status"] == "error" and summary["lights_off"]["switched_off"] is True
-    assert summary["lights_off"]["verified"] is True
+    assert summary["lights_off"]["verified"] is False  # the switch-off failed too: said so
+    assert "light engine not answering" in summary["lights_off"]["error"]
+
+
+@pytest.mark.skipif(guarded_light_available(), reason="T-002-4 helpers are on main")
+def test_light_on_without_the_guarded_helpers_is_refused(fake: FakeBackend, tmp_path) -> None:
+    with pytest.raises(GuardError, match="T-002-4"):
+        run_light_set(fake, tmp_path, {"mode": "brightfield"})
+    assert fake.lights == {"DiaLamp": "0", "Aura": "0"}
+    assert not [c for c in fake.calls if c[0] == "light" and c[2] == "1"]
+    (folder,) = tmp_path.iterdir()
+    summary = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "error" and summary["lights_off"]["verified"] is True

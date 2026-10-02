@@ -14,6 +14,7 @@ from conftest import FakeBackend
 from dino_autofocus.engine.backend import Frame, Positions
 from dino_autofocus.engine.guards import GuardError, OperationAborted
 from dino_autofocus.engine.operations import edge_trace as et
+from dino_autofocus.engine.operations.light_set import guarded_light_available
 from dino_autofocus.engine.sample import Sample, SampleMap
 
 PX_UM, N = 16.0, 240  # 3.84 mm field, like the 4x on the full sensor at a coarser pixel
@@ -85,7 +86,9 @@ def _run(world, sample, args=None, *, confirm=lambda k, t: True, **kw):
     clock = Clock()
     events = []
     kw.setdefault("sleep", clock.sleep)
-    out = et.run_edge_trace(world, sample, {"speed_um_s": 1000.0, **(args or {})},
+    # light "keep": switching brightfield on needs the T-002-4 helpers (own test below)
+    out = et.run_edge_trace(world, sample, {"speed_um_s": 1000.0, "light": "keep",
+                                            **(args or {})},
                             events.append, confirm=confirm, clock=clock, wall=clock, **kw)
     return out, events
 
@@ -205,8 +208,7 @@ def test_full_trace_closes_the_loop_and_fits_the_hole(sample) -> None:
     assert len(boundary) == out["n_points"] >= 30
 
     assert not [c for c in w.calls if c[0] == "move_z"]  # Z never moves
-    assert ("light", "DiaLamp", "1") in w.calls  # brightfield during the trace
-    assert w.lights == {"DiaLamp": "0", "Aura": "0"}  # and off on the way out
+    assert w.lights == {"DiaLamp": "0", "Aura": "0"}  # off on the way out
     steps = [c for c in w.calls if c[0] == "move_xy"]
     assert len(steps) == out["n_moves"]
     xy = np.array([c[1:] for c in steps])
@@ -219,6 +221,25 @@ def test_full_trace_closes_the_loop_and_fits_the_hole(sample) -> None:
     assert sub[0] == "track_start" and "cal_result" in sub and sub[-1] == "track_stop"
     assert "edge_point" in sub and "move" in sub
     assert [e for e in events if e.kind == "motion"]  # moves went through XYAxis
+
+
+@pytest.mark.skipif(not guarded_light_available(),
+                    reason="OpScope light-on helpers come with T-002-4")
+def test_brightfield_is_on_during_the_trace_and_off_after(sample) -> None:
+    w = HoleWorld(START)
+    w.lights["DiaLamp"] = "0"
+    _run(w, sample, {"light": "brightfield", "max_path_um": 1000})
+    assert ("light", "DiaLamp", "1") in w.calls
+    assert w.lights == {"DiaLamp": "0", "Aura": "0"}
+
+
+@pytest.mark.skipif(guarded_light_available(), reason="T-002-4 helpers are on main")
+def test_brightfield_without_the_helpers_stops_before_any_move(sample) -> None:
+    w = HoleWorld(START)
+    with pytest.raises(GuardError, match="T-002-4"):
+        _run(w, sample, {"light": "brightfield"})
+    assert not [c for c in w.calls if c[0] == "move_xy"]
+    assert w.lights == {"DiaLamp": "0", "Aura": "0"}
 
 
 def test_reference_calibration_skips_the_calibration_moves(sample) -> None:
