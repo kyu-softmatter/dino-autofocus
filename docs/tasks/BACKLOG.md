@@ -11,6 +11,10 @@
 
 권한은 앞 과제가 main 에 병합된 뒤 넘긴다.
 
+`web/src/api/schema.ts` (generated): only T-010 (실행4) commits it. Screen-router branches keep their wire types in
+their own `api.ts`; after each router merges, 실행4 reruns `gen:api` and the area swaps to the generated types in a
+small follow-up (screen manager rule, 2026-10-02).
+
 요청 접수:
 - T-022 (실행16): `dependencies` 에 `three`, `devDependencies` 에 `@types/three`. 래퍼 (@react-three/fiber 등) 없음.
   T-010 1차 골격 병합 뒤 package.json 권한자가 넣는다.
