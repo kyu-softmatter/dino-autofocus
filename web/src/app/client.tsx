@@ -164,8 +164,24 @@ export class Client {
     this.events = new EventStream(transport);
   }
 
+  private authListeners = new Set<(status: number) => void>();
+
+  /**
+   * Called on any 401 (logged out) or 423 (locked) answer. The login gate uses it
+   * to re-read /me and show the login or lock screen.
+   */
+  onAuthFailure(fn: (status: number) => void): () => void {
+    this.authListeners.add(fn);
+    return () => this.authListeners.delete(fn);
+  }
+
+  private check(r: Response): void {
+    if (r.status === 401 || r.status === 423) this.authListeners.forEach((fn) => fn(r.status));
+  }
+
   async get<T = unknown>(path: string): Promise<T> {
     const r = await this.transport.fetch(path, { headers: { Accept: "application/json" } });
+    this.check(r);
     if (!r.ok) throw new CommandRefused(r.status, await detailOf(r));
     return (await r.json()) as T;
   }
@@ -177,6 +193,7 @@ export class Client {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cmd),
     });
+    this.check(r);
     if (r.status === 403) {
       const why = await detailOf(r);
       this.readOnly.refuse(why);

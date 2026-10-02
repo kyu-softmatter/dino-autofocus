@@ -18,6 +18,8 @@ function setup(routes: Record<string, Route> = {}, hostname = "127.0.0.1") {
   const t = fakeTransport({ "/api/state": () => ({ status: 200, body: SNAPSHOT }), ...routes });
   const client = new Client(t.transport, hostname);
   render(<App client={client} />);
+  // the event socket is open unless a test closes it: values show as current
+  act(() => t.sockets.find((s) => s.path === "/ws/events")?.open());
   return { ...t, client };
 }
 
@@ -115,9 +117,11 @@ describe("StatusBar", () => {
   });
 
   it("says when the server cannot be reached", async () => {
-    setup({ "/api/state": () => ({ status: 503, body: { detail: "engine not ready" } }) });
+    const { sockets } = setup({ "/api/state": () => ({ status: 503, body: { detail: "engine not ready" } }) });
     expect(await screen.findByText("state: engine not ready")).toBeTruthy();
+    act(() => sockets[0].close());
     expect(screen.getByTestId("sb-server").textContent).toBe("server: disconnected");
+    expect(screen.getByTestId("sb-lights-stale").textContent).toContain("lights: unknown");
   });
 });
 
