@@ -4,7 +4,7 @@ Sample map screen (PLAN.md 2절 F4). This file is the contract between the scree
 (`web/src/features/map/`), its router (`server/api/map.py`, mounted at `/api/map` by T-009) and the
 engine operations. Behaviour and wording come from `docs/ui-spec.md` 5.1, 5.3, 7.0 and 7.4 (branch
 `exec5/T-004-ui-spec`) and `docs/operations-spec.md` 3, 6 and 8절; they are cited here, not restated.
-Items marked **gap** are open requests (section 7).
+Gap numbers (G1-G9) refer to section 7.
 
 ## 1. Rules this screen follows
 
@@ -43,7 +43,7 @@ Response bodies are pydantic models; the TypeScript types are generated from Ope
 Mosaic orientation: `mosaic.npy` is assembled as in `plot_scan.py`, tiles already flipped by the sign
 of `M` and row 0 = `y0`. The server therefore only reverses the row order so that the PNG has +x to
 the right and +y up, matching `x0..x1`, `y0..y1`. It does not flip by `M` a second time. To make this
-explicit the server requires `mosaic.json` to say so (**gap G4**); if the field is missing it refuses
+explicit the server requires `mosaic.json` to say so (G4); if the field is missing it refuses
 with 409 rather than guess.
 
 The current sample id, position, objective and lights come from `GET /api/state` and `/ws/events`
@@ -55,7 +55,7 @@ The current sample id, position, objective and lights come from `GET /api/state`
 
 | Input (ui-spec 7.4) | Command |
 |---|---|
-| `"Start tracing"` / `t` | `start edge_trace {sample_id, speed_um_s, hole_diameter_mm, light: "bf"}` (**gap G7** on the arg name) |
+| `"Start tracing"` / `t` | `start edge_trace {sample_id, speed_um_s, hole_diameter_mm, light: "bf"}` |
 | `+` / `-` while tracing | `update {op_id, args: {speed_um_s}}` (T-011 adds `update`) |
 | `b` / `u` | `start boundary_mark {sample_id}` / `start boundary_undo {sample_id}` |
 | `"Re-trace"` | `start edge_trace` (the engine backs up and asks, C4); `"Clear boundary"` = `start boundary_reset {sample_id}` |
@@ -100,10 +100,10 @@ pass the same check when a human confirms (G3, now in T-013).
 
 | Event | Used for |
 |---|---|
-| `map_changed` (**gap G5**) | boundary, hole fit, visits, flags, candidates of the open sample; the screen re-reads the matching GET |
-| `sample_opened` (**gap G5**) | switch `sample_id`, reload all layers |
+| `map_changed` (G5) | boundary, hole fit, visits, flags, candidates of the open sample; the screen re-reads the matching GET |
+| `sample_opened` (G5) | switch `sample_id`, reload all layers |
 | `position` | current field rectangle, Z readback, click-target distance |
-| objective label (**gap G5**) | field-of-view size of the current field rectangle |
+| objective label (G5) | field-of-view size of the current field rectangle |
 | `planned`, `started`, `progress`, `finished`, `aborted`, `error` | edge-trace and scan panels (tile k/n, curve, dropped frames, path length, points), click-move steps, results list refresh on `finished` |
 | `preflight_failed` | the `why` text next to the control (ui-spec 7.0 disabled-reason table) |
 | `confirm_required` | C1–C5, C12 dialogs; answered with `confirm` |
@@ -137,21 +137,21 @@ pass the same check when a human confirms (G3, now in T-013).
 
 The screen never raises Z after arrival; it shows only the refocus hint and buttons to the next focus
 operation (operations-spec 6.3 run step 4). An `aborted` or `error` at any step clears the pin and
-shows the reason. Field names in this table are assumed (**gap G6**).
+shows the reason. Field names in this table are assumed (G6).
 
-## 7. Gaps (requests to AF 업무분배보조 for the manager)
+## 7. Gaps and their status
 
-| # | Gap | Proposal |
+| # | Gap | Status |
 |---|---|---|
-| G1 | Where flags, candidates and boundary edits are stored: operations-spec 6.1/6.2 says `<sample>/flags.json`, `features.json`, `map.json`; PLAN.md 5절 (v0.9) says append-only `records\sample_events.jsonl` in the experiment session folder, with sample state folded from events | One reader in the engine (`engine/sample.py`, T-002-3 or its successor) that returns the folded map state, flags and candidates; `map.py` calls only that. Also decide whether flag and candidate writes need an open experiment session (they do if they go to the session folder) |
-| G2 | `/api/commands` accepts any op name, so it would bypass D16 | T-009 owner: refuse `map_flag`, `map_flag_retire`, `candidate_confirm`, `candidate_reject` on `/api/commands` with 403 "use /api/map" |
-| G3 | Claude proposals (T-013) for the same ops are confirmed outside `map.py` | The proposal-confirm path checks `WRITE_MAP_FLAG` for these ops |
-| G4 | `mosaic.json` has only `x0, x1, y0, y1, um_per_px, bin` | Add `orientation: "stage"` (tiles flipped, row 0 = y0), `M_px_per_um` used, `objective`, `n_tiles`. Also make `scan_4x` write `mosaic.npy` + `mosaic.json` with the same helper, so its results get a mosaic without the server assembling tiles |
-| G5 | `map_changed`, `sample_opened` and an objective event are not in `engine/events.py` `EVENT_KINDS`; `update` is not in `COMMAND_KINDS` | T-011 (owner of `events.py`): add them, or say which existing kind carries them (e.g. objective label inside `position.data`) |
-| G6 | Event payload fields for `goto_xy` (section 6) and the scan box | `goto_xy` emits the fields in section 6; `scan_4x` / `sample_map` `summary.json` record `scan_box_um` and `allowed_box_um` so the screen does not recompute the guard box |
-| G7 | Edge-trace diameter arg: ui-spec 7.4 `expect_diameter_mm`, operations-spec 8절 `hole_diameter_mm` | Use `hole_diameter_mm` (the engine-facing spec) |
-| G8 | Ids: candidates and flags have no ids in operations-spec 6.1/6.2 | Engine assigns `candidate_id` / `flag_id` (stable, unique per sample); decisions reference them with `decides` / `replaces`. A reject is a new entry with `source: "person_rejected"` (operations-spec 6.1 names only the other two) |
-| G9 | Op names `map_flag_retire`, `candidate_confirm`, `candidate_reject` are proposals (ui-spec 7.4) | Confirm the names with the WP-C/WP-I engine work |
+| G1 | Where boundary points, flags and candidates are stored | **Decided (D1)**: append-only events in the open session's `records/sample_events.jsonl`, folded by one engine reader; `sample.json` / `map.json` are derived views. Writes need an open session (section 3.2) |
+| G2 | `/api/commands` would bypass D16 | In T-009 (main 176b4c3): refuses `map_flag`, `map_flag_retire`, `candidate_confirm`, `candidate_reject` |
+| G3 | Claude proposals for the same ops | In T-013: the proposal-confirm path checks `WRITE_MAP_FLAG` |
+| G4 | `mosaic.json` lacks `orientation: "stage"`, `M_px_per_um`, `objective`, `n_tiles`; `scan_4x` writes no mosaic | Future engine card. Until then the server refuses (409) a mosaic without `orientation` |
+| G5 | `map_changed`, `sample_opened`, objective event, `update` command | In T-011 (owner of `events.py`) |
+| G6 | `goto_xy` payload fields (section 6); `scan_box_um` / `allowed_box_um` in `summary.json` | Future engine card. Field names in sections 2 and 6 are the request |
+| G7 | Edge-trace diameter arg name | **Decided**: `hole_diameter_mm` (operations-spec 8절); ui-spec is fixed by its author |
+| G8 | Engine-assigned `flag_id` / `candidate_id`; decisions reference them (`decides`, `replaces`); reject = new entry with `source: "person_rejected"` | Future engine card |
+| G9 | Op names `map_flag_retire`, `candidate_confirm`, `candidate_reject` | **Fixed in T-011** as written here |
 
 Until the engine side merges, stage B tests use a fake engine with these command names and a fixture
-sample folder in the G1/G4 proposed shape.
+session folder with a `records/sample_events.jsonl` (D1) and a `mosaic.json` in the G4 shape.
