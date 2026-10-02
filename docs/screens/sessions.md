@@ -1,0 +1,92 @@
+# Screen contract: `sessions` (F7 experiment sessions)
+
+- Task: T-106 stage A. Owner: AF 실행2. Status: draft, 2026-10-01.
+- Plan: PLAN.md 2절 F7, 5절 "실험 세션과 기록 저장소", 6절 rule 12, 7절 D10, D11, D13.
+- Backed by `dino_autofocus.records` (T-019, branch `exec2/T-019-experiment-sessions`, in review).
+  Router mechanism: T-009 (`server/api/<area>.py` with a module-level `router`, mounted at `/api/<area>`).
+  Shell: T-010. Common disabled reasons: `docs/ui-spec.md` 7.0.
+- An *experiment session* is one measurement run at the microscope, not a Claude session.
+
+## 1. What the server holds
+
+One `RecordsStore` and one `AutoCommitter` on `app.state`, made at start-up:
+`GitFolderStore(RecordsConfig(...))` on the microscope PC, `FolderStore` in mock mode and in tests.
+Handlers never call git themselves. Every write goes through `ExperimentSession`, and its commits go to
+the committer's worker thread (T-019 `committer.py`), so a slow or failing git never blocks a request.
+
+## 2. Endpoints
+
+All paths are under `/api/sessions`. "Who" uses the T-009 auth dependency (`is_local`, login) and the
+T-018 role.
+
+| Method, path | Who | Backed by (T-019) | Returns |
+|---|---|---|---|
+| `GET /` `?user=&sample=&status=open\|closed` | everyone, remote included | `store.list_sessions()`, filtered in the router | `[SessionSummary]`, oldest first |
+| `GET /current` | everyone | `open_session(store)`, `open_session_started_at(store)` | `SessionSummary \| null`, plus `started_at` |
+| `GET /{id}` `?log_tail=200` | everyone | `ExperimentSession.load(store, id)`: `.info`, `.log_lines()[-n:]`, `.manifest()`; record files listed from `layout.records` | `SessionDetail` |
+| `POST /` `{sample_id}` | local operator or admin | `ExperimentSession.open(store, user_id, sample_id, user_name=, hardware_profile=, committer=)` | `SessionDetail`, 201 |
+| `POST /{id}/close` `{note}` | local; the session's own user, or admin | `ExperimentSession.load(...).close(note)` | `SessionDetail` |
+| `POST /{id}/continue` | local operator or admin | `ExperimentSession.continue_from(store, id, user_id, ...)` | `SessionDetail` of the new session, 201 |
+
+`SessionSummary`: `session_id, user_id, user_name, sample_id, status, started_at, closed_at, continues,
+reflected`.
+
+`SessionDetail`: every `session.json` field as recorded, plus:
+- `log_tail`: the last n log lines.
+- `records`: one item per `records/*.jsonl` with its name and line count.
+- `manifest`: file count, total bytes, and count per `where`, with the entry list.
+- `reflected`: whether the librarian has taken the session in.
+
+The code commit, the dirty flag and the hardware-profile sha256 are shown **as recorded in
+`session.json`**. They are never recomputed.
+
+Refusals use the ui-spec 7.0 strings:
+
+| Case | Status | Body `reason` |
+|---|---|---|
+| Remote POST (D13: only `abort` is allowed remotely) | 403 | `"Read-only: remote view"` |
+| viewer role | 403 | `"Needs the operator role"` |
+| Another session is already open | 409 | `"<id> is open; close it first"` |
+| Write to a closed session (`SessionClosedError`) | 409 | `"Session <id> is closed (read-only)"` |
+| Closing someone else's session, not admin | 403 | `"Only <user> or an admin can close this session"` |
+| Unknown id | 404 | `"No experiment session <id>"` |
+| Bad sample id (`ValueError`) | 422 | the error text |
+
+## 3. What the shell shows (T-010)
+
+- **Status bar, experiment session cell**: `<session_id> · <sample_id>` from `GET /current`, or
+  `"No experiment session"`. It refreshes on the session event (gap G2) and on navigation.
+- **Disabled reason**: when no session is open, instrument commands show
+  `"Open an experiment session first"`. The engine decides this (PLAN 6절 rule 12), not the screen.
+
+## 4. The `sessions` area (`web/src/features/sessions/`, stage B)
+
+| Panel | Content |
+|---|---|
+| List | Columns: id, user, sample, status, started, closed, continues, reflected. Filters: user, sample, status. Opening a row shows its detail |
+| Detail | Fields of `session.json` (code commit, dirty, hardware hash as recorded); log tail; record files with line counts; manifest summary and entries; reflected or not |
+| Actions | `"Open experiment session"` with a sample id, `"Close"` with a note, `"Continue with this sample"` (F7.4). They are disabled with the reason from section 2 when remote, when the user is a viewer, or when the session is closed |
+
+UI text is in English. Remote viewers and viewers can read everything and change nothing.
+
+## 5. Gaps (requests via AF 업무분배보조 to the manager)
+
+| # | Gap | Proposal | Owner |
+|---|---|---|---|
+| G1 | The engine needs to know the open session (rule 12, re-trace rule) | The server calls `engine.set_experiment_session(session_id, started_at)` after open, close and continue, and once at start-up from `GET /current`. Alternatively the engine reads `open_session_started_at(store)` itself | T-002 / T-011 |
+| G2 | There is no event when a session opens or closes, so the status bar would need polling | Add a `session_changed` event kind (`session_id`, `status`) on `/ws/events` | T-002 events |
+| G3 | T-019 does not stop a second open session | The router refuses with 409. A store-level check is optional | T-106 (router) |
+| G4 | `ExperimentSession.open` reads the code version with two git calls on every open (about 1 s on a loaded PC) | T-019 small change: accept `code=` so the server reads it once at start-up | T-019 (listed in its review) |
+| G5 | Listing record files and their line counts has no T-019 function | A small `ExperimentSession.record_files()` helper | T-019 small fix, listed in the T-106 review |
+| G6 | `reflected` comes from the mock librarian's `librarian/reflected.jsonl`. The real librarian's ledger format is decided at integration | Show `reflected` as true, false or unknown (null when no ledger exists) | integration (PLAN 10절) |
+| G7 | Which `hardware_profile.json` to hash at open (F2.1 file path) | Take the path from the hardware area's settings (T-101) | T-101 |
+| G8 | The logged-in user id and name | Use T-105's auth dependency. Until it merges, tests use a fake user | T-105 |
+
+## 6. Stage B tests (outline)
+
+- **pytest** (`TestClient`, a `FolderStore` and a `GitFolderStore` under `tmp_path`): open, close, list
+  filters, detail fields, continue, a second open gets 409, a write after close gets 409, remote POST gets
+  403, viewer gets 403, and the handler returns while a slow fake committer is still blocked.
+- **vitest**: list and detail render, and open, close and continue are disabled with the reason in
+  read-only mode.
+- Tests open no browser or desktop window and stop every server they start.
