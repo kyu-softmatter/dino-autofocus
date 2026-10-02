@@ -144,3 +144,10 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
   (abort's exit path turns the lights off). Locally anyone logged in may send `abort` and `lights_off`.
   Confirmed by the director. Tests: a remote abort ends with lights off (readback recorded); a remote
   `lights_off` is refused with a clear reason.
+
+## From the sessions screen contract (T-106 stage A, 85b25ad)
+
+- `set_experiment_session(session_id | None, started_at | None)`: the server calls it on open, close and
+  continue. The engine uses it for rule 12 (refuse motion without an open session) and for the "re-trace
+  every session" check.
+- Event kind `session_changed {session_id, started_at, state}` on the event stream.
