@@ -1,0 +1,317 @@
+/**
+ * Panels of the hardware screen (ui-spec 7.2). They draw what the server and
+ * engine report; none of them decides a gate or a permission.
+ */
+
+import { useState } from "react";
+
+import { EncoderZ } from "../../app/Verdict";
+import type {
+  DeviceRow,
+  GateRow,
+  HardwareProfileOut,
+  LightState,
+  Permission,
+  StatusResultOut,
+} from "./api";
+
+const NOT_REPORTED = "not reported";
+
+/**
+ * Why a button is off, or null. The permission reason (remote, role, control,
+ * session, running op: T-009b / T-011) comes first, then this area's feature
+ * gate. Both are copied from the server; nothing is worked out here.
+ */
+export function blockedBy(permission: Permission | undefined, gate?: GateRow): string | null {
+  if (!permission) return "checking permissions";
+  if (!permission.allowed) return permission.reason ?? "not allowed";
+  if (gate && !gate.enabled) return `${gate.op} is off: ${gate.reasons[0] ?? "no reason given"}`;
+  return null;
+}
+
+function yesNo(v: boolean | null | undefined, unknown = NOT_REPORTED): string {
+  return v === true ? "yes" : v === false ? "no" : unknown;
+}
+
+function short(sha: string | null | undefined): string {
+  return sha ? sha.slice(0, 12) : NOT_REPORTED;
+}
+
+export function Reason({ text }: { text: string | null }) {
+  return text ? <span className="hw-reason muted">{text}</span> : null;
+}
+
+export function SummaryPanel({ out }: { out: HardwareProfileOut }) {
+  const p = out.profile;
+  if (!p) {
+    return (
+      <section aria-label="Detection summary">
+        <h3>Detection summary</h3>
+        <p className="muted">Not scanned yet. Use "Scan hardware".</p>
+      </section>
+    );
+  }
+  const diff =
+    p.previous_sha256 == null
+      ? "no previous profile"
+      : p.changed && p.changed.length > 0
+        ? `changed: ${p.changed.join(", ")}`
+        : "no changes";
+  return (
+    <section aria-label="Detection summary">
+      <h3>Detection summary</h3>
+      <dl className="hw-dl">
+        <dt>Detected</dt><dd>{p.detected_at}</dd>
+        <dt>Backend</dt><dd>{p.backend}</dd>
+        <dt>Host</dt><dd>{p.host ?? NOT_REPORTED}</dd>
+        <dt>Config</dt><dd>{p.config?.path ?? NOT_REPORTED} ({short(p.config?.sha256)})</dd>
+        <dt>Profile</dt><dd>{out.path ?? NOT_REPORTED} ({short(out.sha256)})</dd>
+        <dt>Since previous</dt><dd>{diff}</dd>
+      </dl>
+    </section>
+  );
+}
+
+function isProblem(d: DeviceRow): boolean {
+  return !d.present || d.read_back === false;
+}
+
+/** Problem devices first, then by label. */
+export function sortDevices(devices: DeviceRow[]): DeviceRow[] {
+  return [...devices].sort(
+    (a, b) => Number(isProblem(b)) - Number(isProblem(a)) || a.label.localeCompare(b.label),
+  );
+}
+
+export function DevicesPanel({ devices, selected, onSelect }: {
+  devices: DeviceRow[];
+  selected: string | null;
+  onSelect: (label: string) => void;
+}) {
+  return (
+    <section aria-label="Devices">
+      <h3>Devices</h3>
+      {devices.length === 0 ? <p className="muted">No devices reported.</p> : (
+        <table className="hw-table">
+          <thead>
+            <tr><th>Device</th><th>Type</th><th>Loaded</th><th>Reads back</th><th>Write verified</th><th>Note</th></tr>
+          </thead>
+          <tbody>
+            {sortDevices(devices).map((d) => (
+              <tr key={d.label} data-problem={isProblem(d) ? "true" : undefined}
+                  aria-selected={selected === d.label} onClick={() => onSelect(d.label)}>
+                <td>{d.label}</td>
+                <td>{d.type ?? d.role ?? NOT_REPORTED}</td>
+                <td>{yesNo(d.present)}</td>
+                <td>{yesNo(d.read_back)}</td>
+                <td>{yesNo(d.write_verified, "not tested")}</td>
+                <td>{d.note ?? ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+export function ObjectivesPanel({ out }: { out: HardwareProfileOut }) {
+  const rows = out.profile?.objectives ?? [];
+  return (
+    <section aria-label="Objectives">
+      <h3>Objectives</h3>
+      {rows.length === 0 ? <p className="muted">No objectives reported.</p> : (
+        <table className="hw-table">
+          <thead>
+            <tr><th>Position</th><th>Label</th><th>Mag</th><th>NA</th><th>Immersion</th><th>Working distance</th><th>Pixel</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((o) => (
+              <tr key={o.label}>
+                <td>{o.state ?? NOT_REPORTED}</td>
+                <td>{o.label}</td>
+                <td>{o.magnification != null ? `${o.magnification}x` : NOT_REPORTED}</td>
+                <td>{o.na ?? NOT_REPORTED}</td>
+                <td>{o.immersion ?? NOT_REPORTED}</td>
+                <td>{o.working_distance_um != null ? `${o.working_distance_um} µm` : "not set"}</td>
+                <td>{o.pixel_um != null ? `${o.pixel_um} µm` : NOT_REPORTED}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+export function CameraPiezoPanel({ out }: { out: HardwareProfileOut }) {
+  const c = out.profile?.camera;
+  const pz = out.profile?.piezo;
+  const piezo = !pz ? NOT_REPORTED
+    : pz.error ? `error: ${pz.error}`
+    : !pz.port ? "skipped"
+    : pz.connected ? `connected on ${pz.port}` : `not connected (${pz.port})`;
+  return (
+    <section aria-label="Camera and piezo">
+      <h3>Camera and piezo</h3>
+      <dl className="hw-dl">
+        <dt>Camera</dt><dd>{c?.name ?? NOT_REPORTED}</dd>
+        <dt>Bit depth</dt>
+        <dd>{c?.bit_depth != null ? `${c.bit_depth}-bit (ceiling ${c.ceiling_adu ?? 2 ** c.bit_depth - 1})` : NOT_REPORTED}</dd>
+        <dt>Sensor</dt><dd>{c?.sensor ? `${c.sensor[0]} × ${c.sensor[1]}` : NOT_REPORTED}</dd>
+        <dt>Piezo</dt><dd>{piezo}</dd>
+      </dl>
+    </section>
+  );
+}
+
+export function ConfirmedPanel({ out, blocked, onSave }: {
+  out: HardwareProfileOut;
+  blocked: string | null;
+  onSave: (name: string, value: string) => void;
+}) {
+  const items = Object.entries(out.profile?.human_confirmed ?? {});
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  return (
+    <section aria-label="Human-confirmed items">
+      <h3>Human-confirmed items</h3>
+      {items.length === 0 ? <p className="muted">None entered.</p> : (
+        <table className="hw-table">
+          <thead><tr><th>Item</th><th>Value</th><th>By</th><th>At</th></tr></thead>
+          <tbody>
+            {items.map(([k, v]) => (
+              <tr key={k}><td>{k}</td><td>{v.value}</td><td>{v.by ?? ""}</td><td>{v.at ?? ""}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <form className="hw-row" onSubmit={(e) => {
+        e.preventDefault();
+        if (name.trim() && value.trim()) onSave(name.trim(), value.trim());
+      }}>
+        <fieldset disabled={blocked !== null}>
+          <input aria-label="Item" placeholder="Item, e.g. DiaLamp intensity" value={name}
+                 onChange={(e) => setName(e.target.value)} />
+          <input aria-label="Value" placeholder="Value" value={value} onChange={(e) => setValue(e.target.value)} />
+          <button type="submit">Save</button>
+        </fieldset>
+        <Reason text={blocked} />
+      </form>
+    </section>
+  );
+}
+
+/** Off rows first, then by op. */
+export function sortGates(gates: GateRow[]): GateRow[] {
+  return [...gates].sort((a, b) => Number(a.enabled) - Number(b.enabled) || a.op.localeCompare(b.op));
+}
+
+export function GatesPanel({ gates, selected, onSelect }: {
+  gates: GateRow[];
+  selected: string | null;
+  onSelect: (op: string) => void;
+}) {
+  return (
+    <section aria-label="Gates">
+      <h3>Gates</h3>
+      {gates.length === 0 ? <p className="muted">No gate verdict yet.</p> : (
+        <table className="hw-table">
+          <thead><tr><th>Feature</th><th>State</th><th>Why off</th><th>Needs</th></tr></thead>
+          <tbody>
+            {sortGates(gates).map((g) => (
+              <tr key={g.op} data-off={g.enabled ? undefined : "true"} aria-selected={selected === g.op}
+                  onClick={() => onSelect(g.op)}>
+                <td>{g.op}</td>
+                <td>{g.enabled ? "On" : "Off"}</td>
+                <td>{g.reasons.length > 0 ? <ul>{g.reasons.map((r) => <li key={r}>{r}</li>)}</ul> : ""}</td>
+                <td>{[...g.requires.devices, ...g.requires.objectives, ...g.requires.confirmed].join(", ")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function pfsText(v: boolean | string | undefined): string {
+  return typeof v === "boolean" ? (v ? "yes" : "no") : (v ?? NOT_REPORTED);
+}
+
+export function CurrentStatePanel({ status, zUm, blocked, onRun }: {
+  status: StatusResultOut | null;
+  zUm: number | null | undefined;
+  blocked: string | null;
+  onRun: () => void;
+}) {
+  const s = status?.summary;
+  return (
+    <section aria-label="Current state">
+      <h3>Current state</h3>
+      <dl className="hw-dl">
+        <dt>Objective</dt><dd>{s?.nosepiece_label ?? NOT_REPORTED}</dd>
+        <dt>Z</dt><dd><EncoderZ readbackUm={zUm ?? s?.z_um} /></dd>
+        <dt>PFS</dt>
+        <dd>{s ? `enabled ${pfsText(s.pfs_enabled)}, locked ${pfsText(s.pfs_locked)}, ${s.pfs_in_range ?? NOT_REPORTED}` : NOT_REPORTED}</dd>
+        <dt>Read at</dt><dd>{status ? new Date(status.t * 1000).toLocaleTimeString() : "status not run yet"}</dd>
+      </dl>
+      <button type="button" disabled={blocked !== null} onClick={onRun}>Show objective / Z / PFS</button>
+      <Reason text={blocked} />
+    </section>
+  );
+}
+
+/** ui-spec 5.2: the read-back, never the requested value. */
+export function lightText(l: LightState | null | undefined): { text: string; warn: boolean } {
+  if (!l) return { text: "Lights: no read-back yet", warn: true };
+  const bad = (l.records ?? []).filter((r) => !r.verified);
+  if (!l.verified || l.dialamp === "unknown" || l.aura.state === "unknown") {
+    const detail = bad.map((r) => `${r.device} read ${String(r.read)}, wanted ${String(r.wanted)}`).join("; ");
+    return { text: `Lights not confirmed${detail ? `: ${detail}` : ""}`, warn: true };
+  }
+  const aura = l.aura.state === "on"
+    ? `Aura ${l.aura.line ?? "?"} ${l.aura.intensity_permille != null ? l.aura.intensity_permille / 10 : "?"} %`
+    : "Aura OFF";
+  return { text: `DiaLamp ${l.dialamp === "on" ? "ON" : "OFF"} · ${aura}`, warn: false };
+}
+
+export function LightsPanel({ lights, lightsT, setBlocked, offBlocked, running, onBrightfield, onAura, onOff }: {
+  lights: LightState | null | undefined;
+  lightsT: number | null | undefined;
+  setBlocked: string | null;
+  offBlocked: string | null;
+  running: string | null;
+  onBrightfield: () => void;
+  onAura: (line: string, percent: number) => void;
+  onOff: () => void;
+}) {
+  const [line, setLine] = useState("GREEN");
+  const [percent, setPercent] = useState(1);
+  const { text, warn } = lightText(lights);
+  return (
+    <section aria-label="Lights">
+      <h3>Lights</h3>
+      <p className={warn ? "hw-warn" : undefined} data-testid="light-state">
+        {text}
+        {lightsT ? <span className="muted"> (read {new Date(lightsT * 1000).toLocaleTimeString()})</span> : null}
+      </p>
+      <div className="hw-row">
+        <button type="button" disabled={setBlocked !== null} onClick={onBrightfield}>Brightfield on</button>
+        <input aria-label="Aura line" value={line} disabled={setBlocked !== null}
+               onChange={(e) => setLine(e.target.value)} />
+        <input aria-label="Aura percent" type="number" min={0} max={100} step={0.1} value={percent}
+               disabled={setBlocked !== null} onChange={(e) => setPercent(Number(e.target.value))} />
+        <button type="button" disabled={setBlocked !== null} onClick={() => onAura(line, percent)}>
+          Aura {line} {percent} % on
+        </button>
+        <Reason text={setBlocked} />
+      </div>
+      <div className="hw-row">
+        <button type="button" disabled={offBlocked !== null} onClick={onOff}>Lights off</button>
+        {running && offBlocked === null ? <span className="muted">stops {running}</span> : null}
+        <Reason text={offBlocked} />
+      </div>
+    </section>
+  );
+}

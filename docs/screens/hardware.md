@@ -21,6 +21,13 @@ they read the last profile and gate verdict that the engine already holds.
 | `/api/hardware/gates/{op}` | `GateRow` | 404 `ApiError` for an unknown `op` |
 | `/api/hardware/status` | `StatusResultOut` | Last `finished(status)`: `{"op_id", "t", "user_id", "summary"}` or `null` if `status` has not run since the server started |
 
+The router normalises the engine's profile into the shape the screen draws. That shape is in
+`web/src/features/hardware/api.ts` (temporary until gen:api), and stage B's pydantic models match it:
+`devices` is a list of `{label, role, type, library, present, read_back, write_verified, note}`,
+`objectives` is a list of rows, `human_confirmed` maps item → `{value, by, at}`, and `previous_sha256` plus
+`changed` drive the diff (G9). Fields the engine does not report yet are left out, and the screen shows
+`"not reported"`.
+
 `GateRow` = `{op, enabled, reasons: list[str], requires: {devices, objectives, confirmed}}`. It joins
 `gates.Gate` (the requirement) with `gates.GateResult` (the verdict). The router copies the engine's
 verdict and never evaluates a gate itself (F2.2, PLAN 6절 2항).
@@ -42,9 +49,13 @@ Light state has no endpoint of its own. It comes from `/api/state` when the scre
 `lights_off` is a command **kind** in `engine/events.py` (`COMMAND_KINDS`). It is not sent as
 `start("lights_off")` as ui-spec 4.0 and 4.2 write it (gap G1).
 
-On refusal, the screen shows the reason next to the button, in ui-spec 7.0 order: remote, role, control,
-session, gate, running op, preflight. Reasons come from the 403 `detail` or a `preflight_failed` event.
-The screen never works them out itself.
+Why a button is off comes from the shared `GET /api/permissions?ops=hardware_scan,hardware_confirm,status,light_set,lights_off`
+endpoint, which returns `{op: {allowed, reason}}` (T-009b, backed by T-011 `check()`). That endpoint covers remote,
+role, control, session and the running operation. If the permission allows the op, the screen adds this area's
+own gate reason from `/api/hardware/gates`. The screen re-reads permissions after every `started`, `finished`,
+`aborted`, `error` and `preflight_failed` event. A refusal that reaches a click anyway (a 403 `detail`, or a
+`preflight_failed` / `error` event) is shown next to the button. Neither the router nor the screen works out
+role, control, session or remote rules itself.
 
 ## 3. Events read (`/ws/events`)
 
