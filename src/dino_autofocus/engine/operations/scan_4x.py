@@ -19,8 +19,8 @@ filter, a parabola per 6 x 6 block, then park at the focus and save the frame.
 
 Record `<sample>/scan4x_<stamp>/` (prefix kept for `plot_scan.py` and the launcher):
 engine `log.jsonl` + `summary.json`, the legacy `scan.json` (same fields as the script),
-`tile_r<r>c<c>.npy`, and `mosaic.npy` + `mosaic.json` (stage orientation: row 0 = lowest
-stage y, column 0 = lowest stage x, tiles flipped by the signs of `M_px_per_um`).
+`tile_r<r>c<c>.npy`, and `mosaic.npy` + `mosaic.json` written by `engine.mosaic` (T-032), the
+one format the map screen reads (stage orientation from `M_px_per_um`, overlaps averaged).
 
 Grades: a tile's `z_focus_um` is the encoder readback of the best plane ("measured"), or a
 parabola vertex when the dropout filter re-fits the fine pass ("computed"); block z and the
@@ -65,6 +65,7 @@ from ..guards import (
     best_z_um,
     operation,
 )
+from ..mosaic import Tile, build_mosaic, save_mosaic
 from ..records import GRADE_COMPUTED, GRADE_MEASURED
 from ..runner import Operation, register_operation
 from ..sample import SAMPLES_ROOT, Sample, SampleInfo
@@ -104,7 +105,6 @@ DEFAULT_UM_PER_PX = 1.625
 DEFAULT_Z_GUESS_UM = 2960.0
 #: 2026-09-30 4x calibration (docs/runs/2026-09-30_substrate-scan.yaml); d_px = M @ d_stage
 DEFAULT_M_PX_PER_UM = ((0.61602, 0.00236), (0.00126, -0.61456))
-MOSAIC_BIN = 8  # plot_scan.py
 COARSE_STEP_FIRST_UM, COARSE_STEP_UM = 10.0, 6.0
 FINE_HALF_UM, FINE_STEP_UM = 12.0, 2.0
 SETTLE_COARSE_S, SETTLE_FINE_S, XY_SETTLE_S = 0.1, 0.2, 0.2
@@ -236,34 +236,13 @@ def _hole_fit_is_current(hole: dict, session_started: str | None) -> bool:
     return session_started is None or str(fitted) >= str(session_started)  # ISO strings
 
 
-def _mosaic(tiles: list[dict], frames: dict[str, np.ndarray], fov_um: float, um_px: float,
-            m: list[list[float]]) -> tuple[np.ndarray, dict]:
-    """Stage-oriented mosaic, `MOSAIC_BIN` x `MOSAIC_BIN` binned (plot_scan.py's assembly)."""
-    flip_lr, rows_up = m[0][0] > 0, m[1][1] < 0  # the image is mirrored against the stage
-    um_bin = um_px * MOSAIC_BIN
-    half = fov_um / 2
-    xs, ys = [t["x_um"] for t in tiles], [t["y_um"] for t in tiles]
-    x0, x1, y0, y1 = min(xs) - half, max(xs) + half, min(ys) - half, max(ys) + half
-    w, h = int((x1 - x0) / um_bin) + 1, int((y1 - y0) / um_bin) + 1
-    out = np.zeros((h, w), np.float32)
-    for t in tiles:
-        img = frames[t["name"]].astype(np.float32)
-        nr, nc = img.shape[0] // MOSAIC_BIN, img.shape[1] // MOSAIC_BIN
-        small = img[:nr * MOSAIC_BIN, :nc * MOSAIC_BIN].reshape(
-            nr, MOSAIC_BIN, nc, MOSAIC_BIN).mean(axis=(1, 3))
-        if flip_lr:
-            small = small[:, ::-1]
-        if not rows_up:
-            small = small[::-1]
-        c = max(0, int((t["x_um"] - half - x0) / um_bin))
-        r = max(0, int((t["y_um"] - half - y0) / um_bin))
-        piece = small[: h - r, : w - c]
-        out[r:r + piece.shape[0], c:c + piece.shape[1]] = piece
-    meta = {"orientation": "stage", "row0": "lowest stage y", "col0": "lowest stage x",
-            "extent_um": [x0, x1, y0, y1], "um_per_px": um_bin, "bin": MOSAIC_BIN,
-            "flip_lr": flip_lr, "rows_up": rows_up, "M_px_per_um": m,
-            "objective": OBJECTIVE_4X, "n_tiles": len(tiles), "dtype": "float32"}
-    return out, meta
+def _save_mosaic(out: Path, tiles: list[dict], frames: dict[str, np.ndarray],
+                 m: list[list[float]], calibration_source: str) -> None:
+    """mosaic.npy + mosaic.json in the one format the map screen reads (engine.mosaic, T-032)."""
+    mosaic, meta = build_mosaic([Tile(t["name"], t["x_um"], t["y_um"], frames[t["name"]])
+                                 for t in tiles], m, objective=OBJECTIVE_KEY,
+                                calibration_source=calibration_source)
+    save_mosaic(out, mosaic, meta)
 
 
 def fit_plane(points: list[tuple[float, float, float]]) -> dict | None:
@@ -349,10 +328,8 @@ class Host:
 def runner_folder(ctx: Any, sample: Sample, prefix: str) -> Path:
     """The runner's record folder when it keeps one (folder_records), else a new
     `<sample>/<prefix>_<stamp>/` for the operation's own files."""
-    rec = getattr(getattr(ctx, "_op", None), "record", None)
-    d = getattr(rec, "dir", None)
-    if d:
-        return Path(d)
+    if ctx.record_dir is not None:
+        return ctx.record_dir
     base, n = sample.dir / f"{prefix}_{time.strftime('%Y%m%d-%H%M%S')}", 1
     path = base
     while path.exists():
@@ -552,9 +529,7 @@ def run_body(backend: Backend, sample: Sample, info: SampleInfo, a: ScanArgs, pl
         if zf is not None:
             z_ref, first = zf, False
 
-    mosaic, mmeta = _mosaic(rec["tiles"], frames, pl["fov_um"], um_px, m)
-    np.save(out / "mosaic.npy", mosaic)
-    (out / "mosaic.json").write_text(json.dumps(mmeta, indent=1), encoding="utf-8")
+    _save_mosaic(out, rec["tiles"], frames, m, pl["calibration"])
     rec["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     save()
     plane = fit_plane([(t["x_um"], t["y_um"], t["z_focus_um"]) for t in rec["tiles"]

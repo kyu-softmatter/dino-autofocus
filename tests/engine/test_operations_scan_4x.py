@@ -11,6 +11,7 @@ from scipy import ndimage
 
 from dino_autofocus.engine.events import Command
 from dino_autofocus.engine.guards import GuardError, OperationAborted
+from dino_autofocus.engine.mosaic import load_mosaic, mosaic_from_scan
 from dino_autofocus.engine.operations import scan_4x as S
 from dino_autofocus.engine.sample import Sample, SampleInfo
 
@@ -162,10 +163,12 @@ def test_scan_focuses_every_tile_and_writes_the_record(tmp_path):
     res = summary["result"]
     assert res["scan_box_um"] == [7890.0, 8110.0, 490.0, 710.0]
     assert res["focus_plane"]["slope_x_um_per_mm"] == pytest.approx(100.0, abs=20.0)
-    meta = json.loads((d / "mosaic.json").read_text())
-    assert meta["orientation"] == "stage" and meta["n_tiles"] == 4
-    assert meta["M_px_per_um"] == [list(r) for r in S.DEFAULT_M_PX_PER_UM]
-    assert np.load(d / "mosaic.npy").shape[0] > 96 // S.MOSAIC_BIN
+    mosaic, meta = load_mosaic(d)  # the engine.mosaic format the map screen reads (T-032)
+    assert meta.orientation == "stage" and meta.n_tiles == 4 and meta.objective == "4x"
+    assert meta.M_px_per_um == [list(r) for r in S.DEFAULT_M_PX_PER_UM]
+    assert meta.calibration_source == "2026-09-30 4x calibration"
+    assert mosaic.shape == tuple(meta.shape) and {t["name"] for t in meta.tiles} == {
+        t["name"] for t in rec["tiles"]}
     kinds = {e.kind for e in ev}
     assert {"planned", "started", "motion", "progress", "frame_ready", "reading",
             "light_changed", "finished"} <= kinds
@@ -184,15 +187,15 @@ def test_light_dropout_frame_does_not_pick_the_focus(tmp_path):
     assert t["z_focus_um"] == pytest.approx(2993.0, abs=1.5)
 
 
-def test_mosaic_is_in_stage_orientation():
-    tiles = [{"name": "t", "x_um": 0.0, "y_um": 0.0}]
-    img = np.zeros((64, 64), np.uint16)
-    img[:8, :8] = 1000  # image top-left block
-    m, meta = S._mosaic(tiles, {"t": img}, 64 * 1.625, 1.625, [[0.616, 0.0], [0.0, -0.616]])
-    assert meta["flip_lr"] and meta["rows_up"]
-    assert m.shape == (9, 9)  # 104 um at 13 um per binned pixel, plus one
-    assert m[0, 7] == 1000 and m[0, 0] == 0  # columns run toward -x: image left = stage +x
-    assert m[0, 0:7].max() == 0 and m[7, 7] == 0  # image row 0 is the lowest stage y (plot_scan)
+def test_mosaic_matches_engine_mosaic_from_the_scan_folder(tmp_path):
+    b, s = FocusFake(), make_sample(tmp_path)
+    run(b, s)
+    d = s.scans_4x()[-1]
+    mosaic, meta = load_mosaic(d)
+    again, meta2 = mosaic_from_scan(d, meta.M_px_per_um, save=False)  # T-032's own builder
+    assert np.array_equal(mosaic, again)
+    assert {k: v for k, v in meta.to_dict().items() if k != "calibration_source"} == {
+        k: v for k, v in meta2.to_dict().items() if k != "calibration_source"}
 
 
 def test_stale_hole_fit_is_asked_and_can_be_declined(tmp_path):

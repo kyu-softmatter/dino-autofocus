@@ -10,6 +10,7 @@ import pytest
 from dino_autofocus.engine.backends.mock import MockBackend
 from dino_autofocus.engine.backends.mock_world import Camera, MockWorld, SampleSpec
 from dino_autofocus.engine.events import Command, Event
+from dino_autofocus.engine.mosaic import load_mosaic
 from dino_autofocus.engine.operations import focus_100x as F
 from dino_autofocus.engine.operations import scan_4x as S
 from dino_autofocus.engine.runner import (
@@ -127,7 +128,7 @@ def test_scan_through_the_runner_on_the_mock(engine, tmp_path):
     for t in rec["tiles"]:
         truth = b.world.in_focus_z(t["x_um"], t["y_um"])
         assert t["z_focus_um"] == pytest.approx(truth, abs=3.0), t["focus_note"]
-    assert (d / "mosaic.npy").exists() and (d / "mosaic.json").exists()
+    assert load_mosaic(d)[1].n_tiles == 4  # engine.mosaic format
     summary = json.loads((d / "summary.json").read_text())
     assert summary["status"] == "finished" and summary["session_id"] == SESSION
     assert summary["lights_off"]["rule"] == "restore"
