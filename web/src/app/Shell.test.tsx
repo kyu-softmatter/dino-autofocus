@@ -1,11 +1,20 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useEffect, useMemo } from "react";
+import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { describe, expect, it } from "vitest";
 
 import { AREAS, type AreaEntry, buildRegistry } from "./areas";
 import { useAreaPath } from "./route";
 import { useCurrentScreenContext, useScreenContext } from "./screenContext";
+import { fakeTransport } from "../test/fakes";
+import { assistantLoaderFrom, AssistantSlotView } from "./AssistantSlot";
+import { Client, ClientProvider } from "./client";
 import { Shell } from "./Shell";
+
+// The shell runs inside the client provider in the app (the prompt box and screens use it).
+function render(ui: ReactNode) {
+  const client = new Client(fakeTransport({}).transport, "127.0.0.1");
+  return rtlRender(<ClientProvider client={client}>{ui}</ClientProvider>);
+}
 
 let simulationMounts = 0;
 
@@ -109,10 +118,20 @@ describe("Shell", () => {
   });
 
   it("keeps a slot for the prompt box and the status bar", () => {
+    // whatever T-014 puts in the slot, the region is there
     render(<Shell registry={buildRegistry({})} statusBar={<span>status here</span>} />);
     expect(screen.getByRole("region", { name: "Prompt" })).toBeTruthy();
-    expect(screen.getByText("Prompt box: not implemented yet")).toBeTruthy();
     expect(screen.getByText("status here")).toBeTruthy();
+  });
+
+  it("shows a placeholder in the prompt slot while there is no prompt box", () => {
+    render(<AssistantSlotView load={assistantLoaderFrom({})} />);
+    expect(screen.getByText("Prompt box: not implemented yet")).toBeTruthy();
+  });
+
+  it("loads the prompt box into the slot when it exists", async () => {
+    render(<AssistantSlotView load={() => Promise.resolve({ default: () => <p>prompt box</p> })} />);
+    expect(await screen.findByText("prompt box")).toBeTruthy();
   });
 
   it("hands the rest of the hash to the area and keeps the screen mounted when it changes", async () => {
