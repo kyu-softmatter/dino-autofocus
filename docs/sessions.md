@@ -48,6 +48,10 @@ git -C D:\codes\github\dino-autofocus worktree add ..\dino-autofocus-wt\execN -b
 ```
 
 - 다음 과제는 같은 worktree 에서 `main` 을 받아 새 브랜치를 만든다.
+- **다른 세션의 worktree 는 건드리지 않는다.** 그 안의 파일을 쓰거나, `git -C <남의 worktree>` 로 add, checkout,
+  restore, reset, stash, commit 같은 명령을 돌리지 않는다. 허용되는 것은 status, log, diff, show 같은 읽기뿐이다.
+  검토는 자기 검토용 worktree 에서 그 브랜치를 받아서 한다 (2026-10-01, exec13 의 ui-spec.md 가 바뀐 사건).
+- **테스트는 자기 worktree 의 `.venv` 로만 돌린다.** 공유 폴더의 `.venv` 를 여러 세션이 함께 쓰면 멈출 수 있다.
 - 공유 폴더(`D:\codes\github\dino-autofocus`)는 검토 세션과 매니저, 총괄만 쓴다.
 - 커밋은 경로를 지정한다. `git add -A` 와 `git commit --amend` 는 쓰지 않는다.
 
