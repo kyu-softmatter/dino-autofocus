@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 
+import { fakeClient } from "../fakeClient";
 import { frameFromJson, type Frame } from "../frame";
 import { usePlayback } from "../playback";
 import { frameJson } from "./testFrames";
@@ -90,6 +91,26 @@ describe("Viewer3D", () => {
     const { unmount } = render(<Viewer3D frame={frames[0]} createRenderer={r.create} />);
     unmount();
     expect(r.renderer.dispose).toHaveBeenCalled();
+  });
+});
+
+describe("Viewer3D on the mock trajectories", () => {
+  it("draws the fake client's 3D and 2D runs", async () => {
+    const client = fakeClient(() => 0);
+    const r = fakeRenderer();
+    const f3 = frameFromJson(await client.getFrame("mock-sim-3d-fault", 0));
+    const { rerender } = render(<Viewer3D frame={f3} createRenderer={r.create} />);
+    expect(r.last().count).toBe(128);
+    const f3b = frameFromJson(await client.getFrame("mock-sim-3d-fault", 5));
+    rerender(<Viewer3D frame={f3b} createRenderer={r.create} />);
+    expect(screen.getByText(/Frame 5 · step 250 · 128 particles/)).toBeTruthy();
+
+    const f2 = frameFromJson(await client.getFrame("mock-sim-2d-done", 0));
+    rerender(<Viewer3D frame={f2} createRenderer={r.create} />);
+    expect(r.last().count).toBe(64);
+    expect(r.last().camera.x).toBeCloseTo(0);
+    expect(r.last().camera.y).toBeCloseTo(0);
+    expect(screen.getByText(/64 particles · 2D/)).toBeTruthy();
   });
 });
 
