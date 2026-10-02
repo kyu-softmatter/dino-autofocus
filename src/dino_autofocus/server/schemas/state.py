@@ -75,10 +75,25 @@ class SampleRef(_Open):
     session_id: str | None = None
 
 
+class GateRow(_Open):
+    """One feature gate (T-028 `gates.gate_rows`): off rows come first."""
+
+    op: str
+    enabled: bool
+    reasons: list[str] = Field(default_factory=list)
+    requires: Any = None
+
+
 class HardwareState(_Open):
+    """`snapshot()["hardware"]`: the T-028 provider's block plus the runner's last_status.
+    Without a provider the runner sends `gates: {}`, hence the dict."""
+
     profile: dict[str, Any] | None = None
     profile_path: str | None = None
-    gates: dict[str, Any] = Field(default_factory=dict)
+    sha256: str | None = None
+    previous: dict[str, Any] | None = None
+    gates: list[GateRow] | dict[str, Any] = Field(default_factory=list)
+    objective_options: list[dict[str, Any]] = Field(default_factory=list)
     last_status: dict[str, Any] | None = None
     error: str | None = None
 
