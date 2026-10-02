@@ -118,3 +118,7 @@
 - `GET /api/permissions?ops=a,b,c` -> `{op: {allowed, reason}}`: engine `check()` (T-011) plus remote, role and
   login state. Every screen uses it for pre-click disabled reasons (ui-spec 7.0). Area routers add only
   area-specific items (e.g. `can_open_folder`). Feature gates stay in `/api/hardware/gates`.
+- `/api/permissions` also answers non-engine actions, from the T-018 named permissions plus loopback:
+  `session_open`, `session_close`, `session_continue`, `submit_question`. Engine ops (including `map_flag`,
+  `map_flag_retire`, `candidate_confirm`, `candidate_reject`) come from the engine's `check()`. Area-only rules
+  stay in the area routers as 403/409.
