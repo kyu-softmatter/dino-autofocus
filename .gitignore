@@ -11,3 +11,6 @@ outputs/
 *.npy
 *.tif
 *.tiff
+
+# per-session token usage logs
+.agent/usage/
