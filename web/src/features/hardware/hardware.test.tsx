@@ -1,0 +1,325 @@
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+
+import { Client, ClientProvider } from "../../app/client";
+import { ScreenContextProvider, useCurrentScreenContext } from "../../app/screenContext";
+import { fakeTransport, type Route } from "../../test/fakes";
+import { type GateRow, type HardwareProfileOut, PATHS, type Permissions, SCREEN_OPS } from "./api";
+import HardwareScreen from "./index";
+
+const PROFILE: HardwareProfileOut = {
+  path: "D:/AutoFocus/hardware/hardware_profile.json",
+  sha256: "abcdef0123456789",
+  previous: { sha256: "ef".repeat(32), detected_at: "2026-10-01T17:00:00",
+              changed: [{ key: "device.XYStage.read_back", before: true, after: false }] },
+  profile: {
+    detected_at: "2026-10-01T18:00:00",
+    backend_kind: "mock",
+    bench: false,
+    devices: [
+      { label: "Kinetix_red", type: "Camera", present: true, read_back: true, write_verified: null },
+      { label: "ZDrive", type: "Stage", present: true, read_back: true, write_verified: null },
+      { label: "XYStage", type: "XYStage", present: true, read_back: false, write_verified: null, note: "no read-back" },
+    ],
+    objectives: [{ label: "1-Plan Apo LmbdD20 4x", state: 0, magnification: 4, working_distance_um: null }],
+    camera: { bit_depth: 12 },
+    human_confirmed: {},
+  },
+};
+
+function requires(over: Partial<GateRow["requires"]> = {}): GateRow["requires"] {
+  return { devices: [], objectives: [], confirmed: [], checks: [], arg: null, ...over };
+}
+
+// as server/api/hardware.py serves T-028 gate_rows: light_set has one row per mode
+const GATES: GateRow[] = [
+  { op: "status", enabled: true, reasons: [], requires: requires({ devices: ["camera"] }) },
+  {
+    op: "sample_map",
+    enabled: false,
+    reasons: ["xy_stage detected but its state did not read back"],
+    requires: requires({ devices: ["camera", "xy_stage"], objectives: ["4x"], checks: ["camera_bit_depth"] }),
+  },
+  { op: "light_set:brightfield", enabled: true, reasons: [],
+    requires: requires({ devices: ["dia_lamp"], arg: { mode: "brightfield" } }) },
+  { op: "light_set:aura", enabled: true, reasons: [], requires: requires({ devices: ["aura"], arg: { mode: "aura" } }) },
+];
+
+const ALLOWED: Permissions = Object.fromEntries(SCREEN_OPS.map((op) => [op, { allowed: true, reason: null }]));
+
+function refused(ops: readonly string[], reason: string): Permissions {
+  return Object.fromEntries(ops.map((op) => [op, { allowed: false, reason }]));
+}
+
+function ContextProbe() {
+  const ctx = useCurrentScreenContext();
+  return <pre data-testid="ctx">{JSON.stringify(ctx)}</pre>;
+}
+
+interface Opts {
+  hostname?: string;
+  permissions?: Route;
+  gates?: GateRow[];
+  profile?: HardwareProfileOut;
+  commands?: Route;
+}
+
+/** The screen on the shell's client over a fake transport: no network, no socket, no window. */
+function setup(o: Opts = {}) {
+  const world = {
+    permissions: ALLOWED as Permissions,
+    snapshot: { positions: { z_um: 3012.5 }, running: [] } as Record<string, unknown>,
+  };
+  const t = fakeTransport({
+    "/api/state": () => ({ status: 200, body: world.snapshot }),
+    [PATHS.profile]: () => ({ status: 200, body: o.profile ?? PROFILE }),
+    [PATHS.gates]: () => ({ status: 200, body: o.gates ?? GATES }),
+    [PATHS.status]: () => ({ status: 200, body: null }),
+    [PATHS.permissions(SCREEN_OPS)]: o.permissions ?? (() => ({ status: 200, body: world.permissions })),
+    "/api/commands": o.commands ?? (() => ({ status: 200, body: { op_id: "op-1" } })),
+  });
+  const client = new Client(t.transport, o.hostname ?? "127.0.0.1");
+  render(
+    <ClientProvider client={client}>
+      <ScreenContextProvider area="hardware">
+        <HardwareScreen />
+        <ContextProbe />
+      </ScreenContextProvider>
+    </ClientProvider>,
+  );
+  const socket = () => t.sockets[0];
+  const sent = () =>
+    t.calls.filter((c) => c.path === "/api/commands").map((c) => JSON.parse(String(c.init?.body)));
+  const emit = (kind: string, data: Record<string, unknown> = {}, opId = "") => act(() => socket().event(kind, data, opId));
+  return { ...t, client, world, sent, emit };
+}
+
+/** Disabled directly or by a disabled fieldset. */
+const isDisabled = (el: HTMLElement) => el.matches(":disabled");
+const button = (name: string) => screen.getByRole("button", { name });
+
+describe("hardware screen", () => {
+  it("shows off gates first, with their reasons", async () => {
+    setup();
+    const table = within(await screen.findByRole("region", { name: "Gates" }));
+    await waitFor(() => expect(table.getAllByRole("row")).toHaveLength(5));
+    const rows = table.getAllByRole("row").slice(1);
+    expect(rows[0].textContent).toContain("sample_map");
+    expect(rows[0].textContent).toContain("Off");
+    expect(rows[0].textContent).toContain("xy_stage detected but its state did not read back");
+    expect(rows.map((r) => (r as HTMLTableRowElement).cells[0].textContent)).toEqual(
+      ["sample_map", "light_set:aura", "light_set:brightfield", "status"]);
+  });
+
+  it("sorts problem devices first", async () => {
+    setup();
+    const table = within(await screen.findByRole("region", { name: "Devices" }));
+    await waitFor(() => expect(table.getAllByRole("row")).toHaveLength(4));
+    const rows = table.getAllByRole("row").slice(1);
+    expect(rows.map((r) => (r as HTMLTableRowElement).cells[0].textContent)).toEqual(["XYStage", "Kinetix_red", "ZDrive"]);
+  });
+
+  it("says when nothing has been scanned", async () => {
+    setup({ profile: { profile: null, path: null, sha256: null } });
+    expect(await screen.findByText(/Not scanned yet/)).toBeTruthy();
+  });
+
+  it("says it is checking permissions until the first answer", async () => {
+    setup();
+    // the fake's answer is a promise away: the first render has not seen it yet
+    expect(screen.getAllByText("Checking permissions…").length).toBeGreaterThan(0);
+    expect(isDisabled(button("Scan hardware"))).toBe(true);
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
+  });
+
+  it("counts an op missing from the answer as unavailable", async () => {
+    setup({ permissions: () => ({ status: 200, body: { lights_off: { allowed: true, reason: null } } }) });
+    await waitFor(() => expect(screen.getAllByText("Permission check unavailable").length).toBeGreaterThan(0));
+    expect(isDisabled(button("Scan hardware"))).toBe(true);
+    expect(isDisabled(button("Lights off"))).toBe(false);
+  });
+
+  it("falls back to 'Permission check unavailable' but keeps Lights off on this PC", async () => {
+    const t = setup({ permissions: () => ({ status: 404, body: { detail: "Not Found" } }) });
+    await waitFor(() => expect(screen.getAllByText("Permission check unavailable").length).toBeGreaterThan(0));
+    expect(isDisabled(button("Scan hardware"))).toBe(true);
+    expect(isDisabled(button("Brightfield on"))).toBe(true);
+    expect(isDisabled(button("Lights off"))).toBe(false);
+    fireEvent.click(button("Lights off"));
+    await waitFor(() => expect(t.sent()).toHaveLength(1));
+    expect(t.sent()[0]).toMatchObject({ kind: "lights_off" });
+  });
+
+  it("greys out Lights off on a remote screen even when permissions can't be read (D2)", async () => {
+    setup({ hostname: "192.168.1.20", permissions: () => ({ status: 404, body: { detail: "Not Found" } }) });
+    await waitFor(() => expect(isDisabled(button("Lights off"))).toBe(true));
+    const lights = within(screen.getByRole("region", { name: "Lights" }));
+    expect(lights.getAllByText("Read-only: remote view").length).toBeGreaterThan(0);
+  });
+
+  it("disables the confirm form on a remote screen", async () => {
+    setup({ hostname: "192.168.1.20" });
+    const form = within(await screen.findByRole("region", { name: "Human-confirmed items" }));
+    expect(isDisabled(form.getByRole("button", { name: "Save" }))).toBe(true);
+    expect(form.getByText("Read-only: remote view")).toBeTruthy();
+  });
+
+  it("disables operator commands for a viewer but keeps Lights off", async () => {
+    const viewer = {
+      ...refused(["hardware_scan", "hardware_confirm", "status", "light_set"], "Needs the operator role"),
+      lights_off: { allowed: true, reason: null },
+    };
+    setup({ permissions: () => ({ status: 200, body: viewer }) });
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(true));
+    await waitFor(() => expect(screen.getAllByText("Needs the operator role").length).toBeGreaterThan(0));
+    expect(isDisabled(button("Lights off"))).toBe(false);
+  });
+
+  it("needs an open experiment session for light_set (D15)", async () => {
+    const noSession = { ...ALLOWED, light_set: { allowed: false, reason: "Open an experiment session first" } };
+    setup({ permissions: () => ({ status: 200, body: noSession }) });
+    expect((await screen.findAllByText("Open an experiment session first")).length).toBe(2); // both modes
+    expect(isDisabled(button("Brightfield on"))).toBe(true);
+    expect(isDisabled(button("Scan hardware"))).toBe(false);
+    expect(isDisabled(button("Aura GREEN 1 % on"))).toBe(true);
+  });
+
+  it("scans with the piezo skipped by default", async () => {
+    const t = setup();
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
+    fireEvent.click(button("Scan hardware"));
+    await waitFor(() => expect(t.sent()).toHaveLength(1));
+    expect(t.sent()[0]).toMatchObject({
+      kind: "start", op: "hardware_scan", args: { include_properties: true, piezo_port: "" },
+    });
+  });
+
+  it("shows the light read-back, not the requested value", async () => {
+    const t = setup();
+    const state = await screen.findByTestId("light-state");
+    await waitFor(() => expect(isDisabled(button("Brightfield on"))).toBe(false));
+    fireEvent.click(button("Brightfield on"));
+    await waitFor(() => expect(t.sent()).toHaveLength(1));
+    expect(state.textContent).toContain("no read-back yet");
+
+    // the one light shape (server/schemas/state.py `Lights`, runner._light_payload)
+    t.emit("light_changed", {
+      dialamp: { state: "unknown", intensity: null },
+      aura: { state: "off", lines: {} },
+      verified: false,
+      records: [{ device: "DiaLamp", prop: "State", wanted: 1, read: 0, verified: false }],
+      error: null,
+    });
+    expect(state.textContent).toContain("Lights not confirmed: DiaLamp read 0, wanted 1");
+
+    const lit = {
+      dialamp: { state: "off", intensity: null },
+      aura: { state: "on", lines: { GREEN: 1 } },
+      verified: true,
+      records: [],
+      error: null,
+    };
+    t.world.snapshot = { ...t.world.snapshot, lights: lit };
+    t.emit("light_changed", lit);
+    expect(state.textContent).toContain("DiaLamp OFF · Aura GREEN 1 %");
+
+    const lamp = { ...lit, dialamp: { state: "on", intensity: 608 }, aura: { state: "off", lines: {} } };
+    t.world.snapshot = { ...t.world.snapshot, lights: lamp };
+    t.emit("light_changed", lamp);
+    expect(state.textContent).toContain("DiaLamp ON (608) · Aura OFF");
+
+    t.world.snapshot = { ...t.world.snapshot, lights: lit };
+    t.emit("light_changed", lit);
+
+    // the end of an operation does not mean lights off (T-011): only a read-back changes the panel
+    t.emit("finished", { op: "status", summary: {} }, "op-2");
+    await waitFor(() => expect(t.calls.filter((c) => c.path === "/api/state").length).toBeGreaterThan(1));
+    expect(state.textContent).toContain("DiaLamp OFF · Aura GREEN 1 %");
+  });
+
+  it("re-reads permissions when an operation starts and ends, and names it on Lights off", async () => {
+    const t = setup();
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
+
+    t.world.permissions = { ...ALLOWED, hardware_scan: { allowed: false, reason: "status is running" } };
+    t.world.snapshot = { ...t.world.snapshot, running: [{ op: "status", op_id: "op-9" }] };
+    t.emit("started", { op: "status" }, "op-9");
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(true));
+    expect(screen.getByText("status is running")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("stops status")).toBeTruthy());
+
+    t.world.permissions = ALLOWED;
+    t.world.snapshot = { ...t.world.snapshot, running: [] };
+    t.emit("finished", { op: "status", summary: { nosepiece_label: "1-Plan Apo LmbdD20 4x", z_um: 3012.5 } }, "op-9");
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
+    const current = within(screen.getByRole("region", { name: "Current state" }));
+    expect(current.getByText("1-Plan Apo LmbdD20 4x")).toBeTruthy();
+    expect(current.getByText("Z 3012.50 µm")).toBeTruthy();
+  });
+
+  it("shows this area's gate reason when the permission allows the op", async () => {
+    setup({
+      gates: [...GATES, {
+        op: "hardware_scan", enabled: false, reasons: ["camera not detected"],
+        requires: requires({ devices: ["camera"] }),
+      }],
+    });
+    expect(await screen.findByText("hardware_scan is off: camera not detected")).toBeTruthy();
+    expect(isDisabled(button("Scan hardware"))).toBe(true);
+  });
+
+  it("takes each light button's gate from its own light_set mode row (T-028)", async () => {
+    setup({
+      gates: GATES.map((g) => g.op === "light_set:brightfield"
+        ? { ...g, enabled: false, reasons: ["dia_lamp not detected"] } : g),
+    });
+    const bf = within(screen.getByTestId("light-brightfield"));
+    expect(await bf.findByText("light_set:brightfield is off: dia_lamp not detected")).toBeTruthy();
+    expect(isDisabled(button("Brightfield on"))).toBe(true);
+    expect(isDisabled(button("Aura GREEN 1 % on"))).toBe(false);
+  });
+
+  it("shows the previous-profile diff and the backend kind", async () => {
+    setup();
+    const summary = within(await screen.findByRole("region", { name: "Detection summary" }));
+    expect(await summary.findByText("changed: device.XYStage.read_back")).toBeTruthy();
+    expect(summary.getByText("mock (not the bench)")).toBeTruthy();
+  });
+
+  it("shows a server refusal next to the button", async () => {
+    setup({ commands: () => ({ status: 400, body: { detail: "Ann has control of the microscope" } }) });
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
+    fireEvent.click(button("Scan hardware"));
+    expect(await screen.findByText("refused: Ann has control of the microscope")).toBeTruthy();
+  });
+
+  it("shows a non-remote 403 (a viewer's scan) as that action's reason", async () => {
+    setup({ commands: () => ({ status: 403, body: { detail: { code: "role", message: "Needs the operator role" } } }) });
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
+    fireEvent.click(button("Scan hardware"));
+    const scan = within(screen.getByRole("region", { name: "Scan" }));
+    expect(await scan.findByText("refused: Needs the operator role")).toBeTruthy();
+  });
+
+  // T-010 stage 4: only a 403 marked remote_view (T-009b) sets read-only.
+  it("leaves the rest of the screen writable after a non-remote 403 (T-010 stage 4)", async () => {
+    setup({ commands: () => ({ status: 403, body: { detail: { code: "not_operator", message: "Needs the operator role" } } }) });
+    await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
+    fireEvent.click(button("Scan hardware"));
+    await screen.findByText(/refused:/);
+    expect(screen.queryAllByText("Read-only: remote view")).toHaveLength(0);
+    expect(isDisabled(button("Show objective / Z / PFS"))).toBe(false);
+  });
+
+  it("puts the selected gate and its reasons in the screen context", async () => {
+    setup();
+    const table = within(await screen.findByRole("region", { name: "Gates" }));
+    fireEvent.click(await table.findByText("sample_map"));
+    const ctx = JSON.parse(screen.getByTestId("ctx").textContent ?? "{}");
+    expect(ctx).toEqual({
+      area: "hardware",
+      gate: "sample_map",
+      gate_reasons: ["xy_stage detected but its state did not read back"],
+    });
+  });
+});
