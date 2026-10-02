@@ -93,6 +93,7 @@ describe("LiveView", () => {
     expect(screen.getByTestId("live-fps").textContent).toBe("10.0 fps");
     expect(screen.getByTestId("live-size").textContent).toContain("bin 3 of 2400×2400");
     expect(screen.getByText("Z 2989.42 µm")).toBeTruthy();
+    expect(screen.getByTestId("live-z").getAttribute("title")).toContain("camera buffer");
   });
 
   it("says so, and does not retry, when the engine provides no frames", () => {

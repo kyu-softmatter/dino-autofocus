@@ -22,7 +22,7 @@ describe("read-only", () => {
     const client = new Client(transport, "127.0.0.1");
     const seen = vi.fn();
     client.readOnly.subscribe(seen);
-    await expect(client.command({ kind: "start", op: "status" } as never)).rejects.toBeInstanceOf(CommandRefused);
+    await expect(client.command({ kind: "start", op: "status" })).rejects.toBeInstanceOf(CommandRefused);
     expect(client.readOnly.get()).toEqual({ readOnly: true, why: "remote viewers may send abort only" });
     expect(seen).toHaveBeenCalledTimes(1);
     expect(calls[0].init?.method).toBe("POST");
@@ -31,7 +31,7 @@ describe("read-only", () => {
 
   it("returns the op_id of an accepted command", async () => {
     const { transport } = fakeTransport({ "/api/commands": () => ({ status: 200, body: { op_id: "op-1" } }) });
-    await expect(new Client(transport, "127.0.0.1").command({ kind: "lights_off" } as never)).resolves.toBe("op-1");
+    await expect(new Client(transport, "127.0.0.1").command({ kind: "lights_off" })).resolves.toBe("op-1");
   });
 });
 

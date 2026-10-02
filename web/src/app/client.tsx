@@ -3,6 +3,8 @@ import { createContext, type ReactNode, useContext, useEffect, useState, useSync
 import type { components } from "../api/schema";
 
 export type CommandIn = components["schemas"]["CommandIn"];
+/** What a screen sends: `kind` and whatever differs from the server's defaults (op, op_id, args, origin). */
+export type CommandInput = Pick<CommandIn, "kind"> & Partial<Omit<CommandIn, "kind">>;
 export type EventOut = components["schemas"]["EventOut"];
 export type EventKind = EventOut["kind"];
 type WsEvent = components["schemas"]["WsEvent"];
@@ -211,7 +213,7 @@ export class Client {
   }
 
   /** POST /api/commands (engine commands). A 403 (remote view, D13) switches the app to read-only. */
-  async command(cmd: CommandIn): Promise<string> {
+  async command(cmd: CommandInput): Promise<string> {
     const reply = await this.post<components["schemas"]["CommandAccepted"]>("/api/commands", cmd);
     if (!reply) throw new CommandRefused(502, "the server accepted the command but gave no op_id");
     return reply.op_id;
