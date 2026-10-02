@@ -97,26 +97,33 @@ function setup(o: Opts = {}) {
       return o.commands ? o.commands(init) : { status: 200, body: { op_id: "op-1" } };
     },
   };
-  // query-string paths (plan, focus defaults for a typed centre) resolve here
-  const routes = new Proxy(fixed, {
-    get(target, path: string) {
-      if (path in target) return target[path];
-      const u = new URL(path, "http://x");
-      if (u.pathname === "/api/objective/plan") {
-        return () => ({ status: 200, body: plan(lenses, Number(u.searchParams.get("target_state")),
-          u.searchParams.get("escape") === "true", o.escapeRefusal) });
-      }
-      if (u.pathname === "/api/objective/focus100x/defaults") {
-        return () => ({ status: 200, body: focusDefaults(z4x, Number(u.searchParams.get("centre_um"))) });
-      }
-      return undefined;
-    },
-  });
-  const t = fakeTransport(routes);
+  const t = fakeTransport(fixed);
+  // query-string paths (plan, focus defaults for a typed centre) are answered here: the shared
+  // fakeTransport looks paths up in a plain table, so they cannot be routes there
+  const dynamic = (path: string): Route | undefined => {
+    const u = new URL(path, "http://x");
+    if (u.pathname === "/api/objective/plan") {
+      return () => ({ status: 200, body: plan(lenses, Number(u.searchParams.get("target_state")),
+        u.searchParams.get("escape") === "true", o.escapeRefusal) });
+    }
+    if (u.pathname === "/api/objective/focus100x/defaults" && u.searchParams.has("centre_um")) {
+      return () => ({ status: 200, body: focusDefaults(z4x, Number(u.searchParams.get("centre_um"))) });
+    }
+    return undefined;
+  };
   const transport: Transport = {
     ...t.transport,
-    fetch: (path, init) =>
-      o.permissionsPending && path.startsWith("/api/permissions") ? new Promise<Response>(() => {}) : t.transport.fetch(path, init),
+    fetch: async (path, init) => {
+      if (o.permissionsPending && path.startsWith("/api/permissions")) return new Promise<Response>(() => {});
+      const route = dynamic(path);
+      if (route === undefined) return t.transport.fetch(path, init);
+      t.calls.push({ path, init });
+      const { status, body } = route(init);
+      return new Response(body === undefined ? null : JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
   };
   const client = new Client(transport, o.hostname ?? "127.0.0.1");
   render(
