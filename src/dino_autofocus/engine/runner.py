@@ -572,7 +572,9 @@ class Runner:
         self._stream = stream or NoStream()
         self.config = config or RunnerConfig()
         self._state_dir = Path(state_dir) if state_dir else None
-        self._hardware = hardware  # gates and profile (T-002 gates), for snapshot()
+        # snapshot()["hardware"] provider; with a `check(op, args)` it also gates preflight
+        # (T-028 register_hardware returns one)
+        self._hardware = hardware
         self._awaiting = awaiting_return  # from the sample record at engine start
         self._on_awaiting = on_awaiting_return
         self._lock = threading.RLock()  # ops, owner, awaiting, session, life
@@ -1167,7 +1169,30 @@ class Runner:
                 checks.append({"name": "approach_clearance", "ok": False,
                                "want": "a clearance callback", "read": {"bench": bench},
                                "why": "on the bench an approach needs a clearance check"})
+        gate = self._gate_check(op)
+        if gate is not None:
+            checks.append(gate)
         return checks
+
+    def _gate_check(self, op: _Op) -> dict | None:
+        """The hardware gates (T-028): the `hardware` provider's `check(op, args) -> (ok,
+        reasons)`. No provider, or one without `check` (tests, mock without a profile), keeps
+        the runner as it was. A provider that raises or answers nonsense fails closed with
+        the error as the reason. lights_off is a stop and is never gated."""
+        check = getattr(self._hardware, "check", None)
+        if check is None or op.cls is LightsOff:
+            return None
+        try:
+            ok, reasons = check(op.op, dict(op.args))
+            reasons = [str(r) for r in (reasons or [])]
+        except Exception as e:
+            return {"name": "hardware_gate", "ok": False, "want": "the gate's answer",
+                    "read": f"{type(e).__name__}: {e}",
+                    "why": f"hardware gate check failed ({type(e).__name__}: {e}); refused"}
+        if ok is True:
+            return None
+        return {"name": "hardware_gate", "ok": False, "want": "gate open", "read": reasons,
+                "why": "; ".join(reasons) or f"the hardware gate refuses {op.op}"}
 
     def _on_bench(self) -> bool | None:
         """`BackendInfo.bench` (T-033: True on mm-real), from the start() read or, if that
