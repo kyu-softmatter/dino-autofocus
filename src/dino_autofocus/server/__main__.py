@@ -9,9 +9,11 @@ streams a synthetic picture, so the web shell has something to show.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import os
+import socket
 import sys
 import threading
 import time
@@ -136,12 +138,26 @@ def make_engine(backend: str) -> tuple[Any, str]:
     raise SystemExit(f"unknown backend {backend!r}; available now: {', '.join(BACKENDS)}")
 
 
+def this_pc_hosts() -> list[str]:
+    """Names other PCs may use to reach this one: host name, FQDN and IPv4 addresses."""
+    name = socket.gethostname()
+    hosts = {name, socket.getfqdn()}
+    with contextlib.suppress(OSError):
+        hosts.update(socket.gethostbyname_ex(name)[2])
+    return sorted(h for h in hosts if h)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m dino_autofocus.server", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--remote-view", action="store_true",
                    help=f"listen on 0.0.0.0 so other PCs can view (also {REMOTE_VIEW_ENV}=1); "
                         "commands are still accepted from this PC only")
+    p.add_argument("--no-remote-abort", action="store_true",
+                   help="refuse abort from remote viewers too (D13 default: allowed)")
+    p.add_argument("--allow-host", action="append", default=[], metavar="NAME",
+                   help="extra Host header name to accept (repeatable); under --remote-view "
+                        "this PC's host name and addresses are added automatically")
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--backend", choices=BACKENDS, default="placeholder",
                    help="only the placeholder engine exists until the runner (T-011) and the "
@@ -154,7 +170,9 @@ def main(argv: list[str] | None = None) -> int:
 
     remote_view = args.remote_view or os.environ.get(REMOTE_VIEW_ENV, "") == "1"
     engine, name = make_engine(args.backend)
-    app = create_app(engine, remote_view=remote_view, engine_name=name, web_dist=args.web_dist)
+    hosts = [*args.allow_host, *(this_pc_hosts() if remote_view else ())]
+    app = create_app(engine, remote_view=remote_view, remote_abort=not args.no_remote_abort,
+                     allowed_hosts=hosts, engine_name=name, web_dist=args.web_dist)
 
     if args.dump_openapi:
         text = json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n"

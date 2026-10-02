@@ -60,6 +60,16 @@ def frame_engine() -> FakeFrameEngine:
     return FakeFrameEngine()
 
 
+class LoopbackClient(TestClient):
+    """TestClient sends WebSockets to ws://testserver whatever base_url says; the Host
+    allow-list refuses that, so relative WebSocket paths go to the loopback base instead."""
+
+    def websocket_connect(self, url: str, *args, **kwargs):
+        if url.startswith("/"):
+            url = f"ws://{self.base_url.netloc.decode()}{url}"
+        return super().websocket_connect(url, *args, **kwargs)
+
+
 @pytest.fixture
 def make_client(tmp_path):
     """`make_client(engine, remote=False, **create_app_kwargs)`; no web build unless given."""
@@ -67,6 +77,7 @@ def make_client(tmp_path):
     def make(engine: Any, *, remote: bool = False, **kw) -> TestClient:
         kw.setdefault("web_dist", tmp_path / "no-web-dist")
         app = create_app(engine, engine_name="fake", **kw)
-        return TestClient(app, client=REMOTE if remote else LOCAL)
+        return LoopbackClient(app, base_url="http://127.0.0.1:8765",
+                              client=REMOTE if remote else LOCAL)
 
     return make

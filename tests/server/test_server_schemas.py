@@ -6,45 +6,51 @@ import typing
 import pytest
 from pydantic import ValidationError
 
+from dino_autofocus.engine import events
 from dino_autofocus.server.schemas import (
-    COMMAND_KINDS,
-    EVENT_KINDS,
-    Command,
+    SERVER_STAMPED,
     CommandIn,
     CommandKind,
-    Event,
     EventKind,
     EventOut,
+    Origin,
 )
 
 
-def test_literals_follow_kind_lists():
-    assert typing.get_args(CommandKind) == COMMAND_KINDS
-    assert typing.get_args(EventKind) == EVENT_KINDS
+def test_literals_follow_engine_kind_lists():
+    assert typing.get_args(CommandKind) == events.COMMAND_KINDS
+    assert typing.get_args(EventKind) == events.EVENT_KINDS
+    assert typing.get_args(Origin) == events.ORIGINS
 
 
-def test_matches_engine_contract():
-    """Fails as soon as the server's mirror and the engine contract (T-002) disagree."""
-    events = pytest.importorskip("dino_autofocus.engine.events")
-    assert events.COMMAND_KINDS == COMMAND_KINDS
-    assert events.EVENT_KINDS == EVENT_KINDS
-    for mine, theirs in ((Command, events.Command), (Event, events.Event)):
-        assert [f.name for f in dataclasses.fields(mine)] == \
-            [f.name for f in dataclasses.fields(theirs)]
-    # what the server builds, the engine accepts, and back
-    cmd = CommandIn(kind="start", op="status", args={"a": 1}).to_engine()
-    assert events.Command(**dataclasses.asdict(cmd)).op == "status"
-    ev = events.Event(kind="position", data={"z_um": 3000.0})
-    assert EventOut.from_engine(ev).data == {"z_um": 3000.0}
+def test_models_wrap_engine_dataclasses():
+    """Fails when the engine gains or loses a field the wire models do not follow."""
+    command_fields = {f.name for f in dataclasses.fields(events.Command)}
+    assert set(CommandIn.model_fields) == command_fields - set(SERVER_STAMPED)
+    assert set(SERVER_STAMPED) <= command_fields
+    assert set(EventOut.model_fields) == {f.name for f in dataclasses.fields(events.Event)}
 
 
-def test_models_wrap_dataclasses():
-    cmd = CommandIn(kind="confirm", op_id="op3", args={"key": "oil", "ok": True}).to_engine()
-    assert isinstance(cmd, Command)
-    assert set(dataclasses.asdict(cmd)) == {f.name for f in dataclasses.fields(Command)}
-    out = EventOut.from_engine(Event(kind="log", data={"msg": "hi"}))
-    assert set(out.model_dump()) == {f.name for f in dataclasses.fields(Event)}
+def test_command_to_engine():
+    cmd = CommandIn(kind="confirm", op_id="op3", args={"key": "oil", "ok": True},
+                    session_id="s1").to_engine()
+    assert isinstance(cmd, events.Command)
+    assert (cmd.origin, cmd.user_id, cmd.session_id) == ("human", None, "s1")
+    assert cmd.t > 0
+    assert events.Command.from_json(cmd.to_json()) == cmd
+    # the body cannot claim a user: user_id comes from login (T-018), never from the client
+    assert CommandIn.model_validate({"kind": "abort", "user_id": "x"}).to_engine().user_id is None
+
+
+def test_event_from_engine():
+    out = EventOut.from_engine(events.Event(kind="position", data={"z_um": 3000.0}))
+    assert (out.kind, out.data) == ("position", {"z_um": 3000.0})
+
+
+def test_unknown_kinds_refused():
     with pytest.raises(ValidationError):
         CommandIn(kind="move_z")
+    with pytest.raises(ValidationError):
+        CommandIn(kind="start", origin="robot")
     with pytest.raises(ValidationError):
         EventOut(kind="teleported", t=0.0)

@@ -10,7 +10,8 @@ from dino_autofocus.server.api import include_area_routers
 
 def test_health_and_state(engine, make_client):
     c = make_client(engine, remote_view=True)
-    assert c.get("/api/health").json() == {"status": "ok", "engine": "fake", "remote_view": True}
+    assert c.get("/api/health").json() == {
+        "status": "ok", "engine": "fake", "remote_view": True, "remote_abort": True}
     assert c.get("/api/state").json() == engine.snapshot()
 
 
@@ -56,7 +57,7 @@ def test_commands_refused_from_foreign_pages(engine, make_client):
     body = {"kind": "lights_off"}
     evil = c.post("/api/commands", json=body, headers={"origin": "https://example.com"})
     assert evil.status_code == 403
-    same = c.post("/api/commands", json=body, headers={"origin": "http://testserver"})
+    same = c.post("/api/commands", json=body, headers={"origin": "http://127.0.0.1:8765"})
     assert same.status_code == 200
     # the Vite dev server on this PC proxies to the API from another port
     dev = c.post("/api/commands", json=body, headers={"origin": "http://localhost:5173"})

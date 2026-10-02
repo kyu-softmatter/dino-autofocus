@@ -13,24 +13,33 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .contract import COMMAND_KINDS, EVENT_KINDS, Command, Event
+from .contract import COMMAND_KINDS, EVENT_KINDS, ORIGINS, Command, Event
 
 CommandKind = Literal[COMMAND_KINDS]  # type: ignore[valid-type]
 EventKind = Literal[EVENT_KINDS]  # type: ignore[valid-type]
+Origin = Literal[ORIGINS]  # type: ignore[valid-type]
+
+# Command fields the client does not send: the server stamps them
+SERVER_STAMPED = ("user_id", "t")
 
 
 class CommandIn(BaseModel):
     """A command for the engine. `start` names an operation in `op` with its `args`; `abort`
-    and `confirm` name the running operation by `op_id`; `lights_off` pre-empts anything."""
+    and `confirm` name the running operation by `op_id`; `lights_off` pre-empts anything.
+    An `assistant` command is a proposal until a human confirms it."""
 
     kind: CommandKind
     op: str = ""
     op_id: str = ""
     args: dict[str, Any] = Field(default_factory=dict)
+    origin: Origin = "human"
+    session_id: str | None = None
 
     def to_engine(self) -> Command:
-        # the server stamps the time it received the command
+        # user_id stays None until login exists (T-018); it will come from the session
+        # cookie, never from the request body. t is when the server received the command.
         return Command(kind=self.kind, op=self.op, op_id=self.op_id, args=dict(self.args),
+                       origin=self.origin, user_id=None, session_id=self.session_id,
                        t=time.time())
 
 
@@ -53,6 +62,7 @@ class Health(BaseModel):
     status: Literal["ok"] = "ok"
     engine: str
     remote_view: bool
+    remote_abort: bool  # D13: a remote viewer may send abort, and nothing else
 
 
 class ApiError(BaseModel):
