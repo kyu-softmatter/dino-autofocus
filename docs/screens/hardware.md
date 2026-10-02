@@ -37,7 +37,7 @@ Light state has no endpoint of its own. It comes from `/api/state` when the scre
 | `"Show objective / Z / PFS"` | `{"kind": "start", "op": "status"}` | Local operator with control. No session (read only) |
 | `"Brightfield on"` | `{"kind": "start", "op": "light_set", "args": {"mode": "brightfield"}}` | Local operator, control **and** an open experiment session (D15, like motion) |
 | `"Aura <line> <pct> % on"` | `{"kind": "start", "op": "light_set", "args": {"mode": "aura", "line": "GREEN", "percent": 1.0}}` | Same as brightfield |
-| `"Lights off"` (on this screen; the status-bar button belongs to T-010) | `{"kind": "lights_off"}` | Anyone, including a viewer, a user without control, and a locked session (`Action.STOP`). It pre-empts the running operation |
+| `"Lights off"` (on this screen; the status-bar button belongs to T-010) | `{"kind": "lights_off"}` | Anyone logged in **on the microscope PC**, including a viewer, a user without control, and a locked session (`Action.STOP`). Refused from a remote client, which may send `abort` only (manager D2, under D13). It pre-empts the running operation |
 
 `lights_off` is a command **kind** in `engine/events.py` (`COMMAND_KINDS`). It is not sent as
 `start("lights_off")` as ui-spec 4.0 and 4.2 write it (gap G1).
@@ -71,6 +71,18 @@ The screen never works them out itself.
 
 ## 5. Gaps (requests to AF 업무분배보조, to forward to the manager)
 
+Where each gap went (manager, main 176b4c3):
+
+| Gap | Outcome |
+|---|---|
+| G1 | Confirmed: `lights_off` and `abort` are command kinds. ui-spec is corrected by its author |
+| G2, G3, G4, G5 | Go to future WP-G / WP-C cards (`light_set` op, profile fields, lens table, confirmed values). Stage B shows `"not reported"` for missing fields |
+| G6 | T-011: `snapshot()["hardware"] = {profile, profile_path, gates, last_status}` |
+| G7 | T-011: one table op → (action class, needs control token, needs open session), read by T-009 |
+| G8 | Manager D2 (director confirmation pending): a remote client may send `abort` only, and remote `lights_off` is refused. Locally, anyone logged in may send `abort` and `lights_off` |
+| G9 | Open (previous-profile diff). The panel shows `"no previous profile"` |
+| G10 | Form and tests default to `piezo_port: ""`. Tests never touch COM ports |
+
 - **G1** `lights_off` is a command kind in `events.py`; ui-spec 4.0/4.2 send it as `start("lights_off")`.
   This contract follows `events.py`. ui-spec should be corrected to match.
 - **G2** No `light_set` operation. Proposed args: `mode` (`"brightfield"` / `"aura"` / `"off"`), `line`, `percent`.
@@ -102,9 +114,6 @@ The screen never works them out itself.
 - **G10** ops-spec 5 defaults `piezo_port` to `COM4`, and whether opening the port alone changes the
   controller is still unconfirmed (Q19). Answer (업무분배보조): the scan form and the tests default to
   `piezo_port: ""` (skip the piezo), and tests never touch COM ports.
-- **G8 interim** (업무분배보조): treat `lights_off` like `abort`: anyone locally; a remote client gets
-  whatever T-009 does for remote `abort` (D13).
-
 ## 6. Stage B plan (after T-009 and T-010 skeletons merge)
 
 - `hardware.py`: the four `GET` routes above with pydantic models, using a fake engine whose snapshot has
