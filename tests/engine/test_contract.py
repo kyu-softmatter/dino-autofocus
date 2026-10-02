@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from dino_autofocus.engine import Command, Event, queue_sink
-from dino_autofocus.engine.backend import Backend, UnguardedMotion
+from dino_autofocus.engine.backend import GUARD_TOKEN, Backend, UnguardedMotion
 
 
 def test_import_pulls_no_ui_torch_or_pymmcore():
@@ -43,5 +43,5 @@ def test_fake_backend_meets_the_protocol_and_refuses_unguarded_motion(fake):
     assert fake.info().ceiling_adu == 4095
     with pytest.raises(UnguardedMotion):
         fake.move_z(3000.0, token=None)
-    assert all(r.verified for r in fake.aura_line_on("GREEN", 1))
+    assert all(r.verified for r in fake.aura_line_on("GREEN", 1, token=GUARD_TOKEN))
     assert fake.props[("Aura", "GREEN_Intensity")] == "10"  # per-mille

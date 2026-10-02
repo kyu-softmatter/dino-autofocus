@@ -1,8 +1,11 @@
 """FakeBackend: the Backend protocol in memory, shared by WP-B/WP-C tests.
 
 Positions follow the commands; `z_readback_offset_um` makes ZDrive read back off by that
-much; `all_off_raises` makes lights-off fail. `frame.z_um` is the commanded Z, so a test
-score can be `lambda f: -abs(f.z_um - focus)`. Every call is appended to `calls`.
+much; `all_off_raises` makes lights-off fail. `set_property` follows the shared allow-list
+and light-on needs the guard token, like every backend. The stream has no thread: each
+`next_frame()` while streaming is one new frame. `piezo_um` set = a piezo answers on any
+port. `frame.z_um` is the commanded Z, so a test score can be
+`lambda f: -abs(f.z_um - focus)`. Every call is appended to `calls`.
 """
 
 from __future__ import annotations
@@ -15,12 +18,19 @@ import pytest
 
 from dino_autofocus.engine.backend import (
     BackendInfo,
+    ConfigRecord,
+    DeviceInfo,
     Frame,
+    NosepieceLabel,
     ObjectiveInfo,
     PfsState,
+    PiezoReading,
     Positions,
+    PropertyInfo,
     Readback,
     StageLimits,
+    StreamActive,
+    check_set_property,
     require_token,
 )
 
@@ -41,6 +51,8 @@ class FakeBackend:
         self.stuck: set[str] = set()  # light devices whose State ignores writes
         self.props: dict[tuple[str, str], str] = {}
         self.exposure, self.is_open, self.calls = 10.0, False, []
+        self.is_streaming, self.stream_frames = False, 0
+        self.piezo_um: tuple[float, float, float] | None = None
 
     def _log(self, name: str, *args) -> None:
         self.calls.append((name, *args))
@@ -50,6 +62,7 @@ class FakeBackend:
         return self.info()
 
     def close(self) -> None:
+        self.stop_stream()
         self.is_open = False
         self._log("close")
 
@@ -61,9 +74,32 @@ class FakeBackend:
                            StageLimits((-50000.0, 50000.0), (-35000.0, 35000.0),
                                        (0.0, 10000.0)))
 
-    def snap(self) -> Frame:
+    def _frame(self) -> Frame:
         img = np.full(self.shape, 100, np.uint16)
         return Frame(img, time.time(), self.exposure, self.x, self.y, self.z)
+
+    def snap(self) -> Frame:
+        if self.is_streaming:
+            raise StreamActive("stop the stream before snap()")
+        return self._frame()
+
+    def start_stream(self, interval_ms: float | None = None) -> None:
+        self._log("start_stream", interval_ms)
+        self.is_streaming = True
+
+    def next_frame(self, timeout_s: float = 1.0) -> Frame | None:
+        if not self.is_streaming:
+            return None
+        self.stream_frames += 1
+        return self._frame()
+
+    def stop_stream(self) -> None:
+        if self.is_streaming:
+            self._log("stop_stream")
+        self.is_streaming = False
+
+    def streaming(self) -> bool:
+        return self.is_streaming
 
     def set_exposure(self, ms: float) -> float:
         self.exposure = float(ms)
@@ -87,7 +123,40 @@ class FakeBackend:
     def light_state(self) -> dict[str, str]:
         return dict(self.lights)
 
-    def set_property(self, device: str, prop: str, value) -> Readback:
+    DEVICES = (("FakeCam", "CameraDevice"), ("ZDrive", "StageDevice"),
+               ("XYStage", "XYStageDevice"), ("Nosepiece", "StateDevice"),
+               ("PFS", "AutoFocusDevice"), ("DiaLamp", "ShutterDevice"),
+               ("Aura", "ShutterDevice"))
+
+    def describe_devices(self, include_properties: bool = True) -> list[DeviceInfo]:
+        state = {"FakeCam": {"Exposure": str(self.exposure)}, "ZDrive": {"Position": str(self.z)},
+                 "Nosepiece": {"State": str(self.state), "Label": LABELS[self.state]},
+                 "DiaLamp": {"State": self.lights["DiaLamp"]},
+                 "Aura": {"State": self.lights["Aura"]}}
+        for (dev, prop), v in self.props.items():
+            state.setdefault(dev, {})[prop] = v
+        return [DeviceInfo(label, kind, "fake", f"fake {kind}", True,
+                           properties={p: PropertyInfo(v) for p, v in state.get(label, {}).items()}
+                           if include_properties else {})
+                for label, kind in self.DEVICES]
+
+    def nosepiece_labels(self) -> list[NosepieceLabel]:
+        return [NosepieceLabel(o.state, o.label, 6.5 / o.magnification)
+                for o in self.info().objectives]
+
+    def piezo_read(self, port: str) -> PiezoReading:
+        if not port:
+            return PiezoReading("", False)
+        if self.piezo_um is None:
+            return PiezoReading(port, False, error=f"no piezo on {port}")
+        return PiezoReading(port, True, *self.piezo_um)
+
+    def config_record(self) -> ConfigRecord:
+        return ConfigRecord("memory", None, False, Readback.of("Core", "AutoShutter", 0, 0))
+
+    def set_property(self, device: str, prop: str, value, *, token=None) -> Readback:
+        check_set_property(device, prop, token, camera="FakeCam")
+        self._log("set_property", device, prop, str(value))
         self.props[(device, prop)] = str(value)
         return Readback.of(device, prop, value, value)
 
@@ -97,13 +166,15 @@ class FakeBackend:
             self.lights[dev] = value
         return Readback.of(dev, "State", value, self.lights[dev])
 
-    def lamp_on(self):
+    def lamp_on(self, *, token):
+        require_token(token)
         return [self._light("Aura", "0"), self._light("DiaLamp", "1")]
 
     def lamp_off(self):
         return [self._light("DiaLamp", "0")]
 
-    def aura_line_on(self, line: str, percent: float):
+    def aura_line_on(self, line: str, percent: float, *, token):
+        require_token(token)
         self.props[("Aura", f"{line.upper()}_Intensity")] = str(int(round(percent * 10)))
         return [self._light("DiaLamp", "0"), self._light("Aura", "1")]
 
@@ -125,6 +196,12 @@ class FakeBackend:
         require_token(token)
         self._log("move_xy", x_um, y_um)
         self.x, self.y = x_um, y_um
+        return self.x, self.y
+
+    def move_xy_rel(self, dx_um: float, dy_um: float, *, token, timeout_s=None):
+        require_token(token)
+        self._log("move_xy_rel", dx_um, dy_um)
+        self.x, self.y = self.x + dx_um, self.y + dy_um
         return self.x, self.y
 
     def set_nosepiece(self, state: int, *, token) -> Readback:
