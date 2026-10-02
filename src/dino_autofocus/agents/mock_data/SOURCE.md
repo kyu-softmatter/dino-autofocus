@@ -26,3 +26,14 @@ one axis and no plan. That is an artifact of the copy, not of the question.
 
 The cards carry their grades and `numbers` as written. They are sample data for the console;
 none of their numbers is to be used for anything on the bench.
+
+## Synthetic additions (not copied)
+
+Two result cards were written here in dino-autofocus, not copied, so the Results screen has
+something to draw. They say `"origin": "dino-autofocus mock (synthetic)"` and `"status": "MOCK"`,
+and their numbers are made up (a model curve plus noise):
+
+| Path | What |
+|---|---|
+| `simulation_agent/questions/sim-20260923-001/v3_result_psi6_relaxation.json` | psi6 relaxation and an MSD, each with a `<y>_theory` column |
+| `microscope_agent/questions/mic-20260925-001/result_well_occupancy.json` | well occupancy over time and a dwell survival, each with a `<y>_theory` column |

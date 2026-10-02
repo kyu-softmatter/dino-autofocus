@@ -3,6 +3,8 @@ name = "dino-autofocus"
 version = "0.0.1"
 description = "Frozen DINOv2 features for microscope autofocus (focus score / signed z-error)"
 requires-python = ">=3.12,<3.13"
+license = "MIT"
+license-files = ["LICENSE"]
 # Core = what the engine, focus verdicts, records and the agent-file reader import. Kept small
 # so soft-matter-agents can declare it (its validator check 82, pixi `mic` feature); see
 # docs/integration-sma.md P1. Everything heavy is an extra, imported at the use site.
@@ -92,3 +94,8 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+# dino_autofocus.focus.{classical,verdict,sma_event} are registered at import (S1), not files,
+# so ruff cannot find them on disk; name the package so isort sorts them as first-party
+[tool.ruff.lint.isort]
+known-first-party = ["dino_autofocus"]
