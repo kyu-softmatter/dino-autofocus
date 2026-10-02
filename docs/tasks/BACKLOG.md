@@ -30,6 +30,10 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 ## Manager to-do on events
 
+- **Quota pause (director, after the 19:20 outage):** active 실행1, 3, 4, 6, 7, 10, 11, 12, 15, 17 + AF 검토,
+  검토보조1, 2. Paused: 실행2, 5, 8, 9, 13, 14, 16 (after T-037 commit), 18, 19, 20, 검토보조3, 4, 업무분배보조.
+  Resume all when T-009b and T-010 stage 4 merge, then tell the director. No broadcasts.
+- T-009 reviews go to 검토보조1 while 검토보조3 is paused.
 - T-009 and T-010 first skeletons merged → tell AF 업무분배보조 (screen stage B starts).
 - 실행14 (T-020) or 실행5 (T-004) review cleared → offer the seat to AF 업무분배보조 for T-103 / T-104.
 - T-018 merged → 실행13 starts T-105 (screen manager). T-019 merged → 실행2 starts T-106.
@@ -71,6 +75,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   - WP-G: `hardware_confirm` for human-confirmed profile items (ui-spec 7.2).
   - Server/web: first-screen notice of the last shutdown's light readback (ui-spec 5.2).
   - Piezo keys f / w / W stay disabled until M5 (operations-spec 9.2).
+- **ops-spec nit (next touch of docs/operations-spec.md):** escape_dy_um direction is decided: +Y, 15 mm, unmeasured provisional (PLAN v1.3, fbc1e08).
 - **ui-spec nit (next touch of docs/ui-spec.md):** image check grade is "computed", not "classical". 4.0 transport row still calls abort open; D13 decided it. `update` stays in the command table (T-011 adds it to COMMAND_KINDS).
 - **Waiting on the director/user:** real `light_set`/`lights_off` at M3 instead of M4; whether viewers
   may submit questions to the mock store and write flags (default: local operator only).

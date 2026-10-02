@@ -149,7 +149,7 @@ export function AbortButton() {
         setMsg("nothing running");
         return;
       }
-      await Promise.all(ids.map((op_id) => client.command({ kind: "abort", op_id } as never)));
+      await Promise.all(ids.map((op_id) => client.command({ kind: "abort", op_id })));
       setMsg(`abort sent (${ids.length})`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
