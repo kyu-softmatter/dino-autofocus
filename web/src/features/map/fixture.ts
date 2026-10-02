@@ -47,6 +47,8 @@ export function fixture(over: Partial<FakeData> = {}): FakeData {
           n_points: 49,
           arc_deg: 352,
           fitted_at: FIT_AT,
+          closed_loop: true,
+          loop_why: "edge_trace: closed loop",
         },
         expected_diameter_mm: 6.0,
         visits: [{ x_um: 8026, y_um: 571.6, w_um: 3900, h_um: 3900, verdict: "in_focus" }],
@@ -104,7 +106,7 @@ export function fixture(over: Partial<FakeData> = {}): FakeData {
     },
     flags: {
       [SAMPLE]: [
-        { flag_id: "f1", name: "good field", note: "dense", t: FIT_AT + 500, objective: "4x", x_um: 8164.7, y_um: 523.4, z_um: 2988.45, replaces: null, retired_at: null },
+        { flag_id: "f1", name: "good field", note: "dense", t: FIT_AT + 500, objective: "4x", x_um: 8164.7, y_um: 523.4, z_um: 2988.45, replaces: null, retired: false, retired_at: null },
         { flag_id: "f0", name: "old", note: "", t: FIT_AT + 100, objective: "4x", x_um: 7000, y_um: 0, z_um: null, replaces: null, retired: true, retired_at: FIT_AT + 200, retired_by: "op@example.test" },
       ],
     },
