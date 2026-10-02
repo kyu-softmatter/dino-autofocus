@@ -79,3 +79,22 @@ def test_one_owner_at_a_time(fake):
     assert not fake.is_open and ("close",) in fake.calls
     with exclusive(fake):  # released again
         pass
+
+
+def test_an_empty_lights_off_readback_is_not_verified(fake, tmp_path):
+    fake.all_off = lambda: []
+    with operation(fake, tmp_path, "op") as op:
+        pass
+    assert not json.loads((tmp_path / op.op_id / "summary.json").read_text())["lights_off"][
+        "verified"]
+
+
+def test_a_failing_event_sink_still_leaves_the_summary(fake, tmp_path):
+    def sink(ev):
+        if ev.kind == "light_changed":
+            raise RuntimeError("UI went away")
+    with operation(fake, tmp_path, "op", sink=sink) as op:
+        pass
+    s = json.loads((tmp_path / op.op_id / "summary.json").read_text())
+    assert s["status"] == "finished" and "UI went away" in s["error"]
+    assert s["lights_off"]["verified"]

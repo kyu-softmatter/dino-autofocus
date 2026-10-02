@@ -5,6 +5,7 @@ import pytest
 from dino_autofocus.engine.guards import (
     FocusAxis,
     GuardError,
+    SweepPlan,
     XYAxis,
     XYBox,
     best_z_um,
@@ -100,20 +101,36 @@ def test_approach_climbs_in_read_back_steps(fake):
     assert [c[1] for c in fake.calls if c[0] == "move_z"] == [700, 1400, 2100, 2800]
 
 
-def test_xy_box_and_long_moves_need_z_retracted(fake):
+def test_xy_long_moves_follow_the_objective_table(fake):
     box = XYBox.around((8026.0, 571.6), 3572)
-    xy = XYAxis(fake, box, allow_motion=True, fov_um=3901)  # 4x: threshold min(fov, 1 mm)
+    xy = XYAxis(fake, box, allow_motion=True)
     with pytest.raises(GuardError, match="outside the box"):
         xy.goto(20000, 0)
-    assert xy.goto(8500.0, 571.6) == (8500.0, 571.6)
-    with pytest.raises(GuardError, match="Z retracted"):
-        xy.goto(9683.7, -1086.0)  # one 4x tile away, ~2.3 mm
-    assert xy.motions[-1]["basis"]["long_move_um"] == "unmeasured provisional"
-    tiles = XYAxis(fake, box, allow_motion=True, long_move_um=4000)  # scan_4x's own value
-    assert tiles.goto(9683.7, -1086.0) == (9683.7, -1086.0)
-    assert tiles.motions[-1]["basis"]["long_move_um"] == "caller"
+    assert xy.goto(9683.7, -1086.0) == (9683.7, -1086.0)  # 4x: one tile at sample Z
+    assert xy.motions[-1]["basis"]["long_move_um"] == "LONG_XY_UM[4x], unmeasured provisional"
+    fake.state = 5  # 100x Oil read back from the nosepiece
+    assert xy.goto(9783.7, -1086.0)  # 100 um, under one 100x field
+    with pytest.raises(GuardError, match=r"over 156 um \(100x-Oil\) needs Z retracted"):
+        xy.goto(10683.7, -1086.0)
     fake.z = 0.0
-    assert xy.goto(6368.3, 2229.5) == (6368.3, 2229.5)
+    assert xy.goto(10683.7, -1086.0) == (10683.7, -1086.0)
+    assert "caller" not in str(xy.motions)
+
+
+@pytest.mark.parametrize("why", ["unreadable", "not in the table"])
+def test_unknown_objective_means_retract_before_any_move(fake, why):
+    if why == "unreadable":
+        def broken():
+            raise OSError("Nosepiece not answering")
+        fake.nosepiece = broken
+    else:
+        fake.nosepiece = lambda: "7-Plan Fluor 2x"
+    xy = XYAxis(fake, XYBox(-1e5, 1e5, -1e5, 1e5), allow_motion=True)
+    with pytest.raises(GuardError, match="strictest"):
+        xy.goto(8030.0, 571.6)  # even 4 um
+    fake.z = 0.0
+    assert xy.goto(8030.0, 571.6) == (8030.0, 571.6)
+    assert xy.motions[-1]["basis"]["long_move_um"].startswith("LONG_XY_UM[strictest")
 
 
 def test_xy_readback_mismatch_stops(fake):
@@ -133,3 +150,36 @@ def test_nosepiece_turns_only_retracted_with_pfs_out_of_range(fake):
         rotate_nosepiece(fake, a, 5)
     fake.pfs_in_range, fake.pfs_enabled = "Out of Range", True
     assert rotate_nosepiece(fake, a, 5) == OIL and not fake.pfs_enabled
+
+
+def test_a_hand_built_plan_cannot_pass_the_ceiling(fake):
+    a = axis(fake, OIL)
+    bad = SweepPlan("100x-Oil", 2985, 200, 20, 3200, [2985 + 20 * i for i in range(11)])
+    with pytest.raises(GuardError, match="leaves"):
+        a.sweep(bad, fake.snap, score=lambda f: 0.0)
+    assert not any(c[0] == "move_z" for c in fake.calls)
+    jump = SweepPlan("100x-Oil", 2985, 20, 2, 3037, [2970.0, 2980.0])
+    with pytest.raises(GuardError, match="steps of at most"):
+        a.sweep(jump, fake.snap, score=lambda f: 0.0)
+    with pytest.raises(GuardError, match="plan is for"):
+        axis(fake).sweep(a.plan(2985, 10, 2), fake.snap, score=lambda f: 0.0)
+
+
+def test_approach_stops_when_the_stage_stalls(fake):
+    fake.z = 0.0
+    a = axis(fake)
+    with pytest.raises(GuardError, match="exceed the readback tolerance"):
+        a.approach(2900, step_um=0.1)
+    fake.move_z = lambda z_um, *, token: fake.z  # stage does not move
+    with pytest.raises(GuardError):
+        a.approach(2900, step_um=500)
+    assert len(a.motions) == 1
+
+
+def test_pfs_is_not_touched_without_allow_motion(fake):
+    fake.z, fake.pfs_enabled = 0.0, True
+    with pytest.raises(GuardError, match="allow_motion"):
+        rotate_nosepiece(fake, FocusAxis(fake, "4x"), 5)
+    with pytest.raises(GuardError, match="allow_motion"):
+        FocusAxis(fake, "4x").require_pfs_quiet()
+    assert fake.pfs_enabled

@@ -16,10 +16,12 @@ Rules (docs/runs/2026-09-30_substrate-scan.md, scripts/change_objective.py, focu
 - Coming back from a retract, Z does not jump to its target: `approach` climbs in steps
   from where it is, each step read back (soft-matter-agents task 026: a handed-over Z is
   a goal, not a destination).
-- XY targets stay in the box (+1 mm); moves longer than min(field of view, 1 mm) need Z
-  retracted to z_safe, confirmed by readback (F5 moves Y by ~15-20 mm for immersion
-  loading). An operation may pass its own threshold (scan_4x tiles step 3.3 mm at 4x);
-  the record then says so.
+- XY targets stay in the box (+1 mm). A move longer than the objective's row in
+  `LONG_XY_UM` needs Z retracted to z_safe, confirmed by readback. The objective is read
+  back from the nosepiece at each move; unreadable or not in the table means the
+  strictest value (any move needs Z retracted). There is no per-operation override
+  (director, PLAN section 5). At integration the table moves to soft-matter-agents
+  `envelope/`.
 - Values not yet measured on the stand are marked `PROVISIONAL` ("unmeasured
   provisional") here and in every motion record whose decision used them
   (docs/microscope-pc-checklist.md).
@@ -62,15 +64,24 @@ XY_BOX_MARGIN_UM = 1000.0
 # unmeasured provisional (checklist Q20 / Q12); every use is marked in the record
 Z_SAFE_UM = 0.0  # z_safe: full retract, for every lens
 RETRACTED_MAX_Z_UM = Z_SAFE_UM + 1.0  # "Z retracted" for nosepiece turns and long XY moves
-LONG_XY_MOVE_MAX_UM = 1000.0  # long-move threshold = min(field of view, this)
 ESCAPE_DY_UM: float | None = None  # F5 immersion-loading move; None -> preflight refuses
 Z_TOL_UM = 0.25
 XY_TOL_UM = 5.0
 
 
-def long_move_threshold_um(fov_um: float | None) -> float:
-    """The provisional long-XY-move threshold: min(field of view, 1 mm)."""
-    return LONG_XY_MOVE_MAX_UM if fov_um is None else min(fov_um, LONG_XY_MOVE_MAX_UM)
+# Long-XY-move threshold per objective (registry key -> um), unmeasured provisional.
+# Rule: free WD >= 10 mm -> 10 mm (4x tile steps of 3.3 mm stay at sample Z, as on
+# 2026-09-30; the F5 escape of 15-20 mm still retracts); otherwise min(field of view, 1 mm),
+# field = 2400 px x the calibrated pixel (configs/ti2_*.yaml, catalogue working distances).
+LONG_XY_UM: dict[str, float] = {
+    "4x": 10000.0,  # WD 20 mm
+    "10x": 1000.0,  # WD 4 mm, field 1.56 mm
+    "20x": 777.0,  # WD 0.8 mm, field 0.777 mm
+    "40x-WI": 390.0,  # WD 0.16 mm, field 0.39 mm
+    "60x-Oil": 260.0,  # WD 0.15 mm, field 0.26 mm
+    "100x-Oil": 156.0,  # WD 0.13 mm, field 0.156 mm
+}
+STRICTEST_LONG_XY_UM = 0.0  # objective unreadable or not in the table: retract first
 
 
 class GuardError(RuntimeError):
@@ -232,6 +243,8 @@ class FocusAxis:
     def require_pfs_quiet(self, disable: bool = True) -> PfsState:
         s = self.b.pfs()
         if s.enabled and disable and not self.dry_run:
+            if not self.allow_motion:
+                raise GuardError("PFS is on and FocusAxis was made with allow_motion=False")
             rb = self.b.pfs_off(token=GUARD_TOKEN)
             self.emit(Event("property_set", self.op_id, asdict(rb)))
             s = self.b.pfs()
@@ -241,6 +254,7 @@ class FocusAxis:
 
     def sweep(self, plan: SweepPlan, grab: Callable[[], Any], score: Callable | None = None,
               settle_s: float = 0.0) -> SweepResult:
+        self._check_plan(plan)
         first, here = plan.z_um[0], self.position_um()
         if here < self.window[0] - self.tol:
             raise GuardError(f"Z {here:.2f} um is below the sample window; bring it up first")
@@ -263,6 +277,21 @@ class FocusAxis:
                            k is not None and 0 < k < len(pts) - 1,
                            k is not None and k == len(pts) - 1 and len(pts) > 1)
 
+    def _check_plan(self, plan: SweepPlan) -> None:
+        """A plan is re-checked here, so a hand-built one cannot pass the ceiling."""
+        z = [plain(v, "plan z") for v in plan.z_um]
+        if plan.objective != self.key:
+            raise GuardError(f"plan is for {plan.objective!r}, this axis is {self.key!r}")
+        if not z:
+            raise GuardError("empty sweep plan")
+        top = self.ceiling_um(plain(plan.centre_um, "plan centre"))
+        if z[0] < self.window[0] or z[-1] > top + 1e-6:
+            raise GuardError(f"plan {z[0]:.2f}..{z[-1]:.2f} um leaves "
+                             f"{self.window[0]:.0f}..{top:.2f} um")
+        step = plain(plan.step_um, "plan step")
+        if any(not 0 < b - a <= step + 1e-6 for a, b in zip(z, z[1:], strict=False)):
+            raise GuardError(f"plan z is not ascending in steps of at most {step} um")
+
     def _send_step(self, z: float, step: float) -> float:
         return self.move_to(z, allow_ascent_um=step)
 
@@ -272,14 +301,22 @@ class FocusAxis:
         z, s = plain(target_um, "approach target"), plain(step_um, "approach step")
         if not self.window[0] <= z <= self.window[1]:
             raise GuardError(f"approach target {z:.2f} um is outside the window {self.window}")
-        if s <= 0:
-            raise GuardError(f"approach step {s} must be > 0")
+        if s <= self.tol:
+            raise GuardError(f"approach step {s} um must exceed the readback tolerance "
+                             f"{self.tol} um")
         here = self.position_um()
         if here >= z:
             return self.move_to(z)
-        while here < z - self.tol:
-            here = self._send(min(z, here + s), "approach")
-        return here
+        for _ in range(int(math.ceil((z - here) / s)) + 1):
+            if here >= z - self.tol:
+                return here
+            read = self._send(min(z, here + s), "approach")
+            if read <= here:
+                raise GuardError(f"Z did not rise: read {read:.3f} um after {here:.3f} um")
+            here = read
+        if here >= z - self.tol:
+            return here
+        raise GuardError(f"approach to {z:.2f} um did not arrive (Z reads {here:.2f} um)")
 
 
 def rotate_nosepiece(backend: Backend, focus: FocusAxis, state: int) -> str:
@@ -289,6 +326,8 @@ def rotate_nosepiece(backend: Backend, focus: FocusAxis, state: int) -> str:
              "basis": {"retracted_max_um": PROVISIONAL}}
     if z > RETRACTED_MAX_Z_UM:
         raise GuardError(f"Z {z:.2f} um is not retracted (<= {RETRACTED_MAX_Z_UM})")
+    if not focus.allow_motion and not focus.dry_run:
+        raise GuardError("FocusAxis was made with allow_motion=False")
     s = focus.require_pfs_quiet(disable=True)
     if not s.out_of_range and not focus.dry_run:
         raise GuardError(f"PFS reads {s.in_range!r} after retract; refusing to rotate")
@@ -296,8 +335,6 @@ def rotate_nosepiece(backend: Backend, focus: FocusAxis, state: int) -> str:
         focus.emit(Event("motion", focus.op_id, {"axis": "nosepiece", "target": state,
                                                  "sent": False, **basis}))
         return backend.nosepiece()
-    if not focus.allow_motion:
-        raise GuardError("FocusAxis was made with allow_motion=False")
     rb = backend.set_nosepiece(int(state), token=GUARD_TOKEN)
     focus.emit(Event("motion", focus.op_id, {"axis": "nosepiece", "target": state,
                                              "sent": True, "read": rb.read, **basis}))
@@ -325,24 +362,25 @@ class XYBox:
 
 
 class XYAxis:
-    """Moves longer than the threshold need Z retracted, read back before the move.
-
-    The threshold is the provisional min(`fov_um`, 1 mm) unless the operation passes its
-    own `long_move_um`; each motion record names which one decided."""
+    """XY moves inside the box, read back. The long-move threshold comes from `LONG_XY_UM`
+    for the objective read back at each move; the motion record names the table row."""
 
     def __init__(self, backend: Backend, box: XYBox, *, allow_motion: bool = False,
                  dry_run: bool = False, sink: EventSink = null_sink, op_id: str = "",
-                 fov_um: float | None = None, long_move_um: float | None = None,
                  timeout_s: float | None = None, tol_um: float = XY_TOL_UM):
         self.b, self.box, self.allow_motion, self.dry_run = backend, box, allow_motion, dry_run
         self.emit, self.op_id, self.timeout, self.tol = sink, op_id, timeout_s, tol_um
-        if long_move_um is None:
-            self.long, long_basis = long_move_threshold_um(fov_um), PROVISIONAL
-        else:
-            self.long, long_basis = plain(long_move_um, "long move threshold"), "caller"
-        self.basis = {"long_move_um": long_basis, "tol_um": PROVISIONAL,
-                      "retracted_max_um": PROVISIONAL}
         self.motions: list[dict] = []
+
+    def long_move_um(self) -> tuple[float, str]:
+        """(threshold, table row) for the objective in place now."""
+        try:
+            key = registry_key(self.b.nosepiece())
+        except Exception:  # noqa: BLE001 - unreadable objective: the strictest row
+            return STRICTEST_LONG_XY_UM, "strictest (objective unreadable)"
+        if key not in LONG_XY_UM:
+            return STRICTEST_LONG_XY_UM, f"strictest ({key} not in LONG_XY_UM)"
+        return LONG_XY_UM[key], key
 
     def goto(self, x_um: float, y_um: float) -> tuple[float, float]:
         x, y = plain(x_um, "x target"), plain(y_um, "y target")
@@ -351,8 +389,11 @@ class XYAxis:
         p = self.b.positions()
         if p.x_um is None or p.y_um is None or p.z_um is None:
             raise GuardError(f"position unreadable before an XY move: {p.errors}")
-        if math.hypot(x - p.x_um, y - p.y_um) > self.long and p.z_um > RETRACTED_MAX_Z_UM:
-            raise GuardError(f"XY move over {self.long:.0f} um needs Z retracted; "
+        long_um, row = self.long_move_um()
+        basis = {"long_move_um": f"LONG_XY_UM[{row}], {PROVISIONAL}", "tol_um": PROVISIONAL,
+                 "retracted_max_um": PROVISIONAL}
+        if math.hypot(x - p.x_um, y - p.y_um) > long_um and p.z_um > RETRACTED_MAX_Z_UM:
+            raise GuardError(f"XY move over {long_um:.0f} um ({row}) needs Z retracted; "
                              f"Z reads {p.z_um:.2f} um")
         if self.dry_run:
             read, sent = (x, y), False
@@ -362,8 +403,7 @@ class XYAxis:
             read = self.b.move_xy(x, y, token=GUARD_TOKEN, timeout_s=self.timeout)
             sent = True
         rec = {"axis": "xy", "target_um": [x, y], "read_um": list(read), "sent": sent,
-               "z_um": p.z_um, "long_move_um": self.long, "tol_um": self.tol,
-               "basis": self.basis}
+               "z_um": p.z_um, "long_move_um": long_um, "tol_um": self.tol, "basis": basis}
         self.motions.append(rec)
         self.emit(Event("motion", self.op_id, rec))
         if math.hypot(read[0] - x, read[1] - y) > self.tol:
@@ -396,7 +436,8 @@ def lights_off(backend: Backend) -> dict:
     """Aura and DiaLamp off with readback. Never raises: the result says what happened."""
     try:
         rbs = backend.all_off()
-        return {"readbacks": [asdict(r) for r in rbs], "verified": all(r.verified for r in rbs),
+        ok = bool(rbs) and all(r.verified for r in rbs)  # an empty readback proves nothing
+        return {"readbacks": [asdict(r) for r in rbs], "verified": ok,
                 "error": None}
     except Exception as exc:  # noqa: BLE001 - recorded, and the caller's own error goes on
         return {"readbacks": [], "verified": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -477,8 +518,15 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
         raise
     finally:
         lights = lights_off(backend)
-        scope.emit(Event("light_changed", rec.op_id, lights))
         end = snapshot(backend)
+        closing = [Event("light_changed", rec.op_id, lights)]
         if status != "error":
-            scope.emit(Event(status, rec.op_id, {"error": error}))
+            closing.append(Event(status, rec.op_id, {"error": error}))
+        for ev in closing:
+            rec.sink(ev)
+            try:
+                sink(ev)
+            except Exception as exc:  # noqa: BLE001 - the record must still be written
+                note = f"event sink failed on {ev.kind}: {type(exc).__name__}: {exc}"
+                error = note if error is None else f"{error}; {note}"
         rec.finish(status, lights=lights, end_state=end, result=scope.result, error=error)
