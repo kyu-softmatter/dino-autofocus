@@ -3,7 +3,8 @@ on Micro-Manager's demo config (`DEMO_DEVICES`), skipped without the demo adapte
 the bench light order runs on a stub core with the bench device names. Each test releases
 the core it opened; nothing opens a window.
 
-The T-036 bench motion lock is in tests/engine/test_backends_mm_real_lock.py.
+The T-036 bench motion lock is in tests/engine/test_backends_mm_real_lock.py, the T-036b
+load-time preset check in tests/engine/test_backends_mm_real_cfg.py.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 from test_contract_backend_v2 import BackendContract
@@ -34,12 +37,27 @@ from dino_autofocus.engine.backends.mm_real import (
 T = GUARD_TOKEN  # tests stand in for engine.guards
 
 
+#: the stock demo config turns its nosepiece at load, which mm-real refuses (T-036b)
+DEMO_STARTUP_MOTION = "ConfigGroup,System,Startup,Objective,"
+
+
+def safe_demo_text(cfg: Path) -> str:
+    return "\n".join(line for line in cfg.read_text(encoding="utf-8").splitlines()
+                     if not line.startswith(DEMO_STARTUP_MOTION)) + "\n"
+
+
 def open_on_demo(**kw) -> MmRealBackend:
+    """mm-real on a copy of the demo config without its load-time nosepiece setting. The
+    copy is deleted once loaded (the backend loads its own private copy)."""
     from dino_autofocus.engine.backends.mm_demo_core import DemoUnavailable, find_demo_config
 
     try:
-        b = MmRealBackend(find_demo_config(), devices=DEMO_DEVICES, **kw)
-        b.open()
+        cfg = find_demo_config()
+        with tempfile.TemporaryDirectory(prefix="dino_af_test_") as tmp:
+            safe = Path(tmp) / cfg.name
+            safe.write_text(safe_demo_text(cfg), encoding="utf-8")
+            b = MmRealBackend(safe, devices=DEMO_DEVICES, mm_dir=str(cfg.parent), **kw)
+            b.open()
     except (DemoUnavailable, MmUnavailable) as e:
         pytest.skip(f"Micro-Manager demo adapters not available: {e}")
     return b
