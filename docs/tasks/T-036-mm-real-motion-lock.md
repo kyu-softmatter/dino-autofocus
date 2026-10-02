@@ -50,4 +50,8 @@
 - The preset check matches the fixed `MOTION_DEVICES` names only. A bench cfg that labels the stage differently
   (e.g. "TIZDrive") and is opened with `DeviceNames` pointing at that label would let a Startup preset move it.
   Also refuse settings on the configured `self.devices.z / xy / nosepiece / pfs` labels. Test with a renamed device.
+- Director: also take labels from the cfg's own role lines (`Property,Core,Focus,<label>`, `...,XYStage,<label>`,
+  `...,AutoFocus,<label>`), not only from `DeviceNames`. A cfg whose role labels differ from `DeviceNames` is still
+  refused, and the refusal names the role mismatch. Test: Startup sets `TIZDrive.Position` with
+  `Property,Core,Focus,TIZDrive` → refused.
 - Owner AF 실행12, branch `exec12/T-036d-device-labels` from main's hash after T-036b merges, review AF 검토보조2.
