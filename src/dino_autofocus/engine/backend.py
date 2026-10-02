@@ -105,9 +105,10 @@ class BackendInfo:
     objectives: list[ObjectiveInfo] = field(default_factory=list)
     stage_limits: StageLimits = field(default_factory=StageLimits)
     notes: dict[str, str] = field(default_factory=dict)  # e.g. {"aura.CYAN": PROVISIONAL}
-    #: True on the real stand (mm-real): guards and the runner then require a clearance
-    #: callback for `FocusAxis.approach()`
-    bench: bool = False
+    #: Fail safe (T-015b): True unless a simulated backend says False. On the bench, guards
+    #: and the runner require a clearance callback for `FocusAxis.approach()`. Read it
+    #: through `is_bench`, never directly.
+    bench: bool = True
 
     @property
     def ceiling_adu(self) -> int:
@@ -228,6 +229,28 @@ def require_token(token: object) -> None:
     if token is not GUARD_TOKEN:
         raise UnguardedMotion("motion and light-on must go through engine.guards "
                               "(FocusAxis / XYAxis / lights)")
+
+
+#: the only kinds that may report bench=False ("fake" is the tests' FakeBackend)
+SIMULATED_KINDS = frozenset({"mock", "replay", "mm-demo", "fake"})
+
+
+def is_bench(info: Any) -> bool:
+    """Is this the real stand? The one rule guards and the runner share (T-015b, T-027).
+
+    False only when `info` is readable, its `kind` is in `SIMULATED_KINDS` and its `bench`
+    is exactly False. Everything else is the bench: no info (a failed `info()` read),
+    an unreadable field, a missing `bench`, any other kind, or any other `bench` value.
+    Any error while deciding (e.g. an unhashable `kind`) also means the bench (T-015c).
+    """
+    if info is None:
+        return True
+    try:
+        kind, bench = info.kind, getattr(info, "bench", True)
+        simulated = kind in SIMULATED_KINDS and bench is False
+    except Exception:  # noqa: BLE001 - any error means the strict side
+        return True
+    return not simulated
 
 
 # ---------------------------------------------------------------- set_property allow-list

@@ -8,7 +8,13 @@ only when the backend opens; the piezo DLL only when the piezo is read.
   in the settings folder's settings.json (`auth.config.config_dir`), else `BENCH_CONFIG`.
   Loading applies the file's System/Startup preset (`LappMainBranch1 State 1`); AutoShutter
   goes off straight after, as mm_grab does, else every snap would switch the light on. Both
-  facts are in `config_record()`.
+  facts are in `config_record()`. **Before loading (T-036b)** the `.cfg` text is parsed and
+  the load is refused (`UnsafeConfig`, naming every device.property) if the Startup or
+  Shutdown preset or a post-init `Property` line sets a motion device; then a private copy of
+  exactly the checked bytes is loaded. What loading sets is in `config_record().notes`.
+  Motion devices are the fixed names, the labels the cfg assigns as Core Focus / XYStage /
+  AutoFocus, and this backend's `DeviceNames`; a Core role that differs from `DeviceNames`
+  is refused too (T-036d).
 - **Bench-flagged**: `info().bench` is True, so the guards and the runner require a
   clearance callback for `FocusAxis.approach()` on this backend.
 - **Device names** come from one `DeviceNames` (bench by default). `DEMO_DEVICES` points the
@@ -21,6 +27,14 @@ only when the backend opens; the piezo DLL only when the piezo is read.
   measured positions and closes. No position command, no security-level change: piezo moves
   are out of scope (operations-spec 9.2, M5).
 - Failed reads are fields (`Positions.errors`, `PropertyInfo.read_ok`, `PiezoReading.error`).
+- **SAFETY, bench motion is locked (T-036).** `BENCH_MOTION` ships as "LOCKED". While it is
+  anything but "UNLOCKED", every motion method (`move_z`, `move_xy`, `move_xy_rel`,
+  `set_nosepiece`) raises `BenchMotionLocked` before touching the core, so nothing that
+  guards' `move_to` / `park_at` / `approach` / `sweep` or `rotate_nosepiece` reaches can move
+  the stand. Reads, frames, streams, light on/off (D15) and PFS off stay allowed. Only a
+  reviewed commit that edits the constant lifts it: no argument, environment variable,
+  config file or setting is read for it. Lifting waits for T-027 (approach refuses without
+  clearance on bench) and the T-011 bench check, with the manager's and director's sign-off.
 
 Nothing here has run on the stand: what only the microscope PC can confirm is listed in
 `USER_CHECKS` (and `info().notes["user_check"]`).
@@ -33,6 +47,7 @@ import json
 import math
 import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +55,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..backend import (
     AURA_LINES,
+    MOTION_DEVICES,
     PROVISIONAL,
     BackendInfo,
     ConfigRecord,
@@ -63,8 +79,14 @@ from ..backend import (
 if TYPE_CHECKING:
     from pymmcore_plus import CMMCorePlus
 
-__all__ = ["BENCH_CONFIG", "BENCH_DEVICES", "DEMO_DEVICES", "USER_CHECKS", "DeviceNames",
-           "MmRealBackend", "MmUnavailable", "config_path"]
+__all__ = ["BENCH_CONFIG", "BENCH_DEVICES", "BENCH_MOTION", "DEMO_DEVICES", "USER_CHECKS",
+           "BenchMotionLocked", "DeviceNames", "LoadSetting", "MmRealBackend", "MmUnavailable",
+           "UnsafeConfig", "check_load_settings", "config_path", "load_time_settings"]
+
+#: SAFETY (T-036): ships "LOCKED". Lifted only by a reviewed commit that edits this line,
+#: after T-027 and the T-011 bench check are on main. Nothing else may set or override it.
+BENCH_MOTION = "LOCKED"
+MOTION_LOCK_REASON = "bench motion locked until clearance guards land (T-027, T-011)"
 
 BENCH_CONFIG = Path(r"C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg")
 CONFIG_ENV = "DINO_AF_MM_CONFIG"
@@ -93,6 +115,105 @@ class MmUnavailable(RuntimeError):
     """pymmcore-plus, the Micro-Manager install or the config is missing, or loading failed."""
 
 
+class BenchMotionLocked(RuntimeError):
+    """A motion call on mm-real while `BENCH_MOTION` is locked (T-036)."""
+
+
+def _motion_state() -> str:
+    """Fail-safe: anything but exactly "UNLOCKED" is locked. The one read of BENCH_MOTION."""
+    return "UNLOCKED" if BENCH_MOTION == "UNLOCKED" else f"LOCKED: {MOTION_LOCK_REASON}"
+
+
+def _require_motion_unlocked(what: str) -> None:
+    if _motion_state() != "UNLOCKED":
+        raise BenchMotionLocked(f"{what}: {MOTION_LOCK_REASON}")
+
+
+# ---------------------------------------------------------------- load-time settings (T-036b)
+#: presets Micro-Manager applies by itself: System/Startup right after loading; System/Shutdown
+#: is checked too in case the core applies it when it unloads
+LOAD_TIME_PRESETS = (("System", "Startup"), ("System", "Shutdown"))
+#: Core is in MOTION_DEVICES against run-time re-routing (Core.Focus / XYStage); at load its
+#: lines only assign roles, so they are recorded, not refused
+LOAD_CHECK_DEVICES = MOTION_DEVICES - {"Core"}
+
+
+class UnsafeConfig(RuntimeError):
+    """The config would set a motion device while loading (T-036b). Nothing was loaded."""
+
+
+@dataclass(frozen=True)
+class LoadSetting:
+    where: str  # "ConfigGroup System/Startup" or "post-init Property"
+    device: str
+    prop: str
+    value: str
+
+    def text(self) -> str:
+        return f"{self.where}: {self.device}.{self.prop}={self.value}"
+
+
+def load_time_settings(cfg_text: str) -> list[LoadSetting]:
+    """What loading this `.cfg` sets by itself: the `Property` lines after
+    `Property,Core,Initialize,1` and every setting of the `LOAD_TIME_PRESETS`. Pre-init
+    `Property` lines (ports, hubs) are needed to load a device and set nothing on it."""
+    out, initialized = [], False
+    for raw in cfg_text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        if parts[0] == "Property" and len(parts) >= 3:
+            value = ",".join(parts[3:])
+            if parts[1] == "Core" and parts[2] == "Initialize":
+                initialized = value == "1"
+            elif initialized:
+                out.append(LoadSetting("post-init Property", parts[1], parts[2], value))
+        elif parts[0] == "ConfigGroup" and len(parts) >= 5 and \
+                (parts[1], parts[2]) in LOAD_TIME_PRESETS:
+            out.append(LoadSetting(f"ConfigGroup {parts[1]}/{parts[2]}", parts[3], parts[4],
+                                   ",".join(parts[5:])))
+    return out
+
+
+#: Core role properties a cfg sets at load, and the `DeviceNames` field each must match
+CORE_ROLES = {"Focus": "z", "XYStage": "xy", "AutoFocus": "pfs"}
+
+
+def check_load_settings(settings: list[LoadSetting], name: str,
+                        devices: DeviceNames | None = None) -> None:
+    """Refuse a config that sets any motion device while loading, naming every one.
+
+    Motion devices (T-036d: a bench cfg may name its stage otherwise) are
+    `LOAD_CHECK_DEVICES`, the labels the cfg's own Core role lines assign (Core.Focus /
+    XYStage / AutoFocus) and, given `devices`, the labels this backend drives as Z, XY,
+    nosepiece and PFS. With `devices`, a Core role that names another label than the backend
+    drives is refused too: the guards would read one device while the core moves another.
+    """
+    roles = {s.prop: s.value for s in settings
+             if s.device == "Core" and s.prop in CORE_ROLES and s.value}
+    motion = set(LOAD_CHECK_DEVICES) | set(roles.values())
+    if devices is not None:
+        motion |= set(devices.motion_labels())
+    motion.discard("Core")
+    bad: dict[str, list[str]] = {}
+    for s in settings:
+        if s.device in motion:
+            bad.setdefault(s.where, []).append(f"{s.device}.{s.prop}")
+    problems = [f"{', '.join(v)} in {w}" for w, v in bad.items()]
+    if devices is not None:
+        for prop, label in roles.items():
+            field = CORE_ROLES[prop]
+            want = getattr(devices, field)
+            if want != label:
+                problems.append(f"role mismatch: Core.{prop} is {label!r} but this backend "
+                                f"drives {want!r} as {field}")
+    if problems:
+        raise UnsafeConfig(f"{name} would move the stand while loading, or moves a device "
+                           f"the guards do not read: {'; '.join(problems)}. Fix the config "
+                           "(or DeviceNames); motion goes only through the guards")
+
+
 @dataclass(frozen=True)
 class DeviceNames:
     """Micro-Manager labels of the devices the protocol talks to. None = not on this config."""
@@ -104,6 +225,10 @@ class DeviceNames:
     dialamp: str = "DiaLamp"
     aura: str | None = "Aura"
     intermediate_mag: str | None = "IntermediateMagnification"
+
+    def motion_labels(self) -> tuple[str, ...]:
+        """The labels that move the stand: Z, XY, nosepiece and PFS (when present)."""
+        return tuple(d for d in (self.z, self.xy, self.nosepiece, self.pfs) if d)
 
 
 BENCH_DEVICES = DeviceNames()
@@ -159,6 +284,13 @@ class MmRealBackend:
     def open(self) -> BackendInfo:
         if self.core is not None:
             return self.info()
+        if not self.config.is_file():
+            raise MmUnavailable(f"config {self.config} does not exist")
+        # T-036b: check what loading would set before anything loads, then load a private
+        # copy of exactly the checked bytes, so a file changed in between cannot slip past
+        data = self.config.read_bytes()
+        settings = load_time_settings(data.decode("utf-8", errors="replace"))
+        check_load_settings(settings, self.config.name, self.devices)
         try:
             from pymmcore_plus import CMMCorePlus, find_micromanager
         except ImportError as e:
@@ -166,27 +298,29 @@ class MmRealBackend:
         mm_dir = self.mm_dir or find_micromanager()
         if not mm_dir:
             raise MmUnavailable("no Micro-Manager install found")
-        if not self.config.is_file():
-            raise MmUnavailable(f"config {self.config} does not exist")
-        before = _sha256(self.config)
+        checked = hashlib.sha256(data).hexdigest()
         core = CMMCorePlus()  # its own core: nothing else sees half-loaded devices
-        try:
-            core.setDeviceAdapterSearchPaths([str(mm_dir)])
-            core.loadSystemConfiguration(str(self.config))
-            core.setAutoShutter(False)  # as loaded, every snap would switch the light on
-            core.waitForSystem()
-        except Exception as e:
-            core.unloadAllDevices()
-            raise MmUnavailable(f"loading {self.config} failed: {e}") from e
+        with tempfile.TemporaryDirectory(prefix="dino_af_cfg_") as tmp:
+            copy = Path(tmp) / self.config.name
+            copy.write_bytes(data)
+            try:
+                core.setDeviceAdapterSearchPaths([str(mm_dir)])
+                core.loadSystemConfiguration(str(copy))
+                core.setAutoShutter(False)  # as loaded, every snap would switch the light on
+                core.waitForSystem()
+            except Exception as e:
+                core.unloadAllDevices()
+                raise MmUnavailable(f"loading {self.config} failed: {e}") from e
         after = _sha256(self.config)
         self.core = core
         startup = "System/Startup" if "System" in core.getAvailableConfigGroups() and \
             "Startup" in core.getAvailableConfigs("System") else None
         self._config = ConfigRecord(
-            str(self.config), after,
-            None if before is None or after is None else before != after,
+            str(self.config), checked, None if after is None else after != checked,
             Readback.of("Core", "AutoShutter", 0, int(core.getAutoShutter())), startup,
-            time.time(), {"mm_dir": str(mm_dir)})
+            time.time(), {"mm_dir": str(mm_dir),
+                          "loaded": "a private copy of the checked bytes (T-036b)",
+                          "load_settings": "; ".join(s.text() for s in settings) or "none"})
         core.setExposure(self._exposure_ms)
         core.clearROI()
         self._sensor = (int(core.getImageWidth()), int(core.getImageHeight()))
@@ -228,7 +362,8 @@ class MmRealBackend:
 
     def info(self) -> BackendInfo:
         core, d = self._c(), self.devices
-        notes = {"user_check": "; ".join(USER_CHECKS),
+        notes = {"bench_motion": _motion_state(),
+                 "user_check": "; ".join(USER_CHECKS),
                  "stage_limits": "not read: user check needed",
                  "xy_timeout_s": f"{DEFAULT_XY_TIMEOUT_S:g}, {PROVISIONAL}",
                  **{f"aura.{ln}": PROVISIONAL for ln in AURA_LINES
@@ -444,8 +579,9 @@ class MmRealBackend:
     def all_off(self) -> list[Readback]:
         return [*self.aura_off(), *self.lamp_off()]
 
-    # -- motion: engine.guards only
+    # -- motion: engine.guards only, and locked while BENCH_MOTION is (T-036)
     def move_z(self, z_um: float, *, token: MotionToken) -> float:
+        _require_motion_unlocked("move_z")
         require_token(token)
         z = float(z_um)
         if not math.isfinite(z):
@@ -459,6 +595,7 @@ class MmRealBackend:
                 timeout_s: float | None = None) -> tuple[float, float]:
         """Move and wait up to `timeout_s` (default `DEFAULT_XY_TIMEOUT_S`), not the core's
         fixed wait. On timeout the stage is stopped and TimeoutError raised."""
+        _require_motion_unlocked("move_xy")
         require_token(token)
         x, y = float(x_um), float(y_um)
         if not (math.isfinite(x) and math.isfinite(y)):
@@ -477,12 +614,14 @@ class MmRealBackend:
 
     def move_xy_rel(self, dx_um: float, dy_um: float, *, token: MotionToken,
                     timeout_s: float | None = None) -> tuple[float, float]:
+        _require_motion_unlocked("move_xy_rel")
         require_token(token)
         x, y = self._c().getXYPosition(self.devices.xy)  # from the read
         return self.move_xy(float(x) + float(dx_um), float(y) + float(dy_um), token=token,
                             timeout_s=timeout_s)
 
     def set_nosepiece(self, state: int, *, token: MotionToken) -> Readback:
+        _require_motion_unlocked("set_nosepiece")
         require_token(token)
         n = len(self._labels())
         if not 0 <= int(state) < n:

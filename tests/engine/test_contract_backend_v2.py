@@ -14,7 +14,11 @@ reads, relative XY and the acquisition stream.
 The light property used for the token check defaults to the bench DiaLamp; a backend with
 other device names sets `light_write` (device, prop, value). The value switches light off.
 `xy_tol_um` is the XY readback tolerance of the relative-move check (raise it for a backend
-with injected readback error). The fixture must leave no stream running (close() stops it).
+with injected readback error). `bench` is what `is_bench(info())` must say (True for
+mm-real). The fixture must leave no stream running (close() stops it).
+
+T-015b: `BackendInfo.bench` defaults to True and `is_bench` is the one rule; the tests at
+the end enumerate every backend class so a new one cannot opt out of the bench by omission.
 """
 
 from __future__ import annotations
@@ -43,6 +47,7 @@ from dino_autofocus.engine.backend import (
     StreamActive,
     UnguardedMotion,
     check_set_property,
+    is_bench,
 )
 
 
@@ -55,9 +60,13 @@ class BackendContract:
     light_write: tuple[str, str, object] = ("DiaLamp", "State", 0)
     unlisted_write: tuple[str, str, object] = ("LightPath", "State", "4-L100")
     xy_tol_um: float = 0.01
+    bench: bool = False  # what is_bench(info()) must say; mm-real sets True
 
     def test_meets_the_protocol(self, backend):
         assert isinstance(backend, Backend)
+
+    def test_is_bench_says_what_this_backend_is(self, backend):
+        assert is_bench(backend.info()) is self.bench
 
     @pytest.mark.parametrize("device", sorted(MOTION_DEVICES))
     def test_set_property_refuses_motion_devices_even_with_the_token(self, backend, device):
@@ -227,3 +236,95 @@ def test_notes_round_trip_and_default_empty():
     assert r.verified and r.notes == {"line": PROVISIONAL}
     assert Readback.of("Aura", "State", 0, 0).notes == {}
     assert Readback(**json.loads(json.dumps(asdict(r)))) == r
+
+
+# -- T-015b: the bench is the default
+
+
+NON_BENCH_CLASSES = {"MockBackend": "mock", "MmDemoBackend": "mm-demo",
+                     "ReplayBackend": "replay", "FakeBackend": "fake"}
+
+
+class _Info:
+    """A stand-in BackendInfo with only the fields given."""
+
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class _BadHash:
+    def __hash__(self):
+        raise RuntimeError("no hash")
+
+
+class _Unreadable:
+    @property
+    def kind(self):
+        raise OSError("device gone")
+
+
+def test_bench_field_defaults_to_true():
+    from dino_autofocus.engine.backend import BackendInfo
+
+    info = BackendInfo("anything", "c", "cam", (1, 1), (0, 0, 1, 1), 1.0, 1.0, "o", None, 12)
+    assert info.bench is True and is_bench(info)
+
+
+@pytest.mark.parametrize("info, bench", [
+    (None, True),  # info() could not be read
+    (_Unreadable(), True),  # a field read fails
+    (_Info(kind="mock"), True),  # no bench field
+    (_Info(kind="mock", bench=None), True),  # not exactly False
+    (_Info(kind="mock", bench=0), True),
+    (_Info(kind="mm-real", bench=False), True),  # not a simulated kind
+    (_Info(kind=["mock"], bench=False), True),  # unhashable kind (T-015c)
+    (_Info(kind=_BadHash(), bench=False), True),  # hashing the kind raises
+    (_Info(kind="new-backend", bench=False), True),
+    (_Info(kind="mm-real", bench=True), True),
+    (_Info(kind="mock", bench=True), True),
+    (_Info(kind="mock", bench=False), False),  # the only way out
+    (_Info(kind="replay", bench=False), False),
+    (_Info(kind="mm-demo", bench=False), False),
+    (_Info(kind="fake", bench=False), False),
+])
+def test_is_bench_branches(info, bench):
+    assert is_bench(info) is bench
+
+
+def _backend_classes() -> dict[str, type]:
+    """Every class in engine/backends/* that has the Backend protocol's methods."""
+    import importlib
+    import inspect
+    import pkgutil
+
+    import dino_autofocus.engine.backends as pkg
+
+    names = [n for n, v in vars(Backend).items() if callable(v) and not n.startswith("_")]
+    found = {}
+    for m in pkgutil.iter_modules(pkg.__path__):
+        mod = importlib.import_module(f"{pkg.__name__}.{m.name}")
+        for name, cls in inspect.getmembers(mod, inspect.isclass):
+            if cls.__module__ == mod.__name__ and all(hasattr(cls, n) for n in names):
+                found[name] = cls
+    found["FakeBackend"] = FakeBackend
+    return found
+
+
+def test_every_backend_outside_the_list_is_bench():
+    classes = _backend_classes()
+    assert {"MockBackend", "MmDemoBackend", "MmRealBackend", "FakeBackend"} <= set(classes)
+    for name, cls in classes.items():
+        kind = getattr(cls, "kind", None)
+        if name in NON_BENCH_CLASSES:
+            assert kind == NON_BENCH_CLASSES[name], (name, kind)
+            continue
+        # even claiming bench=False, a class not on the list is the bench
+        assert kind not in NON_BENCH_CLASSES.values(), f"{name} reuses a simulated kind {kind!r}"
+        assert is_bench(_Info(kind=kind, bench=False)), name
+
+
+def test_listed_backends_report_not_bench():
+    from dino_autofocus.engine.backends.mock import MockBackend
+
+    assert not is_bench(MockBackend(seed=0).info())
+    assert not is_bench(FakeBackend().info())

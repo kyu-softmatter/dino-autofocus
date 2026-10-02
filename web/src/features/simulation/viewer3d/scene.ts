@@ -93,6 +93,7 @@ export class TrajectoryScene {
   /** The frame now drawn, or null before the first one. */
   frame: Frame | null = null;
   private dimensions: 2 | 3 | null = null;
+  private boxKey = "";
   private material = new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.0 });
   private matrix = new THREE.Matrix4();
   private color = new THREE.Color();
@@ -125,11 +126,7 @@ export class TrajectoryScene {
       return;
     }
     const scale = lengthScale(frame);
-    this.box.geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(boxEdges(frame.box, frame.dimensions, scale), 3),
-    );
-    this.box.geometry.computeBoundingSphere();
+    this.setBox(frame.box, frame.dimensions, scale);
     this.box.visible = true;
 
     const n = frame.n;
@@ -180,6 +177,28 @@ export class TrajectoryScene {
     this.box.geometry.dispose();
     (this.box.material as THREE.Material).dispose();
     this.material.dispose();
+  }
+
+  /**
+   * Box edges, rewritten only when the box changes. The same attribute is reused while the
+   * edge count stays the same, so playback does not leave a GPU buffer behind per frame.
+   */
+  private setBox(box: Box, dimensions: 2 | 3, scale: number): void {
+    const key = [...box, dimensions, scale].join(",");
+    if (key === this.boxKey) return;
+    this.boxKey = key;
+    const edges = boxEdges(box, dimensions, scale);
+    const old = this.box.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    if (old && old.array.length === edges.length) {
+      (old.array as Float32Array).set(edges);
+      old.needsUpdate = true;
+    } else {
+      // A new edge count (2D <-> 3D): a fresh geometry, so the old buffer is freed.
+      this.box.geometry.dispose();
+      this.box.geometry = new THREE.BufferGeometry();
+      this.box.geometry.setAttribute("position", new THREE.BufferAttribute(edges, 3));
+    }
+    this.box.geometry.computeBoundingSphere();
   }
 
   private isSmall(): boolean {
