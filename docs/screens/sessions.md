@@ -16,8 +16,13 @@ the committer's worker thread (T-019 `committer.py`), so a slow or failing git n
 
 ## 2. Endpoints
 
-All paths are under `/api/sessions`. "Who" uses the T-009 auth dependency (`is_local`, login) and the
-T-018 role.
+All paths are under `/api/sessions`. **Who may act is not decided here.** Role, microscope control,
+experiment-session and remote rules come from the one shared check: `GET /api/permissions?ops=a,b` returns
+`{op: {allowed, reason}}` (T-009b over T-011 `check()`, the single permission table plus engine state). The
+screen shows those reasons and the router asks the same check before a write; neither works the rules out
+itself. Proposed op names: `session_open`, `session_close`, `session_continue`. The "Who" column below is
+what the permission table is expected to say. Only this area's own checks (one open session, the current
+sample, a session's owner, closed sessions) stay in the router.
 
 | Method, path | Who | Backed by (T-019) | Returns |
 |---|---|---|---|
@@ -54,17 +59,16 @@ The code commit, the dirty flag and the hardware-profile sha256 are shown **as r
 
 Refusals use the ui-spec 7.0 strings:
 
-| Case | Status | Body `reason` |
-|---|---|---|
-| Remote POST (D13: only `abort` is allowed remotely) | 403 | `"Read-only: remote view"` |
-| viewer role | 403 | `"Needs the operator role"` |
-| Another session is already open | 409 | `"<id> is open; close it first"` |
-| Write to a closed session (`SessionClosedError`) | 409 | `"Session <id> is closed (read-only)"` |
-| Closing someone else's session, not admin | 403 | `"Only <user> or an admin can close this session"` |
-| Unknown id | 404 | `"No experiment session <id>"` |
-| No current sample (nothing opened with `sample_open` / `sample_new`) | 409 | `"Open or create a sample first"` |
-| Body `sample_id` differs from the current sample | 409 | `"The current sample is <current>; open <sample_id> first"` |
-| Bad sample id (`ValueError`) | 422 | the error text |
+| Case | Status | Body `reason` | Decided by |
+|---|---|---|---|
+| Any shared rule (remote view under D13, viewer role, control, ...) | 403 | the shared check's `reason`, e.g. `"Read-only: remote view"`, `"Needs the operator role"` | `/api/permissions` (T-009b) |
+| Another session is already open | 409 | `"<id> is open; close it first"` | router |
+| Write to a closed session (`SessionClosedError`) | 409 | `"Session <id> is closed (read-only)"` | router |
+| Closing someone else's session, not admin | 403 | `"Only <user> or an admin can close this session"` | router (shown after the attempt; the screen does not compute it) |
+| Unknown id | 404 | `"No experiment session <id>"` | router |
+| No current sample (nothing opened with `sample_open` / `sample_new`) | 409 | `"Open or create a sample first"` | router |
+| Body `sample_id` differs from the current sample | 409 | `"The current sample is <current>; open <sample_id> first"` | router |
+| Bad sample id (`ValueError`) | 422 | the error text | router |
 
 ## 3. What the shell shows (T-010)
 
@@ -79,7 +83,7 @@ Refusals use the ui-spec 7.0 strings:
 |---|---|
 | List | Columns: id, user, sample, status, started, closed, continues, reflected. Filters: user, sample, status. Opening a row shows its detail |
 | Detail | Fields of `session.json` (code commit, dirty, hardware hash as recorded); log tail; record files with line counts; manifest summary and entries; reflected or not |
-| Actions | `"Open experiment session for <current sample>"` (no sample field: the sample is picked in the `sample` area), `"Close"` with a note, `"Continue with this sample"` on a closed session (F7.4, reopens that sample). They are disabled with the reason from section 2 when remote, when the user is a viewer, when no sample is current, when a session is already open, or when the session is closed |
+| Actions | `"Open experiment session for <current sample>"` (no sample field: the sample is picked in the `sample` area), `"Close"` with a note, `"Continue with this sample"` on a closed session (F7.4, reopens that sample). They are disabled with the shared check's reason for their op first, then this area's: no current sample, a session already open, the session closed |
 
 UI text is in English. Remote viewers and viewers can read everything and change nothing.
 

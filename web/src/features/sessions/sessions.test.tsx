@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { ScreenContextProvider } from "../../app/screenContext";
-import { type Access, createFakeClient, fakeDetail, type SessionsClient, SessionsClientContext } from "./api";
+import { createFakeClient, denyAll, fakeDetail, type SessionsClient, SessionsClientContext } from "./api";
 import SessionsScreen from "./index";
 
 const CLOSED = fakeDetail({
@@ -16,7 +16,6 @@ const CLOSED = fakeDetail({
   reflected: true,
 });
 
-const REMOTE: Access = { canWrite: false, reason: "Read-only: remote view", user_id: null, role: null };
 
 function show(client: SessionsClient, hash = "#/sessions") {
   window.location.hash = hash;
@@ -99,7 +98,7 @@ describe("sessions screen", () => {
 
   it("is read-only for a remote viewer, with the reason shown", async () => {
     const open = fakeDetail({ session_id: "s-open", sample_id: "x", status: "open", closed_at: null });
-    show(createFakeClient({ sessions: [CLOSED, open], currentSample: "x", access: REMOTE }), "#/sessions/s-open");
+    show(createFakeClient({ sessions: [CLOSED, open], currentSample: "x", permission: denyAll("Read-only: remote view") }), "#/sessions/s-open");
     await screen.findByRole("article", { name: "Session detail" });
     await waitFor(() => expect(button("Close").disabled).toBe(true));
     expect(button(/Open experiment session/).disabled).toBe(true);
@@ -107,7 +106,7 @@ describe("sessions screen", () => {
     expect(screen.getAllByText("Read-only: remote view").length).toBeGreaterThanOrEqual(3);
   });
 
-  it("does not let an operator close someone else's session", async () => {
+  it("refuses closing someone else's session with the router's reason", async () => {
     const other = fakeDetail({
       session_id: "s-other",
       sample_id: "x",
@@ -117,9 +116,14 @@ describe("sessions screen", () => {
     });
     show(createFakeClient({ sessions: [other] }), "#/sessions/s-other");
     await screen.findByRole("article", { name: "Session detail" });
-    await waitFor(() =>
-      expect(screen.getByText("Only second@example.test or an admin can close this session")).toBeTruthy(),
+    const close = await waitFor(() => {
+      const b = button("Close");
+      expect(b.disabled).toBe(false); // ownership is the router's 403, not a screen rule
+      return b;
+    });
+    await act(async () => fireEvent.click(close));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Only second@example.test or an admin can close this session",
     );
-    expect(button("Close").disabled).toBe(true);
   });
 });

@@ -9,8 +9,9 @@ import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
 import {
-  type Access,
   ApiError,
+  type Permissions,
+  SESSION_OPS,
   type SessionDetail,
   type SessionFilter,
   type SessionStatus,
@@ -44,7 +45,7 @@ export default function SessionsScreen() {
   const [list, setList] = useState<SessionSummary[]>([]);
   const [current, setCurrent] = useState<SessionSummary | null>(null);
   const [sample, setSample] = useState<string | null>(null);
-  const [access, setAccess] = useState<Access | null>(null);
+  const [perms, setPerms] = useState<Permissions>({});
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -53,13 +54,13 @@ export default function SessionsScreen() {
 
   useEffect(() => {
     let live = true;
-    Promise.all([client.list(filter), client.current(), client.currentSample(), client.access()])
+    Promise.all([client.list(filter), client.current(), client.currentSample(), client.permissions(SESSION_OPS)])
       .then(([l, c, s, a]) => {
         if (!live) return;
         setList(l);
         setCurrent(c);
         setSample(s);
-        setAccess(a);
+        setPerms(a);
       })
       .catch((e) => live && setError(errorText(e)));
     return () => {
@@ -113,21 +114,19 @@ export default function SessionsScreen() {
     [setRest],
   );
 
-  const readOnly = access && !access.canWrite ? access.reason ?? "Read-only: remote view" : null;
+  // shared reasons first (role, control, remote: GET /api/permissions), then this area's own
+  const denied = (op: string) => (perms[op] && !perms[op].allowed ? perms[op].reason ?? "Not allowed" : null);
   const openReason =
-    readOnly ??
+    denied("session_open") ??
     (current ? `${current.session_id} is open; close it first` : null) ??
     (sample ? null : "Open or create a sample first");
   const closeReason = !detail
     ? null
-    : readOnly ??
-      (detail.status === "closed" ? `Session ${detail.session_id} is closed (read-only)` : null) ??
-      (access && access.role !== "admin" && access.user_id !== detail.user_id
-        ? `Only ${detail.user_id} or an admin can close this session`
-        : null);
+    : denied("session_close") ??
+      (detail.status === "closed" ? `Session ${detail.session_id} is closed (read-only)` : null);
   const continueReason = !detail
     ? null
-    : readOnly ??
+    : denied("session_continue") ??
       (detail.status === "open" ? "Close this session first" : null) ??
       (current ? `${current.session_id} is open; close it first` : null);
 

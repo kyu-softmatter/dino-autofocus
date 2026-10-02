@@ -47,14 +47,20 @@ export interface SessionFilter {
   status?: SessionStatus;
 }
 
-/** What this viewer may do. From the auth dependency (T-105) and the request origin (T-009). */
-export interface Access {
-  canWrite: boolean;
-  /** ui-spec 7.0 string when canWrite is false */
+/** Op names this area asks the shared permission check about (names proposed in sessions.md). */
+export const SESSION_OPS = ["session_open", "session_close", "session_continue"] as const;
+export type SessionOp = (typeof SESSION_OPS)[number];
+
+/**
+ * One entry of `GET /api/permissions?ops=a,b` (T-009b over T-011 check(): the single permission
+ * table plus engine state). Role, control, experiment-session and remote rules live there only;
+ * this screen shows `reason` and never works those rules out itself.
+ */
+export interface Permission {
+  allowed: boolean;
   reason: string | null;
-  user_id: string | null;
-  role: "admin" | "operator" | "viewer" | null;
 }
+export type Permissions = Record<string, Permission>;
 
 export class ApiError extends Error {
   constructor(
@@ -75,7 +81,8 @@ export interface SessionsClient {
   continueFrom(id: string): Promise<SessionDetail>;
   /** the engine's current sample: snapshot()["sample"].sample_id (T-011) */
   currentSample(): Promise<string | null>;
-  access(): Promise<Access>;
+  /** stands in for GET /api/permissions until T-009b lands */
+  permissions(ops: readonly string[]): Promise<Permissions>;
 }
 
 // -- fake ----------------------------------------------------------------------------------
@@ -83,16 +90,18 @@ export interface SessionsClient {
 export interface FakeOptions {
   sessions?: SessionDetail[];
   currentSample?: string | null;
-  access?: Access;
+  /** the logged-in user (fake auth, T-105) */
+  user?: { user_id: string; role: "admin" | "operator" | "viewer" };
+  /** the shared check's answer for every op; default: all allowed */
+  permission?: (op: string) => Permission;
   now?: () => string;
 }
 
-export const LOCAL_OPERATOR: Access = {
-  canWrite: true,
-  reason: null,
-  user_id: "operator@example.test",
-  role: "operator",
-};
+export const ALLOW_ALL = (): Permission => ({ allowed: true, reason: null });
+
+export function denyAll(reason: string) {
+  return (): Permission => ({ allowed: false, reason });
+}
 
 export function fakeDetail(p: Partial<SessionDetail> & Pick<SessionDetail, "session_id" | "sample_id">): SessionDetail {
   return {
@@ -123,7 +132,8 @@ function summary(d: SessionDetail): SessionSummary {
 export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
   const sessions: SessionDetail[] = (opts.sessions ?? []).map((s) => ({ ...s }));
   let sample = opts.currentSample ?? null;
-  const access = opts.access ?? LOCAL_OPERATOR;
+  const user = opts.user ?? { user_id: "operator@example.test", role: "operator" as const };
+  const permission = opts.permission ?? ALLOW_ALL;
   const now = opts.now ?? (() => new Date().toISOString());
   let n = 0;
 
@@ -132,8 +142,9 @@ export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
     if (!s) throw new ApiError(404, `No experiment session ${id}`);
     return s;
   };
-  const guardWrite = () => {
-    if (!access.canWrite) throw new ApiError(403, access.reason ?? "Read-only: remote view");
+  const guard = (op: SessionOp) => {
+    const p = permission(op);
+    if (!p.allowed) throw new ApiError(403, p.reason ?? "Not allowed");
   };
   const openFor = (sampleId: string, continues: string | null) => {
     const open = sessions.find((x) => x.status === "open");
@@ -142,7 +153,7 @@ export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
     const d = fakeDetail({
       session_id: `fake-${n}`,
       sample_id: sampleId,
-      user_id: access.user_id ?? "",
+      user_id: user.user_id,
       status: "open",
       started_at: now(),
       closed_at: null,
@@ -168,15 +179,16 @@ export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
       return { ...find(id) };
     },
     async open() {
-      guardWrite();
+      guard("session_open");
       if (!sample) throw new ApiError(409, "Open or create a sample first");
       return openFor(sample, null);
     },
     async close(id, note) {
-      guardWrite();
+      guard("session_close");
       const s = find(id);
       if (s.status === "closed") throw new ApiError(409, `Session ${id} is closed (read-only)`);
-      if (access.role !== "admin" && s.user_id !== access.user_id) {
+      // area rule, kept in the router: a session belongs to the user who opened it
+      if (user.role !== "admin" && s.user_id !== user.user_id) {
         throw new ApiError(403, `Only ${s.user_id} or an admin can close this session`);
       }
       s.status = "closed";
@@ -185,7 +197,7 @@ export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
       return { ...s };
     },
     async continueFrom(id) {
-      guardWrite();
+      guard("session_continue");
       const prev = find(id);
       sample = prev.sample_id; // the server runs sample_open for it first
       return openFor(prev.sample_id, id);
@@ -193,8 +205,8 @@ export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
     async currentSample() {
       return sample;
     },
-    async access() {
-      return access;
+    async permissions(ops) {
+      return Object.fromEntries(ops.map((op) => [op, permission(op)]));
     },
   };
 }
