@@ -28,3 +28,9 @@
 ## Done when
 
 - Common criteria, trailer `Session: AF 실행11`. Send `[검토요청 T-031]` to AF 검토보조2.
+
+## mm_demo_core follow-up (T-023 merge review, 0b25f78)
+
+- `DemoDevices.set_and_read` is public and writes any property with no allow-list. Make it private again
+  (`_set_and_read`) or run `check_set_property` inside it, so no later caller can bypass the guards. Small fix,
+  allowed in this task (owned path addition: `engine/backends/mm_demo_core.py`, this change only).

@@ -79,3 +79,5 @@
 - Same fix in the `finally` loop (reviewer, 5006a4a merge).
 - SAFETY (reviewer, before M3/M4): `approach()` refuses on a non-mock backend when `clearance` is None. This is
   defence in depth next to the T-011 runner check. Test with a bench-flagged FakeBackend.
+- guards table (PLAN v1.3, fbc1e08): add the F5 step-out as data, `escape_dy_um = +15000` (sign +Y, 15 mm), marked
+  "unmeasured provisional", plus a check that refuses a step-out beyond the stage Y limit read from the backend.
