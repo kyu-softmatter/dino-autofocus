@@ -53,7 +53,7 @@ Returns the engine's `planned` payload for `objective_change` without starting i
 | Field | Notes |
 |---|---|
 | `steps[]` | seven rows `{step: 1..7, name, target}`: record; lights off; `Z -> 0`; `Y -> y + dy` (absent when `escape=false`); rotate to `label`; `load_immersion` (manual); `XY -> return_xy`; `Z approach -> approach_target_um` in `approach_step_um` steps |
-| `escape` | `{allowed, reason, sign, dy_um, mark}`: +Y, 15000 µm, `"unmeasured provisional"` (PLAN v1.3). Shown read-only with the mark; no entry field. When the engine refuses it (e.g. stage Y limit), `allowed: false` and `reason` is the engine text, shown as is, and the screen sends `escape: false` |
+| `escape` | `{allowed, reason, sign, dy_um, mark, default}` (T-029, from `guards.step_out_target`). The checkbox starts at `default` (on for an immersion lens, off between dry lenses): +Y, 15000 µm, `"unmeasured provisional"` (PLAN v1.3). Shown read-only with the mark; no entry field. When the engine refuses it (e.g. stage Y limit), `allowed: false` and `reason` is the engine text, shown as is, and the screen sends `escape: false` |
 | `immersion` | of the target lens |
 | `approach_target_um`, `approach_step_um` | 2800 default; step from the target lens's guards row (10 µm, `"unmeasured provisional"`). Both read-only, shown with that mark; no entry field |
 | `refusal` | preflight text if the plan itself is refused |
@@ -77,7 +77,7 @@ ceiling (ui-spec 5.1).
 
 ## 2. Commands (`POST /api/commands`, T-009)
 
-Disabled reasons for these buttons come from the shared `GET /api/permissions?ops=objective_change,focus_100x,confirm,abort` (T-009b, backed by T-011 `check()`); this router never computes role, control, session or remote rules. Per-lens reasons stay with `objective_options()` (T-028), and the server keeps `"Loading done"` local only. Shape is `engine.events.Command`. `origin="human"`; `user_id` and `session_id` are filled by the server.
+Disabled reasons for these buttons come from the shared `GET /api/permissions?ops=objective_change,focus_100x,confirm,abort` (T-009b, backed by T-011 `check()`); this router never computes role, control, session or remote rules. If `/api/permissions` cannot be read, every control here (including "Loading done") is disabled with "Permission check unavailable"; progress stays visible. Per-lens reasons stay with `objective_options()` (T-028), and the server keeps `"Loading done"` local only. Shape is `engine.events.Command`. `origin="human"`; `user_id` and `session_id` are filled by the server.
 
 | Action | Command | Who |
 |---|---|---|
@@ -88,7 +88,7 @@ Disabled reasons for these buttons come from the shared `GET /api/permissions?op
 | Continue after a dry-lens rotation (C8) | `{kind: "confirm", op_id, args: {key: <event key>, ok: true}}` | local operator |
 | Find 100x focus | `{kind: "start", op: "focus_100x", args: {centre_um, half_um, step_um, fine_half_um, fine_step_um, exposure_ms, metric, aura_line, aura_percent, sample_id}}` | as Rotate |
 | Answer C9 / C10 / C11 | `{kind: "confirm", op_id, args: {key, ok}}` | local operator |
-| Abort | `{kind: "abort", op_id}` | anyone logged in; remote allowed (D13) |
+| Abort | `{kind: "abort", op_id}` | the shell status bar sends it (ui-spec 7.0), not this area; anyone logged in, remote allowed (D13) |
 | Lights off | `{kind: "lights_off"}` | anyone logged in, local |
 
 Refusals come back synchronously from `POST /api/commands` (403 remote, permission table) or later as

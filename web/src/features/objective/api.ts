@@ -84,6 +84,8 @@ export interface ObjectivePlan {
     dy_um: number;
     /** e.g. "unmeasured provisional" */
     mark: string;
+    /** engine default for this target (T-029: on for immersion lenses) */
+    default: boolean;
   };
   immersion: "dry" | "oil" | "water";
   approach_target_um: number;
@@ -142,6 +144,8 @@ export interface FakeOptions {
   /** every op allowed unless set; denyAll refuses all but abort with that reason */
   denyAll?: string;
   remote?: boolean;
+  /** GET /api/permissions fails (network, server error) */
+  permissionsFail?: boolean;
   /** engine refusal of the Y step-out (e.g. a stage Y limit); default: allowed */
   escapeRefusal?: string;
   state?: Partial<ObjectiveState>;
@@ -209,7 +213,8 @@ export function createFakeApi(opts: FakeOptions = {}): FakeApi {
       return {
         steps,
         escape: { allowed: opts.escapeRefusal === undefined, reason: opts.escapeRefusal ?? null,
-          sign: "+Y", dy_um: 15000, mark: "unmeasured provisional" },
+          sign: "+Y", dy_um: 15000, mark: "unmeasured provisional",
+          default: (lens?.immersion ?? "dry") !== "dry" },
         immersion: lens?.immersion ?? "dry",
         approach_target_um: 2800,
         approach_step_um: 10,
@@ -235,6 +240,7 @@ export function createFakeApi(opts: FakeOptions = {}): FakeApi {
       };
     },
     async getPermissions(ops: string[]) {
+      if (opts.permissionsFail) throw new Error("permissions unavailable");
       return fakePermissions(ops, opts.denyAll);
     },
     async send(cmd: Command) {

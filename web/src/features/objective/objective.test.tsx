@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
 import { ScreenContextProvider } from "../../app/screenContext";
-import { createFakeApi, type FakeOptions, scriptAfterLoading, scriptToLoading } from "./api";
+import { createFakeApi, FAKE_LENSES, type FakeOptions, type LensRow, scriptAfterLoading, scriptToLoading } from "./api";
 import { COMPUTED_GRADE, ObjectiveView } from "./ObjectiveView";
 
 function wrap(children: ReactNode) {
@@ -102,6 +102,21 @@ describe("objective change", () => {
     expect(api.sent[0].args).toEqual({ target_state: 5, escape: false });
   });
 
+  it("defaults the step-out off between dry lenses and on for an immersion lens", async () => {
+    const dry10x: LensRow = { nosepiece_state: 1, label: "2-Plan Apo 10x", registry_key: "10x", magnification: 10,
+      na: 0.45, immersion: "dry", working_distance_um: 4000, selectable: true, disabled_reason: null };
+    const api = await setup({ lenses: [FAKE_LENSES[0], dry10x, FAKE_LENSES[2]] });
+    await screen.findByLabelText("Plan");
+    expect(screen.getByRole("checkbox")).toHaveProperty("checked", false); // 4x -> 10x, both dry
+    fireEvent.click(screen.getByLabelText(/100x Oil/));
+    await waitFor(() => expect(screen.getByRole("checkbox")).toHaveProperty("checked", true));
+    fireEvent.click(screen.getByLabelText(/10x \(dry/));
+    await waitFor(() => expect(screen.getByRole("checkbox")).toHaveProperty("checked", false));
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+    await waitFor(() => expect(api.sent).toHaveLength(1));
+    expect(api.sent[0].args).toEqual({ target_state: 1, escape: false });
+  });
+
   it("is read-only in remote view: no commands, and Loading done is never offered", async () => {
     const api = await setup({ denyAll: "Read-only: remote view", remote: true });
     await screen.findByLabelText("Plan");
@@ -110,6 +125,20 @@ describe("objective change", () => {
     emitAll(api, scriptToLoading("op-3"));
     expect(screen.queryByRole("button", { name: "Loading done" })).toBeNull();
     expect(screen.getByText(/Waiting for the operator at the microscope PC/)).toBeTruthy();
+  });
+
+  it("disables every control when the permission check cannot be read, but keeps progress", async () => {
+    const api = await setup({ permissionsFail: true, z4xFocusUm: 3048.7 });
+    await screen.findByLabelText("Plan");
+    expect(screen.getAllByText("Permission check unavailable").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Re-load immersion" })).toHaveProperty("disabled", true);
+    expect(await screen.findByRole("button", { name: "Find 100x focus" })).toHaveProperty("disabled", true);
+    emitAll(api, scriptToLoading("op-7"));
+    expect(screen.getByTestId("step-2").dataset.status).toBe("done"); // progress still shown
+    expect(screen.queryByRole("button", { name: "Loading done" })).toBeNull();
+    expect(within(screen.getByRole("dialog", { name: "Load immersion" })).getByText(/Permission check unavailable/)).toBeTruthy();
+    expect(api.sent).toHaveLength(0);
   });
 
   it("never offers Loading done to a remote client, even one allowed to command", async () => {

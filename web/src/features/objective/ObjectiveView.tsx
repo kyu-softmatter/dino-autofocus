@@ -35,7 +35,8 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
   const [change, dispatchChange] = useReducer(reduceChange, undefined, initialChange);
   const [focus, dispatchFocus] = useReducer(reduceFocus, undefined, initialFocus);
   const [message, setMessage] = useState<string | null>(null);
-  const [perms, setPerms] = useState<Permissions>({});
+  // null: the permission check could not be read (every control off, progress stays)
+  const [perms, setPerms] = useState<Permissions | null>({});
   const [permsTick, setPermsTick] = useState(0);
 
   useEffect(() => {
@@ -56,7 +57,10 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
 
   useEffect(() => {
     let live = true;
-    void api.getPermissions(PERMISSION_OPS).then((p) => live && setPerms(p));
+    api.getPermissions(PERMISSION_OPS).then(
+      (p) => live && setPerms(p),
+      () => live && setPerms(null),
+    );
     return () => {
       live = false;
     };
@@ -82,7 +86,8 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
   useScreenContext(details);
 
   if (state === null) return <p className="muted">Loading objective…</p>;
-  const perm = (op: string): Permission => perms[op] ?? { allowed: false, reason: "checking permissions" };
+  const perm = (op: string): Permission =>
+    perms === null ? PERMISSION_UNAVAILABLE : (perms[op] ?? { allowed: false, reason: "checking permissions" });
   const changePerm = perm("objective_change");
   const awaiting = state.awaiting_return !== null || change.ended?.state === "awaiting_return";
 
@@ -105,8 +110,7 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
                    onReload={() => send(startChange({ reload: true }))} />
       <StepsPanel view={change} confirmPerm={perm("confirm")} remote={state.remote}
                   onLoadingDone={(c) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok: true } })}
-                  onAnswer={(c, ok) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok } })}
-                  onAbort={(opId) => send({ kind: "abort", op_id: opId })} />
+                  onAnswer={(c, ok) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok } })} />
       <Focus100xPanel api={api} perm={perm("focus_100x")} confirmPerm={perm("confirm")} view={focus} disabledBy={awaiting ? "Return to the sample position first" : null}
                       onStart={(args) => send({ kind: "start", op: "focus_100x", args })}
                       onAnswer={(c, ok) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok } })} />
@@ -115,7 +119,10 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
 }
 
 /** ops whose permission the screen asks for (GET /api/permissions) */
-const PERMISSION_OPS = ["objective_change", "focus_100x", "confirm", "abort"];
+const PERMISSION_OPS = ["objective_change", "focus_100x", "confirm"];
+
+/** the one fallback for every screen when /api/permissions cannot be read */
+export const PERMISSION_UNAVAILABLE: Permission = { allowed: false, reason: "Permission check unavailable" };
 
 function startChange(args: Record<string, unknown>): Command {
   return { kind: "start", op: "objective_change", args };
@@ -167,9 +174,12 @@ function ChangePanel({
 }) {
   const [target, setTarget] = useState<number | null>(null);
   const [plan, setPlan] = useState<ObjectivePlan | null>(null);
-  const [wantEscape, setWantEscape] = useState(true);
+  // null until the operator ticks or unticks it; then their choice wins
+  const [escapeChoice, setEscapeChoice] = useState<boolean | null>(null);
   const firstSelectable = lenses.find((l) => l.selectable)?.nosepiece_state ?? null;
   const chosen = target ?? firstSelectable;
+  const lens = lenses.find((l) => l.nosepiece_state === chosen) ?? null;
+  const wantEscape = escapeChoice ?? escapeDefault(plan, lens);
 
   useEffect(() => {
     if (chosen === null) return;
@@ -179,8 +189,9 @@ function ChangePanel({
       live = false;
     };
   }, [api, chosen, wantEscape]);
-  // the step-out runs only when the operator keeps it on and the engine allows it
-  const escape = wantEscape && (plan?.escape.allowed ?? false);
+  // the step-out runs only when wanted and the engine does not refuse it
+  const refusal = escapeRefusal(plan);
+  const escape = wantEscape && plan !== null && refusal === null;
 
   const blocked = !perm.allowed ? (perm.reason ?? "not allowed") : disabledBy ?? plan?.refusal ?? null;
   return (
@@ -191,7 +202,11 @@ function ChangePanel({
           <li key={l.nosepiece_state}>
             <label>
               <input type="radio" name="lens" value={l.nosepiece_state} disabled={!l.selectable}
-                     checked={chosen === l.nosepiece_state} onChange={() => setTarget(l.nosepiece_state)} />
+                     checked={chosen === l.nosepiece_state}
+                     onChange={() => {
+                       setTarget(l.nosepiece_state);
+                       setEscapeChoice(null); // a new target starts from its own default
+                     }} />
               {l.label} ({l.immersion}, WD {l.working_distance_um === null ? "not set" : `${l.working_distance_um} µm`})
             </label>
             {l.disabled_reason && <span className="reason"> {l.disabled_reason}</span>}
@@ -201,14 +216,12 @@ function ChangePanel({
       {plan && (
         <p data-testid="escape">
           <label>
-            <input type="checkbox" checked={escape} disabled={!plan.escape.allowed || !perm.allowed}
-                   onChange={(e) => setWantEscape(e.target.checked)} />{" "}
+            <input type="checkbox" checked={escape} disabled={refusal !== null || !perm.allowed}
+                   onChange={(e) => setEscapeChoice(e.target.checked)} />{" "}
             Step out {plan.escape.sign} {plan.escape.dy_um / 1000} mm for loading
           </label>{" "}
           <span className="muted">({plan.escape.mark})</span>
-          {!plan.escape.allowed && plan.escape.reason && (
-            <span className="reason" data-testid="escape-reason"> {plan.escape.reason}</span>
-          )}
+          {refusal !== null && <span className="reason" data-testid="escape-reason"> {refusal}</span>}
         </p>
       )}
       {plan && (
@@ -237,6 +250,24 @@ function ChangePanel({
   );
 }
 
+/**
+ * Default for the Y step-out: the plan's escape.default (T-029). Before the plan
+ * arrives, on for an immersion lens and off between dry lenses (ui-spec 7.5).
+ */
+export function escapeDefault(plan: ObjectivePlan | null, lens: LensRow | null): boolean {
+  if (plan !== null) return plan.escape.default;
+  return lens !== null && lens.immersion !== "dry";
+}
+
+/**
+ * The engine's refusal of the step-out, or null. It comes in the plan payload
+ * (T-029: plan(cmd).escape, from guards.step_out_target, the stage Y limit).
+ */
+export function escapeRefusal(plan: ObjectivePlan | null): string | null {
+  if (plan === null || plan.escape.allowed) return null;
+  return plan.escape.reason ?? "step-out refused";
+}
+
 const STEP_NAMES: Record<number, string> = {
   1: "Record position and objective; lights off",
   2: "PFS off, retract Z",
@@ -253,14 +284,12 @@ function StepsPanel({
   remote,
   onLoadingDone,
   onAnswer,
-  onAbort,
 }: {
   view: ChangeView;
   confirmPerm: Permission;
   remote: boolean;
   onLoadingDone: (c: PendingConfirm) => void;
   onAnswer: (c: PendingConfirm, ok: boolean) => void;
-  onAbort: (opId: string) => void;
 }) {
   if (view.opId === null) return null;
   // "Loading done" is pressed by the person at the microscope: never remotely (ui-spec 7.5)
@@ -284,7 +313,10 @@ function StepsPanel({
               Loading done
             </button>
           ) : (
-            <p className="muted">Waiting for the operator at the microscope PC: {view.loading.prompt}</p>
+            <p className="muted">
+              {remote || confirmPerm.allowed ? "Waiting for the operator at the microscope PC" : confirmPerm.reason}:{" "}
+              {view.loading.prompt}
+            </p>
           )}
         </div>
       )}
@@ -296,15 +328,11 @@ function StepsPanel({
           {view.approach.nSteps})
         </div>
       )}
-      {view.ended ? (
+      {view.ended && (
         <p data-testid="change-ended">
           {view.ended.state === "done" ? "Done" : `Stopped (${view.ended.state})`}
           {view.ended.why && `: ${view.ended.why}`}
         </p>
-      ) : (
-        <button type="button" onClick={() => onAbort(view.opId as string)}>
-          Abort
-        </button>
       )}
     </section>
   );
