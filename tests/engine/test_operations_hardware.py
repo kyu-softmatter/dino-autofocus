@@ -8,7 +8,6 @@ import threading
 from pathlib import Path
 
 import pytest
-from conftest import FakeBackend
 
 from dino_autofocus.engine import Command, Event
 from dino_autofocus.engine.backends.mock import MockBackend
@@ -73,7 +72,7 @@ class Collect:
         return [e for e in self.events if e.kind == kind and e.op_id == op_id]
 
 
-def test_scan_reads_every_section_of_the_fake(fake: FakeBackend) -> None:
+def test_scan_reads_every_section_of_the_fake(fake) -> None:
     p = scan(ReadOnly(fake), piezo_port="", host="bench-pc")
     assert p.backend_kind == fake.info().kind and p.host == "bench-pc"
     assert {r for r, d in p.devices.items() if d.present and d.readable} == {
