@@ -9,7 +9,7 @@ from dino_autofocus.assistant.providers.anthropic import credentials
 from dino_autofocus.assistant.providers.fake import FakeProvider
 from dino_autofocus.assistant.records import RecordLog
 from dino_autofocus.assistant.runner import SYSTEM_PROMPT
-from dino_autofocus.assistant.tools import REMOVED_IMAGE
+from dino_autofocus.assistant.tools import REMOVED_IMAGE, ConfirmRefused
 
 
 class FakeEngine:
@@ -131,8 +131,9 @@ def test_confirm_sends_the_command_with_its_origin():
     done = a.confirm(pid, by="kyu", session_id="sess-2")
     assert done["status"] == "confirmed" and done["op_id"] == "op-1"
     (cmd,) = engine.submitted
-    assert cmd["kind"] == "lights_off" and cmd["origin"] == "assistant"
-    assert cmd["proposal_id"] == pid and cmd["confirmed_by"] == "kyu"
+    # a stop card sends the person's own stop; the engine takes no stop from an assistant
+    assert cmd["kind"] == "lights_off" and cmd["origin"] == "human"
+    assert cmd["proposal_id"] == pid and cmd["user_id"] == "kyu"
     assert cmd["session_id"] == "sess-2"
     (rec,) = a.records.entries("proposal_confirmed")
     assert rec["op_id"] == "op-1" and rec["user_id"] == "kyu"
@@ -155,15 +156,17 @@ def test_reject_is_recorded_and_never_reaches_the_engine():
     assert engine.submitted == []
 
 
-def test_engine_refusal_keeps_the_card_as_failed():
+def test_engine_refusal_keeps_the_card_proposed():
     a, _, engine = make(
         [[tool_use("propose_focus_100x", sample_id="s", reason="r")], [text("x")]],
         engine=FakeEngine(refuse=True),
     )
     pid = a.ask("focus").proposals[0]["proposal_id"]
-    out = a.confirm(pid, by="kyu", role="operator", local=True)
-    assert out["status"] == "failed" and "Z window" in out["note"]
-    assert a.records.entries("proposal_failed")
+    with pytest.raises(ConfirmRefused, match="Z window"):
+        a.confirm(pid, by="kyu", role="operator", local=True)
+    p = a.proposals.get(pid)
+    assert p.status == "proposed" and "Z window" in p.note and p.decided_by is None
+    assert "Z window" in a.records.entries("proposal_failed")[0]["note"]
 
 
 def test_no_engine_means_no_confirmation():
