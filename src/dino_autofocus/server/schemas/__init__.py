@@ -31,6 +31,7 @@ from .contract import (
 )
 from .state import (
     AuraState,
+    GateRow,
     HardwareState,
     LampState,
     Lights,
@@ -45,8 +46,8 @@ from .state import (
 __all__ = [
     "COMMAND_KINDS", "EVENT_KINDS", "ORIGINS", "SERVER_STAMPED", "WS_MODELS", "ApiError",
     "AuraState", "Command", "CommandAccepted", "CommandIn", "CommandKind", "EngineAPI", "Event",
-    "EventKind", "EventOut", "FrameSource", "HardwareState", "Health", "LampState", "Lights",
-    "OpSummary", "PermissionOut", "Positions", "RefusalDetail", "SampleRef", "SessionRef",
+    "EventKind", "EventOut", "FrameSource", "GateRow", "HardwareState", "Health", "LampState",
+    "Lights", "OpSummary", "PermissionOut", "Positions", "RefusalDetail", "SampleRef", "SessionRef",
     "ShutdownAccepted", "ShutdownIn", "Snapshot", "WsAccepted", "WsCommand", "WsError",
     "WsEvent", "WsFrame", "WsLock",
 ]
