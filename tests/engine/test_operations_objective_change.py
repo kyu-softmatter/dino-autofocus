@@ -11,13 +11,14 @@ from types import SimpleNamespace
 import pytest
 
 from dino_autofocus.engine import Command, Event
-from dino_autofocus.engine.backend import GUARD_TOKEN
+from dino_autofocus.engine.backend import GUARD_TOKEN, Readback
 from dino_autofocus.engine.backends.mock import MockBackend
 from dino_autofocus.engine.guards import PROVISIONAL, GuardError
 from dino_autofocus.engine.operations.objective_change import (
     LOAD_KEY,
     NAME,
     ObjectiveChange,
+    approach_cap_um,
     escape_plan,
     immersion_of,
     step_out_target,
@@ -102,7 +103,7 @@ def test_4x_to_100x_runs_the_seven_steps_and_waits_for_loading(make):
     r, sink, be = make()
     w = be.world
     be.lamp_on(token=GUARD_TOKEN)
-    op_id = r.submit(start(target_state=5, approach_target_um=2850.0))
+    op_id = r.submit(start(target_state=5))
     req = sink.wait("confirm_required", op_id)
     assert req.data["kind"] == "manual_step" and req.data["context"]["immersion"] == "oil"
     # while waiting: Z retracted, stepped out +15 mm in Y, 100x in place, lights off
@@ -117,14 +118,14 @@ def test_4x_to_100x_runs_the_seven_steps_and_waits_for_loading(make):
     assert s["state"] == "done" and s["mode"] == "rotate"
     assert fin.data["end_state"]["state"] == "returned"
     assert (w.x_um, w.y_um) == pytest.approx(HOLE)
-    assert w.z_um == pytest.approx(2850.0) and s["z_end_um"] == pytest.approx(2850.0)
+    assert w.z_um == pytest.approx(2800.0) and s["z_end_um"] == pytest.approx(2800.0)
     assert fin.data["manual_steps"][0]["step"] == LOAD_KEY
     assert r.snapshot()["awaiting_return"] is None
 
 
 def test_progress_carries_the_contract_fields(make):
     r, sink, _ = make()
-    op_id = r.submit(start(target_state=5, approach_target_um=2850.0))
+    op_id = r.submit(start(target_state=5))
     sink.wait("confirm_required", op_id)
     r.submit(confirm(op_id))
     sink.wait("finished", op_id)
@@ -137,7 +138,15 @@ def test_progress_carries_the_contract_fields(make):
     assert by_step[2]["pfs_in_range"] == "Out of Range" and by_step[2]["commanded"] == 0.0
     assert by_step[3]["commanded"][1] == pytest.approx(HOLE[1] + 15000.0)
     assert by_step[4]["label_read"] == "6-Plan Apo LmbdD0.13 100x Oil"
-    approach = [e.data["data"] for e in prog if e.data["step"] == 7]
+    one = [e.data["data"] for e in prog if e.data["step"] == 7]
+    assert [(a["step_index"], a["commanded"]) for a in one] == [(1, 2800.0)]  # 100x: cap 2800
+
+
+def test_4x_approach_climbs_in_steps_with_step_index(make):
+    r, sink, _ = make(nosepiece=5, z_um=2989.4)
+    op_id = r.submit(start(target_state=0, approach_target_um=2850.0))
+    sink.wait("finished", op_id)
+    approach = [e.data["data"] for e in sink.of("progress", op_id) if e.data["step"] == 7]
     assert [a["step_index"] for a in approach] == list(range(1, len(approach) + 1))
     z = [a["commanded"] for a in approach]
     assert z[0] == 2800.0 and z[-1] == pytest.approx(2850.0)  # one move to the window, then
@@ -243,6 +252,8 @@ def test_reload_steps_out_and_back_without_rotating(make):
     ({"target_state": 5, "resume": True}, "mode"),
     ({"target_state": 5, "approach_step_um": 20.0}, "approach_step"),
     ({"target_state": 5, "approach_target_um": 3300.0}, "approach_target"),
+    ({"target_state": 5, "approach_target_um": 3200.0}, "approach_target"),  # 100x WD 130 um
+    ({"target_state": 5, "approach_target_um": 2801.0}, "approach_target"),
     ({"resume": True}, "awaiting_return"),
 ])
 def test_preflight_refusals(make, args, check):
@@ -295,7 +306,7 @@ def test_step_out_target_refuses_without_y_travel():
 
 def test_clearance_is_always_a_real_check():
     assert ObjectiveChange.approaches is True
-    labels = ["6-Plan Apo LmbdD0.13 100x Oil"]
+    labels = ["1-Plan Apo LmbdD20 4x"]
     ctx = SimpleNamespace(aborted=False, args={"approach_target_um": 2850.0},
                           backend=SimpleNamespace(nosepiece=lambda: labels[0]))
     op = ObjectiveChange(ctx)
@@ -304,13 +315,78 @@ def test_clearance_is_always_a_real_check():
     assert clear is not None
     assert clear(2800.0) and clear(2850.0)
     assert not clear(2851.0)  # past the asked target
-    labels[0] = "1-Plan Apo LmbdD20 4x"
-    assert not clear(2810.0)  # the lens changed under the approach
     labels[0] = "6-Plan Apo LmbdD0.13 100x Oil"
+    assert not clear(2810.0)  # the lens changed under the approach
+    labels[0] = "1-Plan Apo LmbdD20 4x"
     ctx.aborted = True
     assert not clear(2810.0)
+
+
+def test_100x_clearance_caps_at_2800_whatever_the_target():
+    label = "6-Plan Apo LmbdD0.13 100x Oil"
+    ctx = SimpleNamespace(aborted=False, args={"approach_target_um": 3200.0},
+                          backend=SimpleNamespace(nosepiece=lambda: label))
+    op = ObjectiveChange(ctx)
+    op._approach_label = label
+    clear = op.clearance()
+    assert clear(2800.0) and not clear(2810.0)
+    assert approach_cap_um("100x-Oil")[0] == 2800.0 and approach_cap_um("4x")[0] == 3200.0
+    assert approach_cap_um(None)[0] == 2800.0  # unknown lens: the strict cap
+
+
+def test_unverified_lights_off_stops_before_any_motion(make):
+    r, sink, be = make()
+    be.all_off = lambda: [Readback.of("DiaLamp", "State", 0, 1)]  # lamp still reads on
+    op_id = r.submit(start(target_state=5))
+    err = sink.wait("error", op_id)
+    assert "light not verified" in err.data["message"]
+    assert be.world.z_um == pytest.approx(3048.7) and be.world.objective.key == "4x"
 
 
 def test_immersion_kinds():
     assert immersion_of("100x-Oil") == "oil" and immersion_of("40x-WI") == "water"
     assert immersion_of("4x") is None and immersion_of(None) is None
+
+
+# ---------------------------------------------------------------- sample events
+
+
+class FakeSession:
+    writable = True
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def sample_event(self, kind: str, **payload) -> None:
+        self.events.append((kind, payload))
+
+
+def test_rotation_writes_objective_changed_to_the_open_session(make):
+    r, sink, _ = make()
+    session = FakeSession()
+    r.sample_seat = SimpleNamespace(session_for=lambda sid: session if sid == SESSION else None)
+    op_id = r.submit(start(target_state=5))
+    sink.wait("confirm_required", op_id)
+    r.submit(confirm(op_id))
+    fin = sink.wait("finished", op_id)
+    assert session.events == [("objective_changed", {
+        "from_key": "4x", "to_key": "100x-Oil", "label": "6-Plan Apo LmbdD0.13 100x Oil"})]
+    assert fin.data["summary"]["sample_event"]["written"] is True
+
+
+def test_no_session_logs_and_still_completes(make):
+    r, sink, be = make(nosepiece=5, z_um=2989.4)
+    op_id = r.submit(start(target_state=0))
+    fin = sink.wait("finished", op_id)
+    ev = fin.data["summary"]["sample_event"]
+    assert ev["written"] is False and ev["why"] == "no sample seat installed"
+    assert any("objective_changed not written" in e.data.get("text", "")
+               for e in sink.of("log", op_id))
+    assert be.world.objective.key == "4x"
+
+
+def test_unmeasured_working_distance_reason(make):
+    r, sink, _ = make()
+    failed = sink.wait("preflight_failed", r.submit(start(target_state=1)))
+    wd = next(c for c in failed.data["checks"] if c["name"] == "target_working_distance")
+    assert wd["why"].startswith("free working distance not measured")

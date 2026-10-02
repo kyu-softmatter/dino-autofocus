@@ -17,7 +17,8 @@ Steps (F5), each with a `progress` event `step=1..7`; steps 2-6 carry
 1. record XY, Z, objective; switch the lights off (readback)
 2. PFS off -> Z retract to 0 um -> PFS must read Out of Range
 3. step out in +Y by `guards.ESCAPE_DY_UM` (only with Z retracted; `step_out_target`)
-4. rotate, read the label back
+4. rotate, read the label back; write the sample event `objective_changed`
+   `{from_key, to_key, label}` to the open experiment session
 5. the operator loads oil / water and presses "Loading done" (`manual_step`)
 6. XY back to step 1's position (Z still retracted)
 7. Z from 0 um: one move to 2800 um, then steps of at most the lens's `approach_step_um`, with
@@ -39,14 +40,13 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
-from .. import guards
-from ..backend import Backend
 from ..events import Event
 from ..guards import (
     FREE_WD_UM,
     OBJECTIVE_LIMITS,
     PROVISIONAL,
     RETRACT_Z_UM,
+    RETRACTED_MAX_Z_UM,
     RETURN_Z_UM,
     SAMPLE_Z_WINDOW_UM,
     XY_TOL_UM,
@@ -55,46 +55,24 @@ from ..guards import (
     GuardError,
     XYAxis,
     XYBox,
+    check_lights,
     limits_for,
     registry_key,
     rotate_nosepiece,
+    step_out_target,
 )
 from ..runner import Operation, register_operation
-
-try:  # T-027 adds it to guards; until then the same contract lives here
-    from ..guards import step_out_target
-except ImportError:  # pragma: no cover - removed once T-027 is on main
-    #: PLAN v1.3 F5 step-out, +Y 15 mm, unmeasured provisional (T-027 moves it to guards)
-    _ESCAPE_DY_UM = guards.ESCAPE_DY_UM if guards.ESCAPE_DY_UM is not None else +15000.0
-
-    def step_out_target(backend: Backend, x_um: float, y_um: float
-                        ) -> tuple[float, float, dict]:
-        """(x, y, basis) of the F5 step-out: +ESCAPE_DY_UM in Y, refused outside the stage Y
-        travel or when the backend reports none (stand-in for T-027's guards function)."""
-        x, y = guards.plain(x_um, "x"), guards.plain(y_um, "y")
-        target = y + _ESCAPE_DY_UM
-        try:
-            limits = backend.info().stage_limits.y_um
-        except Exception as exc:  # noqa: BLE001 - no limits read means no step-out
-            raise GuardError(f"stage Y limit unreadable ({type(exc).__name__}: {exc}); "
-                             "refusing the step-out") from None
-        if limits is None:
-            raise GuardError("the backend reports no stage Y limit; refusing the step-out")
-        lo, hi = limits
-        if not lo <= target <= hi:
-            raise GuardError(f"step-out to y {target:.0f} um is outside the stage Y travel "
-                             f"{lo:.0f}..{hi:.0f} um")
-        return x, target, {"escape_dy_um": _ESCAPE_DY_UM,
-                           "basis": {"escape_dy_um": PROVISIONAL}, "stage_y_um": [lo, hi]}
 
 NAME = "objective_change"
 N_STEPS = 7
 LOAD_KEY = "load_immersion"
+#: sample event after a verified rotation; engine/sample.py gets the constant in T-027b
+OBJECTIVE_CHANGED = "objective_changed"
 #: nosepiece position -> lens key, from the `configs/ti2_*.yaml` headers ("nosepiece position N").
 #: Only for `plan()`, which has no hardware; preflight checks it against the backend's labels.
 NOSEPIECE_KEYS = {0: "4x", 1: "10x", 2: "20x", 3: "40x-WI", 4: "60x-Oil", 5: "100x-Oil"}
 IMMERSION = {"-Oil": "oil", "-WI": "water"}
-NO_WD_WHY = "no working distance recorded for {key} (PLAN 10, soft-matter-agents task 026 5)"
+NO_WD_WHY = "free working distance not measured ({key}; guards.FREE_WD_UM)"
 
 
 def immersion_of(key: str | None) -> str | None:
@@ -146,6 +124,23 @@ def escape_plan(xy: tuple[float | None, float | None] | None, y_limits, default:
     return out
 
 
+def approach_cap_um(key: str | None) -> tuple[float, str]:
+    """(highest Z this operation may approach to with lens `key`, why).
+
+    Nothing here knows where the focus is, so guards' ceiling (focus centre + 0.4 x WD) cannot
+    apply. Above 2800 um is allowed only for a lens whose free WD covers the whole sample
+    window (today the 4x, 20 mm): wherever the sample sits in 2800-3200 um, the lens cannot
+    reach the coverslip. Any other lens stops at 2800 um; focusing above is `focus_100x`'s job,
+    under its ceiling.
+    """
+    lo, hi = SAMPLE_Z_WINDOW_UM
+    wd = FREE_WD_UM.get(key or "")
+    if wd is not None and wd >= hi - lo:
+        return hi, f"{key}: free WD {wd:g} um covers the {lo:g}-{hi:g} um window"
+    return RETURN_Z_UM, (f"{key or 'unknown lens'}: approach to {RETURN_Z_UM:g} um; focusing "
+                         "above is focus_100x's job, under its ceiling")
+
+
 def _check(name: str, ok: bool, want: Any = None, read: Any = None, why: str = "") -> dict:
     return {"name": name, "ok": bool(ok), "want": want, "read": read, "why": why}
 
@@ -186,17 +181,22 @@ class ObjectiveChange(Operation):
 
     # -- the clearance check handed to approach()
     def clearance(self) -> Callable[[float], bool]:
-        """After every approach move: Z inside the window and not past the asked target, the
-        operation not aborted, and the nosepiece still reading the lens this approach is for."""
+        """After every approach move: Z not past the asked target nor the lens's approach cap
+        (`approach_cap_um`), the operation not aborted, and the nosepiece still reading the
+        lens this approach is for."""
         target = self._approach_target()
 
         def clear(z_read: float) -> bool:
             if self.ctx.aborted:
                 return False
-            if not (RETRACT_Z_UM - Z_TOL_UM <= z_read <= min(SAMPLE_Z_WINDOW_UM[1],
-                                                               target + Z_TOL_UM)):
-                return False
             want = getattr(self, "_approach_label", None)
+            try:
+                key = registry_key(want) if want is not None else None
+            except GuardError:
+                key = None  # unreadable lens: the strict cap
+            top = min(target, approach_cap_um(key)[0])
+            if not RETRACT_Z_UM - Z_TOL_UM <= z_read <= top + Z_TOL_UM:
+                return False
             return want is None or self.ctx.backend.nosepiece() == want
 
         return clear
@@ -220,7 +220,9 @@ class ObjectiveChange(Operation):
                          "target_um": self._approach_target(),
                          "step_um": self.args.get("approach_step_um")
                          or (row.approach_step_um if row else None),
-                         "row": row_name, "mark": PROVISIONAL},
+                         "row": row_name, "mark": PROVISIONAL,
+                         "cap_um": approach_cap_um(key)[0] if key else None,
+                         "cap_why": approach_cap_um(key)[1] if key else None},
             "escape": escape_plan(xy, y_lim, self._escape_default(key)),
         }
         if self.mode == "resume":
@@ -306,6 +308,10 @@ class ObjectiveChange(Operation):
             ok = aw.get("op") == NAME and aw.get("return_xy") is not None
             checks.append(_check("awaiting_return", ok, "an objective_change away from the sample",
                                  aw.get("op_id"), "" if ok else "nothing to return to"))
+            # the long-move rule would refuse the XY return anyway; say why up front
+            okr = p.z_um is not None and p.z_um <= RETRACTED_MAX_Z_UM
+            checks.append(_check("z_retracted", okr, f"<= {RETRACTED_MAX_Z_UM} um ({PROVISIONAL})",
+                                 p.z_um, "" if okr else "Z must be retracted before the return"))
         if self._escape(target_key):
             try:
                 _, ty, _ = step_out_target(b, p.x_um, p.y_um)
@@ -314,9 +320,11 @@ class ObjectiveChange(Operation):
                 checks.append(_check("step_out", False, "inside the stage Y travel",
                                      p.y_um, str(e)))
         zt = self._approach_target()
-        okz = SAMPLE_Z_WINDOW_UM[0] <= zt <= SAMPLE_Z_WINDOW_UM[1]
-        checks.append(_check("approach_target", okz, list(SAMPLE_Z_WINDOW_UM), zt,
-                             "" if okz else "approach target outside the sample Z window"))
+        cap, cap_why = approach_cap_um(target_key)
+        okz = SAMPLE_Z_WINDOW_UM[0] <= zt <= cap
+        checks.append(_check("approach_target", okz, [SAMPLE_Z_WINDOW_UM[0], cap], zt,
+                             "" if okz else (cap_why if zt > cap else
+                                             "approach target below the sample Z window")))
         row, row_name = limits_for(target_key)
         step = a.get("approach_step_um")
         if step is not None:
@@ -345,10 +353,8 @@ class ObjectiveChange(Operation):
         summary: dict[str, Any] = {"mode": self.mode, "start": start, "return_xy": return_xy,
                                    "steps": []}
         if self.mode != "resume":
-            offs = b.all_off()
-            for r in offs:
-                ctx.emit("property_set", device=r.device, property=r.prop, wanted=r.wanted,
-                         read=r.read, verified=r.verified)
+            # T-002 appendix 3 item 2: a light that does not read back off stops the operation
+            check_lights(b.all_off(), sink, ctx.op_id)
             self._progress(1, "recorded", axis=None, commanded=None,
                            readback=[p0.x_um, p0.y_um, p0.z_um], pfs_in_range=start["pfs"]
                            ["in_range"], label_read=label0, summary=summary)
@@ -395,6 +401,9 @@ class ObjectiveChange(Operation):
                                summary=summary)
                 if registry_key(label) != target_key:
                     raise GuardError(f"nosepiece reads {label!r}, not the {target_key} lens")
+                summary["sample_event"] = self._sample_event(
+                    OBJECTIVE_CHANGED, from_key=registry_key(label0), to_key=target_key,
+                    label=label)
                 z_axis = FocusAxis(b, label, allow_motion=True, sink=sink, op_id=ctx.op_id,
                                    sleep=ctx.sleep)
                 ctx.check()
@@ -454,8 +463,30 @@ class ObjectiveChange(Operation):
                               commanded=d.get("target_um"), readback=d.get("read_um"),
                               basis=d.get("basis"))
 
+    def _sample_event(self, kind: str, **payload: Any) -> dict:
+        """Write a sample event to the open experiment session (T-019) and say what happened.
+        A missing seat or session, or a failed write, is logged and never stops the motion:
+        the runner's own record of this operation is complete either way."""
+        seat = getattr(self.ctx.runner, "sample_seat", None)
+        sid = self.ctx.session_id
+        session = seat.session_for(sid) if seat is not None and sid else None
+        if session is None or not getattr(session, "writable", False):
+            why = "no sample seat installed" if seat is None else "no open experiment session"
+            self.ctx.log(f"{kind} not written: {why}", level="warning")
+            return {"kind": kind, "written": False, "why": why, **payload}
+        try:
+            session.sample_event(kind, **payload)
+        except Exception as e:  # noqa: BLE001 - a record failure must not strand the stage
+            self.ctx.log(f"{kind} not written: {e}", level="warning")
+            return {"kind": kind, "written": False, "why": str(e), **payload}
+        return {"kind": kind, "written": True, **payload}
+
     def _xy_axis(self, a: tuple | list, b: tuple | list) -> XYAxis:
-        """An axis whose box holds exactly the two points of this move, plus the tolerance."""
+        """An axis whose box holds exactly the two points of this move, plus the tolerance.
+
+        The sample's scan box does not apply here on purpose: the step-out leaves the sample
+        by 15 mm. The box still refuses any other target, and XYAxis.goto keeps the
+        long-move rule (Z retracted) and the readback check for both moves."""
         m = 2 * XY_TOL_UM
         box = XYBox(min(a[0], b[0]) - m, max(a[0], b[0]) + m, min(a[1], b[1]) - m,
                     max(a[1], b[1]) + m)
