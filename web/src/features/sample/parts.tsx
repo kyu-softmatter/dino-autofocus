@@ -66,7 +66,7 @@ export function SampleList({
               {s.reserved && <span className="tag">reserved, no session yet</span>}
               {s.awaiting_return && <span className="tag warn">awaiting return</span>}
             </td>
-            <td>{s.created}</td>
+            <td>{s.created ?? "unknown"}</td>
             <td>{s.fitted_at ?? "never"}</td>
             <td>{s.objectives_used.join(", ") || "none"}</td>
             <td>{s.last_session ? `${s.last_session.session_id} (${s.last_session.opened_at})` : "none"}</td>
@@ -110,17 +110,15 @@ export function SampleSummaryPanel({
       <p>
         Hole:{" "}
         {h
-          ? `${h.diameter_mm} mm at (${h.centre_um[0]}, ${h.centre_um[1]}) um, rms ${h.fit_rms_um} um, ` +
+          ? `${h.diameter_mm ?? "?"} mm at (${h.centre_um ? `${h.centre_um[0]}, ${h.centre_um[1]}` : "?"}) um, ` +
+            `rms ${h.fit_rms_um ?? "?"} um, ` +
             `${h.n_points} points, ${h.arc_deg}° arc, fitted ${h.fitted_at ?? "unknown"}` +
             (h.status ? ` (${h.status})` : "")
           : "not traced"}
       </p>
       <p>
-        Calibration:{" "}
-        {detail.calibration ? `${detail.calibration.um_per_px} um/px (${detail.calibration.objective})` : "none"}
-      </p>
-      <p>
-        Scans {detail.counts.scans} · maps {detail.counts.maps} · flags {detail.counts.flags}
+        Flags {detail.counts.flags} · candidates {detail.counts.candidates} · fields visited{" "}
+        {detail.counts.visits} · boundary points {detail.counts.boundary_points}
       </p>
     </section>
   );

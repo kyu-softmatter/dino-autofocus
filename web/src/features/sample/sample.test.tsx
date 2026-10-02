@@ -32,14 +32,14 @@ function detail(id: string, over: Partial<SampleDetail> = {}): SampleDetail {
     sample_id: id,
     created: "2026-10-01T10:00:00",
     fitted_at: null,
+    closed_loop: false,
     objectives_used: [],
     last_session: null,
     awaiting_return: false,
     reserved: false,
     dir: `D:\\AutoFocus\\samples\\${id}`,
     hole: null,
-    calibration: null,
-    counts: { scans: 0, maps: 0, flags: 0 },
+    counts: { flags: 0, candidates: 0, visits: 0, boundary_points: 0 },
     ...over,
   };
 }
@@ -94,7 +94,7 @@ function routesOf(w: World): Record<string, Route> {
     [PATHS.state]: () => ({ status: 200, body: { sample: w.current } }),
     [PATHS.list]: () => ({
       status: 200,
-      body: [...w.samples.values()].map((s) => s.detail).sort((a, b) => b.created.localeCompare(a.created)),
+      body: [...w.samples.values()].map((s) => s.detail).sort((a, b) => (b.created ?? "").localeCompare(a.created ?? "")),
     }),
     [PATHS.fields]: () => ({ status: 200, body: w.fields }),
     [PATHS.permissions(SAMPLE_OPS)]: (init) => w.permissions(init),
@@ -173,7 +173,6 @@ describe("sample screen", () => {
     expect(t.sent()[0]).toMatchObject({
       kind: "start",
       op: "sample_geometry_set",
-      origin: "human",
       args: { sample_id: ID, values: { sample_thickness_um: 120 } },
     });
   });

@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  type CommandIn,
+  type CommandInput,
   CommandRefused,
   type EventOut,
   useClient,
@@ -31,7 +31,6 @@ import {
   type LoadingState,
   PATHS,
   type Permissions,
-  post,
   READ_ONLY_REMOTE,
   readPermissions,
   SAMPLE_OPS,
@@ -50,12 +49,11 @@ function sampleIdOf(rest: string): string | null {
 
 const isSampleOp = (op: unknown): op is SampleOp => (SAMPLE_OPS as readonly unknown[]).includes(op);
 
-const start = (op: SampleOp, args: Record<string, unknown> = {}): CommandIn => ({
+const start = (op: SampleOp, args: Record<string, unknown> = {}): CommandInput => ({
   kind: "start",
   op,
   op_id: "",
   args,
-  origin: "human",
 });
 
 /** which control a command belongs to, so its refusal shows next to it */
@@ -231,7 +229,7 @@ export default function SampleScreen() {
   const openFolder = useCallback(async () => {
     if (!selected) return;
     try {
-      await post(client, PATHS.openFolder(selected.detail.sample_id));
+      await client.post(PATHS.openFolder(selected.detail.sample_id));
       setReason("folder", null);
     } catch (e) {
       setReason("folder", e instanceof CommandRefused ? e.detail : String(e));

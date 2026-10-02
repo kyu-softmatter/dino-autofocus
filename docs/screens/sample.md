@@ -50,20 +50,21 @@ Each value carries its source: `GeometryValue` = `{value | null, source: {kind (
 Sample thickness and orientation have no default on purpose: a guessed safety value must not look entered.
 While a safety field is `not_set`, the ops that depend on it refuse (G5); the screen only shows the reason.
 
-## 3. Read endpoints (`server/api/sample.py`, all GET, everyone incl. remote and viewer: `Action.VIEW`)
+## 3. Read endpoints (`server/api/sample.py`, all GET, any logged-in user incl. remote viewers)
 
 Response bodies are pydantic models; the TypeScript types are generated from OpenAPI into `web/src/api/`.
 
 | Route | Returns |
 |---|---|
-| `GET /api/sample/list` | `SampleSummary[]`: `sample_id` (`YYYYMMDD_HHMM_n`), `created`, `fitted_at \| null`, `objectives_used[]`, `last_session {session_id, opened_at} \| null`, `awaiting_return: bool`, `reserved: bool`. Newest first (last three from the sample view, G8). A reserved sample (made by `sample_new`, no session yet) is listed with its id, folder and `created` from the folder; `fitted_at` and `last_session` are null, `objectives_used` is empty |
+| `GET /api/sample/list` | `SampleSummary[]`: `sample_id` (`YYYYMMDD_HHMM_n`), `created \| null`, `fitted_at \| null`, `closed_loop: bool` (engine `hole_loop`), `objectives_used[]`, `last_session {session_id, opened_at} \| null`, `awaiting_return: bool`, `reserved: bool` (no session for the sample yet; this includes a 2026-09-30 legacy sample). Newest first (last three from the sample view, G8). The list is every legacy folder under the samples root plus every sample with a session. A reserved sample (made by `sample_new`, no session yet) is listed with its id, folder and `created` from the folder; `fitted_at` and `last_session` are null, `objectives_used` is empty |
 | `GET /api/sample/geometry-fields` | `GeometryField[]` (section 2) |
-| `GET /api/sample/{sample_id}` | `SampleDetail`: the summary + `dir` (path string), `hole {centre_um, diameter_mm, fit_rms_um, n_points, arc_deg, fitted_at, status} \| null` (`status` is the engine's text about the fit, e.g. `"partial trace"` until the closed-loop fit of T-031; shown as is, no closure logic on screen), `calibration {um_per_px, objective} \| null`, `counts {scans, maps, flags}` |
+| `GET /api/sample/{sample_id}` | `SampleDetail`: the summary + `dir` (path string), `hole {centre_um, diameter_mm, fit_rms_um, n_points, arc_deg, fitted_at, status} \| null` (`status` is the engine's `hole_loop` text about the fit, e.g. `"edge_trace: partial trace (...)"` or `"arc 352 deg >= 330 deg"`; shown as is, no closure logic on screen), `counts {flags, candidates, visits, boundary_points}` from the sample view. Calibration and scan/map counts are not in the sample view, so the router does not serve them (it opens no sample file) |
 | `GET /api/sample/access?sample_id=` | `SampleAccess`, thin: `can_open_folder` (local request only) and `open_reason` (a session is open for another sample, so `sample_open` / `sample_new` would be refused). Everything else that turns a control off before a click (remote, role, control, session, running op; ui-spec 7.0) comes from the shared `GET /api/permissions?ops=a,b` -> `{op: {allowed, reason}}` (T-009b, backed by T-011 `check()`); the screen asks it for the five ops through one client function, `readPermissions()` in `features/sample/api.ts`. If that call fails, or leaves an op out, the op is off with `"Permission check unavailable"` (the one fallback for every screen; the shell's Abort and Lights off are not affected). The engine refuses on its own either way |
 | `GET /api/sample/{sample_id}/geometry` | `Geometry`: `{values: {key: GeometryValue}}` for every field in section 2 |
 | `GET /api/sample/{sample_id}/loading` | `LoadingState`: `session_id \| null`, `geometry {done, by, t}`, `person {done, by, t}`, `image {done, ok, by, t, why \| null, result_ref \| null}`, `confirmed: bool` (from the sample view, G6) |
 
-404 `ApiError` for an unknown `sample_id`. The current sample comes from `GET /api/state`, i.e. engine
+Refusals are `{code, message}` with the `X-DinoAF-Refusal` header: 404 `unknown_sample` (unknown or invalid id),
+503 `no_sample_store` (the server installed no sample seat), 401/423 from the shared access rules. The current sample comes from `GET /api/state`, i.e. engine
 `snapshot()["sample"]` = `{sample_id, reserved, session_id}` (T-011), and then from `sample_opened`; not from
 `sample.py`.
 
@@ -80,9 +81,9 @@ Response bodies are pydantic models; the TypeScript types are generated from Ope
 The two session refusals come from the engine as `preflight_failed`, not from the router as 403: the screen
 shows their `why` text. While a session is open, the list stays readable but other samples cannot be opened.
 
-`"Open folder"` is not an engine command (it writes no record): `POST /api/sample/{sample_id}/open-folder`,
-local requests only. Remote requests get 403 and the screen shows the path from `SampleDetail.dir` instead
-of the button. The action that opens Explorer is injected into the router (`app.state.open_folder`), and
+`"Open folder"` is not an engine command (it writes no record): `POST /api/sample/{sample_id}/open-folder`
+-> 204, `LocalOnly` (remote: 403 `remote_view`; also 404 `no_folder`, 500 `open_failed`). A remote screen shows
+the path from `SampleDetail.dir` instead of the button. The web side calls it with the shell's `client.post`. The action that opens Explorer is injected into the router (`app.state.open_folder`), and
 tests replace it with a recorder, so tests never open a window (docs/sessions.md). Role for it: any logged-in
 local user, never remote (G9, approved).
 
