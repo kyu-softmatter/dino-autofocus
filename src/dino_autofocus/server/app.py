@@ -12,8 +12,10 @@ Access scope (PLAN.md 5, D13, D16; the rules live in `server/api/__init__.py`):
   launcher has no login), and the stops `abort` / `lights_off` from the microscope PC.
 - A write (any method other than GET/HEAD/OPTIONS, and command messages on `/ws/events`) is
   accepted only from the microscope PC itself, and only from a page served by this server or
-  a loopback dev server (or a non-browser client), so a page in another tab cannot drive the
-  stage. D13: a logged-in remote viewer may send `abort` and nothing else (`remote_abort`).
+  a dev server named with `dev_origins` (or a non-browser client), so a page in another tab,
+  even one on another loopback port that carries the login cookie, cannot drive the stage.
+  WebSocket handshakes get the same origin check.
+- D13: a logged-in remote viewer may send `abort` and nothing else (`remote_abort`).
 - D16: map writes are refused on `/api/commands`; they go through `/api/map`.
 - The server stamps every engine Command with who sent it, from where and with which control
   grant (T-018); the browser never sees the grant.
@@ -53,6 +55,7 @@ from .api import (
     is_local,
     logged_in_refusal,
     login_state,
+    normalize_origin,
     origin_refusal,
     own_origin_refusal,
     remote_view,
@@ -176,6 +179,7 @@ def create_app(
     remote_view: bool = False,
     remote_abort: bool = True,
     allowed_hosts: Sequence[str] = (),
+    dev_origins: Sequence[str] = (),
     engine_name: str = "unknown",
     web_dist: Path | None = None,
 ) -> FastAPI:
@@ -185,7 +189,9 @@ def create_app(
     operations write through the server's one open ExperimentSession (`app.state.sessions`,
     set by the sessions router). Without it the sample operations refuse.
     `allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
-    launcher passes this PC's host names and addresses."""
+    launcher passes this PC's host names and addresses. `dev_origins` names page origins
+    besides this server's own that may write, e.g. the Vite dev server
+    `http://localhost:5173` (T-010); none by default."""
     stopper = EngineStopper(engine)
 
     @contextlib.asynccontextmanager
@@ -202,6 +208,7 @@ def create_app(
         install_sample_seat(engine, records, samples_root, app.state.sessions)
     app.state.remote_view = remote_view
     app.state.remote_abort = remote_abort
+    app.state.dev_origins = frozenset(normalize_origin(o) for o in dev_origins)
     app.state.stop_engine = stopper
     app.state.request_exit = None  # set by the launcher: makes the server process exit
 

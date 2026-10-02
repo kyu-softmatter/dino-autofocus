@@ -18,6 +18,7 @@ from .common import (
     WsError,
     WsEvent,
     WsFrame,
+    WsLock,
 )
 from .contract import (
     COMMAND_KINDS,
@@ -47,5 +48,5 @@ __all__ = [
     "EventKind", "EventOut", "FrameSource", "HardwareState", "Health", "LampState", "Lights",
     "OpSummary", "PermissionOut", "Positions", "RefusalDetail", "SampleRef", "SessionRef",
     "ShutdownAccepted", "ShutdownIn", "Snapshot", "WsAccepted", "WsCommand", "WsError",
-    "WsEvent", "WsFrame",
+    "WsEvent", "WsFrame", "WsLock",
 ]
