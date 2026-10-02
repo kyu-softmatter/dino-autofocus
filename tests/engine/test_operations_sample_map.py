@@ -323,3 +323,53 @@ def test_sample_map_on_the_mock_writes_mosaic_and_candidate_events(engine) -> No
         assert c["grade"] == "computed" and c["result_id"] == folder.name
     assert any(ev.kind == "map_changed" and ev.data["what"] == "candidates"
                for ev in e.sink.events if ev.op_id == op)
+
+
+def test_goto_xy_switches_pfs_off_before_the_retract(engine, monkeypatch) -> None:
+    fake = FakeBackend(pfs_enabled=True)
+    fake.state = 5  # 100x Oil: a 500 um move needs the retract
+    real_off = fake.pfs_off
+
+    def pfs_off(*, token):
+        fake.calls.append(("pfs_off",))
+        return real_off(token=token)
+
+    monkeypatch.setattr(fake, "pfs_off", pfs_off)
+    e = engine(fake)
+    scan_box(e.sample)
+    op = e.start("goto_xy", x_um=8526.0, y_um=571.6)
+    e.sink.wait(op, "confirm_required")
+    e.answer(op, "retract_then_move")
+    end = e.end(op)
+    assert end.kind == "finished", end.data
+    order = [c[0] for c in fake.calls if c[0] in ("pfs_off", "move_z", "move_xy")]
+    assert order == ["pfs_off", "move_z", "move_xy"]
+    assert end.data["summary"]["pfs"] == {"enabled_before": True, "enabled": False,
+                                          "in_range": "Out of Range"}
+
+
+def test_goto_xy_refuses_a_retract_when_pfs_is_unreadable(engine, monkeypatch) -> None:
+    fake = FakeBackend()
+    fake.state = 5
+
+    def broken():
+        raise OSError("PFS not answering")
+
+    monkeypatch.setattr(fake, "pfs", broken)
+    e = engine(fake)
+    scan_box(e.sample)
+    end = e.run("goto_xy", x_um=8526.0, y_um=571.6)
+    assert end.kind == "preflight_failed"
+    assert "PFS state unreadable" in checks_of(end)["pfs"]["why"]
+    assert not [c for c in fake.calls if c[0] in ("move_z", "move_xy")]
+    fake.state = 0  # at 4x the same 500 um move needs no retract, so PFS is not asked
+    assert e.run("goto_xy", x_um=8526.0, y_um=571.6).kind == "finished"
+
+
+def test_flags_submitted_together_get_different_ids(engine) -> None:
+    e = engine()
+    ops = [e.start("map_flag", x_um=8000.0 + k, y_um=500.0, name=f"f{k}") for k in range(6)]
+    ends = [e.end(op) for op in ops]
+    assert all(end.kind == "finished" for end in ends), [end.data for end in ends]
+    ids = [end.data["summary"]["flag"]["flag_id"] for end in ends]
+    assert len(set(ids)) == 6 and set(e.view().active_flags()) == set(ids)

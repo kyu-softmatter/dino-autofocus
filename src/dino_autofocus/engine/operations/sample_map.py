@@ -11,7 +11,8 @@ Operations (registered with the T-011 runner):
   scan_4x's body takes a per-tile focus hook.
 - `goto_xy{sample_id, x_um, y_um}`: click-move (ops-spec 6.3). Refused outside the latest
   scan's `allowed_box_um`. A move longer than the objective's long-move row with Z above the
-  retracted height asks `retract_then_move`, parks Z at `Z_SAFE_UM`, then moves XY through the
+  retracted height asks `retract_then_move`, switches PFS off (refused in preflight when PFS is
+  unreadable), parks Z at `Z_SAFE_UM`, then moves XY through the
   guards; Z is left retracted (never raised again here). Lights are not touched.
 - `map_flag{sample_id, x_um, y_um, name, note, replaces?}`, `map_flag_retire{sample_id,
   flag_id}`, `candidate_confirm{sample_id, candidate_id, note?}`, `candidate_reject{...}`:
@@ -29,6 +30,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -58,6 +60,10 @@ PREFIX = "sample_map"
 BRIGHTFIELD_EXPOSURE_MS = 12.0  # 2026-09-30 brightfield 4x (10 ms: median 2766 ADU)
 FOCUS_MODES = ("per_tile", "plane")
 SOURCE_CONFIRMED, SOURCE_REJECTED = "person_confirmed", "person_rejected"
+# record ops run beside each other (not exclusive). One lock covers reading the view (which
+# reads the legacy sample.json), regenerating the derived views, and picking the next flag id
+# with its write, so two ops at once neither read a half-written file nor share a flag id
+_SAMPLE_LOCK = threading.RLock()
 
 
 # -- the open session for a sample -------------------------------------------------------
@@ -97,11 +103,14 @@ class SampleRecorder:
         return self.session.sample_event(kind, **payload)
 
     def view(self) -> Any:
-        return read_sample(self.seat.store, self.sample_id, self.root, self.session.session_id)
+        with _SAMPLE_LOCK:
+            return read_sample(self.seat.store, self.sample_id, self.root,
+                               self.session.session_id)
 
     def changed(self, what: str, **data: Any) -> Any:
-        view = self.view()
-        write_derived_views(view, self.root, with_map=True)
+        with _SAMPLE_LOCK:
+            view = self.view()
+            write_derived_views(view, self.root, with_map=True)
         self._emit("map_changed", sample_id=self.sample_id, what=what, **data)
         return view
 
@@ -303,14 +312,26 @@ class GotoXyOp(Operation):
         box = self._box()
         if box is None:
             return [_check("scan_box", "no scan of this sample yet: run scan_4x or sample_map")]
+        b = self.ctx.backend
         bx = XYBox(*box["allowed_box_um"])
         inside = bx.contains(x, y)
-        p = self.ctx.backend.positions()
+        p = b.positions()
         readable = p.x_um is not None and p.y_um is not None and p.z_um is not None
-        return [_check("scan_box", None if inside else
-                       f"({x:.0f}, {y:.0f}) is outside the scanned area {box['allowed_box_um']}",
-                       box["result_id"]),
-                _check("position", None if readable else f"position unreadable: {p.errors}")]
+        checks = [_check("scan_box", None if inside else
+                         f"({x:.0f}, {y:.0f}) is outside the scanned area {box['allowed_box_um']}",
+                         box["result_id"]),
+                  _check("position", None if readable else f"position unreadable: {p.errors}")]
+        if readable:
+            long_um, row = XYAxis(b, bx).long_move_um()
+            if goto_plan(x, y, p, long_um, row)["retract_needed"]:
+                # the retract drives ZDrive: PFS must be readable to be switched off first
+                try:
+                    s = b.pfs()
+                    read, why = {"enabled": s.enabled, "in_range": s.in_range}, None
+                except Exception as exc:  # noqa: BLE001 - an unknown PFS state is not safe
+                    read, why = None, f"PFS state unreadable ({type(exc).__name__}: {exc})"
+                checks.append(_check("pfs", why, read))
+        return checks
 
     def run(self) -> dict:
         ctx, b = self.ctx, self.ctx.backend
@@ -321,7 +342,7 @@ class GotoXyOp(Operation):
         long_um, row = xy.long_move_um()
         here = b.positions()
         pl = goto_plan(x, y, here, long_um, row)
-        retracted = False
+        retracted, pfs = False, None
         if pl["retract_needed"]:
             ans = ctx.confirm("retract_then_move",
                               f"retract Z {here.z_um:.1f} -> {Z_SAFE_UM:g} um, then move to "
@@ -331,16 +352,24 @@ class GotoXyOp(Operation):
             if not ans.get("ok"):
                 raise Aborted("the operator did not retract Z")
             ctx.progress("retract", z_um=here.z_um, z_safe_um=Z_SAFE_UM)
-            focus = FocusAxis(b, registry_key(b.nosepiece()), allow_motion=True,
-                              sink=lambda ev: ctx.emit(ev.kind, **ev.data), op_id=ctx.op_id,
-                              sleep=ctx.sleep)
+            focus = FocusAxis.from_backend(b, allow_motion=True,
+                                           sink=lambda ev: ctx.emit(ev.kind, **ev.data),
+                                           op_id=ctx.op_id, sleep=ctx.sleep)
+            # PFS off before ZDrive moves (F5 order, change_objective, z_retract); raises if
+            # it stays on
+            before = b.pfs()  # require_pfs_quiet returns the state after switching off
+            focus.require_pfs_quiet(disable=True)
             focus.park_at(Z_SAFE_UM)
+            after = b.pfs()
+            pfs = {"enabled_before": before.enabled, "enabled": after.enabled,
+                   "in_range": after.in_range}
             retracted = True
         ctx.check()
         ctx.progress("move_xy", x_um=x, y_um=y)
         read = xy.goto(x, y)
         end = b.positions()
         return {"x_um": read[0], "y_um": read[1], "z_um": end.z_um, "retracted": retracted,
+                "pfs": pfs,
                 "distance_um": pl["distance_um"], "large_move": pl["large_move"],
                 "allowed_box_um": [box.x_min, box.x_max, box.y_min, box.y_max],
                 "z_left": "retracted" if retracted else "unchanged",
@@ -392,26 +421,27 @@ class MapFlagOp(_MapRecordOp):
 
     def run(self) -> dict:
         b, rec = self.ctx.backend, self._rec()
-        view = rec.view()
         old = self.args.get("replaces")
-        if (why := self._state_problem(view)) is not None:
-            raise GuardError(why)
-        fid = f"F{len(view.flags) + 1:03d}"
-        while fid in view.flags:
-            fid = f"F{int(fid[1:]) + 1:03d}"
         try:
             objective = registry_key(b.nosepiece())
         except Exception:  # noqa: BLE001 - a flag without a readable lens is still a flag
             objective = None
         z = b.positions().z_um
-        payload = {"flag_id": fid, "name": str(self.args.get("name") or fid),
-                   "note": str(self.args.get("note") or ""),
-                   "x_um": plain(self.args["x_um"], "x_um"),
-                   "y_um": plain(self.args["y_um"], "y_um"),
-                   "z_um": z, "objective": objective, "replaces": None if old is None else str(old)}
-        rec.event("flag_set", **payload)
-        if old is not None:
-            rec.event("flag_remove", flag_id=str(old), replaced_by=fid)
+        with _SAMPLE_LOCK:
+            view = rec.view()
+            if (why := self._state_problem(view)) is not None:
+                raise GuardError(why)
+            fid = f"F{len(view.flags) + 1:03d}"
+            while fid in view.flags:
+                fid = f"F{int(fid[1:]) + 1:03d}"
+            payload = {"flag_id": fid, "name": str(self.args.get("name") or fid),
+                       "note": str(self.args.get("note") or ""),
+                       "x_um": plain(self.args["x_um"], "x_um"),
+                       "y_um": plain(self.args["y_um"], "y_um"), "z_um": z,
+                       "objective": objective, "replaces": None if old is None else str(old)}
+            rec.event("flag_set", **payload)
+            if old is not None:
+                rec.event("flag_remove", flag_id=str(old), replaced_by=fid)
         rec.changed("flags", flag_id=fid)
         return {"flag": payload}
 
