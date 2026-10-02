@@ -20,8 +20,10 @@
   the map screen, `awaiting_return` and the last-session fields.
 - `D:\AutoFocus\samples\<sample_id>\` (legacy root, outside git) keeps derived views (`sample.json`,
   `map.json`) and large files, regenerated from the events so the old tools still work.
-- `sample_new` writes a `sample_created` event and assigns the id (`YYYYMMDD_HHMM_n`). It returns the id in
-  `finished.data.summary.sample_id`.
+- `sample_new` only reserves the id (`YYYYMMDD_HHMM_n`) and the legacy folder, and returns the id in
+  `finished.data.summary.sample_id`. It writes no event. When an experiment session opens for a sample
+  that has no events yet (engine sees it through `set_experiment_session`), the engine writes
+  `sample_created` as the first event in that session's `sample_events.jsonl` (manager decision, option (b)).
 
 ## Ops
 
