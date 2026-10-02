@@ -376,8 +376,12 @@ class MmDemoBackend:
         return Frame(img, time.time(), exposure_ms, p.x_um, p.y_um, p.z_um)
 
     def _z_read(self) -> float:
+        """The simulated z only while the demo stage still sits at the zone floor; if it
+        moved off (anything but this backend moved it), the physical z."""
         z = self._d().z_um()
-        return self._below_z if self._below_z is not None else z
+        if self._below_z is not None and abs(z - self.zmap.bench_range_um[0]) <= 0.01:
+            return self._below_z
+        return z
 
     def _property_info(self, label: str, name: str) -> PropertyInfo:
         core = self._d().core

@@ -128,6 +128,13 @@ def test_retract_zone_parks_at_demo_floor_and_reads_commanded(demo):
     assert demo.pfs().out_of_range
 
 
+def test_simulated_z_ends_when_the_demo_stage_moves_off_the_floor(demo):
+    demo.move_z(0.0, token=T)
+    demo.dev.core.setPosition("Z", -250.0)  # moved behind the backend's back
+    demo.dev.core.waitForDevice("Z")
+    assert demo.positions().z_um == pytest.approx(2750.0)
+
+
 def test_approach_steps_from_retract(demo):
     demo.move_z(0.0, token=T)
     n0 = len(demo.substitutions)
