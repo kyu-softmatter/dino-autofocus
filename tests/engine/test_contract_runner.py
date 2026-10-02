@@ -912,13 +912,95 @@ def test_bench_backend_refuses_an_approach_without_clearance(make, fake):
     r, sink = make()
     sink.wait("finished", r.submit(start("approach_op")))  # fake backend: not the bench
     info = fake.info()
-    info.kind = "mm-real"
+    info.bench = True  # T-033: keyed on the flag, not on the backend's name
     fake.info = lambda: info
-    blocked = r.submit(start("approach_op"))
-    failed = sink.wait("preflight_failed", blocked)
+    rb, sb = make()  # an engine started on the bench
+    blocked = rb.submit(start("approach_op"))
+    failed = sb.wait("preflight_failed", blocked)
     assert failed.data["checks"][0]["name"] == "approach_clearance"
-    sink.wait("finished", r.submit(start("approach_op", clear=True)))
+    assert failed.data["checks"][0]["read"] == {"bench": True}
+    sb.wait("finished", rb.submit(start("approach_op", clear=True)))
+
+    def broken():
+        raise OSError("core gone")
+
+    fake.info = broken  # cannot tell: treated as the bench
+    ru, su = make()
+    assert ru.snapshot()["backend_info"] is None
+    su.wait("preflight_failed", ru.submit(start("approach_op")))
     del fake.info
+
+
+def test_backend_info_is_read_once_at_start_and_serves_plan(make, fake):
+    class Escapes(Operation):
+        name = "escapes"
+
+        def plan(self) -> dict:
+            y_lo, y_hi = self.ctx.backend_info.stage_limits.y_um
+            return {"y_limit_um": y_hi}
+
+    reg = Registry()
+    reg.register(Escapes)
+    r, _ = make(registry=reg)
+    snap = r.snapshot()["backend_info"]
+    assert list(snap["stage_limits"]["y_um"]) == [-35000.0, 35000.0]
+    assert snap["bench"] is False and snap["ceiling_adu"] == 4095
+    json.dumps(r.snapshot())
+    calls = []
+    real = fake.info
+    fake.info = lambda: calls.append(1) or real()
+    try:
+        assert r.plan(start("escapes")) == {"op": "escapes", "args": {},
+                                            "plan": {"y_limit_um": 35000.0}}
+        assert calls == []  # no hardware read for the plan
+    finally:
+        del fake.info
+
+
+def test_control_checks_fail_closed(make):
+    class Explodes:
+        def __init__(self):
+            self.calls = 0
+
+        def check(self, grant):
+            self.calls += 1
+            raise RuntimeError("audit disk full")
+
+    class Raw:
+        def check(self, user_id, grant):
+            raise KeyError("grant table")
+
+    seat_target = Explodes()
+    r, _ = make(control=DeviceControlSeat(seat_target))
+    e = refuse(r, granted(start("steps")))
+    assert "control check failed (RuntimeError: audit disk full)" in e.why
+    assert "does not hold equipment control" in refuse(r, start("steps")).why  # no grant
+    assert seat_target.calls == 1  # a missing grant never reaches the control object
+    r2, sink2 = make(control=Raw())
+    assert "control check failed (KeyError" in refuse(r2, granted(start("steps"))).why
+    assert "control check failed" in r2.check(["steps"], {"user_id": USER, "control_grant":
+                                                          "g-1", "session_id": SESSION}
+                                              )["steps"]["reason"]
+    sink2.wait("finished", r2.submit(Command("lights_off")))  # stops never ask
+
+
+def test_light_payload_reads_little_while_aura_is_off(make, fake):
+    r, _ = make()
+    calls = []
+    real = fake.read_property
+    fake.read_property = lambda d, p: calls.append((d, p)) or real(d, p)
+    try:
+        r._read_lights()
+        assert calls == [("DiaLamp", "Intensity")]  # plus one light_state() read
+        calls.clear()
+        fake.aura_line_on("GREEN", 1, token=GUARD_TOKEN)
+        fake.props[("Aura", "GREEN")] = "1"
+        for line in ("VIOLET", "CYAN", "RED"):
+            fake.props[("Aura", line)] = "0"
+        assert r._read_lights()["aura"]["lines"] == {"GREEN": 1.0}
+        assert len(calls) == 1 + 4 + 1  # DiaLamp intensity, 4 line switches, 1 intensity
+    finally:
+        del fake.read_property
 
 
 def test_check_explains_what_is_allowed_now(make):
