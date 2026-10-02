@@ -1174,7 +1174,7 @@ def test_one_light_shape_for_events_snapshot_and_end_state(make, fake):
     assert fin.data["end_state"]["lights"] == {**changed, "off": True, "rule": "all_off"}
     r2 = r.submit(start("light_set"))
     lit = sink.wait("finished", r2).data["end_state"]["lights"]
-    assert lit["dialamp"]["state"] == "on" and lit["verified"] is None
+    assert lit["dialamp"]["state"] == "on" and lit["verified"] is True  # read back as left
     fake.aura_line_on("GREEN", 1, token=GUARD_TOKEN)
     assert r._read_lights()["aura"] == {"state": "on", "lines": {"GREEN": 1.0}}
 
@@ -1262,6 +1262,110 @@ def test_the_real_t018_control_object_gates_motion(make, tmp_path, monkeypatch):
                     control_grant=grant.token)
     refuse(r, again)  # released: the old grant no longer works
     sink.wait("finished", r.submit(Command("lights_off")))  # stops need none of it
+
+
+SHAPE = {"dialamp", "aura", "verified", "records"}
+
+
+def test_guards_light_events_leave_the_runner_in_the_one_shape(make, fake, records):
+    from dino_autofocus.engine.guards import OpScope
+
+    class GuardsLamp(Operation):
+        name = "guards_lamp"
+
+        def run(self) -> dict:
+            scope = OpScope(self.ctx.op_id, None,
+                            lambda ev: self.ctx.emit(ev.kind, **ev.data),
+                            backend=self.ctx.backend)
+            scope.lamp_on()  # guards emit {"readbacks": [...]}
+            self.ctx.progress("lamp on")
+            return {}
+
+    reg = Registry()
+    reg.register(GuardsLamp)
+    r, sink = make(registry=reg)
+    seen: list[Event] = []
+    r.subscribe(seen.append)
+    op_id = r.submit(start("guards_lamp"))
+    sink.wait("finished", op_id)
+    first = next(e for e in seen if e.kind == "light_changed" and e.op_id == op_id)
+    assert set(first.data) >= SHAPE and "readbacks" not in first.data
+    assert first.data["dialamp"] == {"state": "on", "intensity": None}  # from its readback
+    assert first.data["aura"]["state"] == "off" and first.data["verified"] is True
+    assert {x["device"] for x in first.data["records"]} == {"Aura", "DiaLamp"}
+    logged = [e for e in records[op_id].events if e.kind == "light_changed"]
+    assert all(set(e.data) >= SHAPE for e in logged)  # the record got the same shape
+
+
+def test_light_set_events_leave_the_runner_in_the_one_shape(make, fake, tmp_path):
+    from dino_autofocus.engine.operations.light_set import run_light_set
+
+    class ViaLightSet(Operation):
+        name = "via_light_set"
+
+        def run(self) -> dict:
+            def only_lights(ev: Event) -> None:
+                if ev.kind == "light_changed":
+                    self.ctx.emit(ev.kind, **ev.data)
+
+            run_light_set(self.ctx.backend, tmp_path, dict(self.args), only_lights)
+            return {}
+
+    reg = Registry()
+    reg.register(ViaLightSet)
+    r, sink = make(registry=reg)
+    seen: list[Event] = []
+    r.subscribe(seen.append)
+    op_id = r.submit(start("via_light_set", mode="brightfield"))
+    sink.wait("finished", op_id)
+    lit = [e for e in seen if e.kind == "light_changed" and e.op_id == op_id]
+    assert lit and all(set(e.data) >= SHAPE for e in lit)
+    kept = next(e for e in lit if e.data.get("switched_off") is False)  # its "left as set"
+    assert kept.data["dialamp"]["state"] == "on" and kept.data["aura"]["state"] == "off"
+    assert kept.data["why"] == "light_set leaves the light as set"
+    assert "state" not in kept.data
+
+
+def test_an_op_that_switches_off_itself_still_gets_a_verified_end_state(fake, tmp_path):
+    class OffInFinally(Operation):
+        """Like scan_4x since T-031b: lights on, then off in its own finally."""
+
+        name = "off_in_finally"
+
+        def run(self) -> dict:
+            try:
+                self.ctx.backend.lamp_on(token=GUARD_TOKEN)
+                return {}
+            finally:
+                self.ctx.backend.all_off()
+                if self.args.get("stick"):  # the lamp comes back on and ignores writes
+                    fake.lights["DiaLamp"] = "1"
+                    fake.stuck.add("DiaLamp")
+
+    reg = Registry()
+    reg.register(OffInFinally)
+    r = Runner(fake, registry=reg, control=AllowAll(), config=QUIET,
+               records=folder_records(lambda meta: tmp_path / "s1"))
+    r.start()
+    r.set_experiment_session(SESSION, 1000.0)
+    sink = Collect()
+    r.subscribe(sink)
+    try:
+        fin = sink.wait("finished", r.submit(start("off_in_finally")))
+        end = fin.data["end_state"]["lights"]
+        assert end["rule"] == "restore" and end["verified"] is True
+        assert [(x["device"], x["wanted"], x["read"]) for x in end["records"]] == [
+            ("Aura", "0", "0"), ("DiaLamp", "0", "0")]
+        summary = json.loads((Path(fin.data["record_dir"]) / "summary.json")
+                             .read_text(encoding="utf-8"))
+        assert summary["lights_off"]["verified"] is True
+        assert len(summary["lights_off"]["records"]) == 2
+        fin2 = sink.wait("finished", r.submit(start("off_in_finally", stick=True)))
+        bad = fin2.data["end_state"]["lights"]
+        assert bad["verified"] is False and bad["dialamp"]["state"] == "on"
+    finally:
+        fake.stuck.clear()
+        r.shutdown("test", timeout=T)
 
 
 def test_registry_refuses_reserved_and_duplicate_names():
