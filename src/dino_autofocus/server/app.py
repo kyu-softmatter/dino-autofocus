@@ -29,7 +29,7 @@ import importlib
 import logging
 import pkgutil
 import threading
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -199,6 +199,72 @@ def build_runner(backend: Any, *, records_root: str | Path, auth: AuthSeat | Non
     return Runner(backend, registry=reg, hardware=hw, **runner_kw), hw
 
 
+class SessionOpRecord:
+    """One operation's record inside the open experiment session (manager, T-009j): a line per
+    engine event in the session's `records/<op>.jsonl` (`layout.operation_record`), closed
+    with `end_operation`, which commits it with the session. If the session refuses a write
+    (closed under the op), the rest goes to the folder record instead and a warning is
+    logged, so the engine never loses a record and never sees an error from it."""
+
+    def __init__(self, session: Any, meta: dict, fallback: Callable[[dict], Any]) -> None:
+        self._session, self._meta, self._fallback_for = session, dict(meta), fallback
+        self._op = meta["op"]
+        self._fallback: Any = None
+        self.dir: str | None = str(session.layout.operation_record(self._op).parent)
+        self._write({"event": "operation_started", **{k: meta.get(k) for k in (
+            "op_id", "origin", "user_id", "session_id", "proposal_id", "confirmed_by")}})
+
+    def _switch(self, why: Exception) -> Any:
+        log.warning("op %s (%s): session record failed (%s); recording to the folder instead",
+                    self._meta.get("op_id"), self._op, why)
+        self._fallback = self._fallback_for(self._meta)
+        self.dir = getattr(self._fallback, "dir", None)
+        return self._fallback
+
+    def _write(self, obj: dict) -> None:
+        if self._fallback is None:
+            try:
+                self._session.record(self._op, obj)
+                return
+            except Exception as e:
+                self._switch(e)
+
+    def event(self, ev: Any) -> None:
+        if self._fallback is not None:
+            self._fallback.event(ev)
+            return
+        self._write({"event": "engine_event", "kind": ev.kind, "op_id": ev.op_id,
+                     "data": ev.data, "t": ev.t})
+        if self._fallback is not None:
+            self._fallback.event(ev)
+
+    def close(self, end: dict) -> None:
+        if self._fallback is None:
+            try:
+                self._session.end_operation(self._op, summary=dict(end))
+                return
+            except Exception as e:
+                self._switch(e)
+        self._fallback.close(end)
+
+
+def session_records(sessions: SessionSeat, fallback_parent: str | Path) -> Callable[[dict], Any]:
+    """The runner's `records=` seat: an op that runs in the open experiment session is
+    recorded in that session (committed with it); any other op (no session open: status,
+    hardware_scan) goes to `<fallback_parent>/<op>_<stamp>/`, outside git."""
+    from ..engine.runner import folder_records
+
+    folder = folder_records(lambda meta: Path(fallback_parent))
+
+    def make(meta: dict) -> Any:
+        session = sessions.session_for(meta.get("session_id"))
+        if session is not None and getattr(session, "writable", True):
+            return SessionOpRecord(session, meta, folder)
+        return folder(meta)
+
+    return make
+
+
 def install_sample_seat(engine: EngineAPI, records: Any, samples_root: Path | None,
                         sessions: SessionSeat) -> None:
     """The one seam between the server and the sample operations (T-027)."""
@@ -257,6 +323,7 @@ def create_app(
     records: Any = None,
     committer: Any = None,
     hardware: Any = None,
+    sessions: SessionSeat | None = None,
     samples_root: Path | None = None,
     remote_view: bool = False,
     remote_abort: bool = True,
@@ -272,6 +339,8 @@ def create_app(
     set by the sessions router). Without it the sample operations refuse. It is also on
     `app.state.records` for the sessions router. `committer` (the T-019 AutoCommitter the
     records are written with) is flushed and stopped when the app shuts down.
+    `sessions` lets the launcher hand in the `SessionSeat` it already gave the runner's
+    record seat (`session_records`), so both see the same open session.
     `hardware` (from `build_runner`) is kept on `app.state.hardware`: the gates the
     assistant's tools ask (`gates=app.state.hardware.check`, T-013b) and the screens read.
     `allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
@@ -295,7 +364,7 @@ def create_app(
     app.state.engine = engine
     app.state.agent_store = agent_store if agent_store is not None else MockStore()
     app.state.auth = auth if auth is not None else AuthSeat.throwaway()
-    app.state.sessions = SessionSeat()
+    app.state.sessions = sessions if sessions is not None else SessionSeat()
     app.state.records = records
     app.state.committer = committer
     app.state.interrupted_sessions = []  # closed at start-up, for the sessions screen
