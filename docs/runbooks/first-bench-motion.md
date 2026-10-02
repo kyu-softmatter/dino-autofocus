@@ -1,0 +1,190 @@
+# First motion on the stand (after the T-036 unlock)
+
+This is the order for the first time the app moves the Ti2 through `mm-real`. The rules come from the
+director (T-038); the code already refuses steps 4 and 5 on its own. Do the steps in order, and do not
+skip one because the code would catch it.
+
+Until the commit that sets `BENCH_MOTION = "UNLOCKED"` in `engine/backends/mm_real.py` is on main, every
+`mm-real` move is refused with "bench motion locked until clearance guards land (T-027, T-011)". Only
+step 1 can be done then. This lock is T-036, `docs/tasks/T-036-mm-real-motion-lock.md`.
+
+Values marked *provisional* are "unmeasured provisional" in the code and the records. None of them has
+been measured on this stand yet.
+
+Every step is done by the user at the microscope PC, watching the stand. Nobody runs these steps from
+another PC.
+
+**Never move the stand with `scripts/*`.** The old scripts (`change_objective.py`, `scan_4x.py`,
+`focus_100x.py`, `live_focus.py`, ...) bypass the guards and the T-036 lock, and open the configuration
+without the T-036b checks. Motion goes through the app, or by hand at the stand.
+
+## How to stop, at any step
+
+| What | Where | Effect |
+|---|---|---|
+| **Abort** button | common status bar, every screen (ui-spec 4) | aborts every running operation; lights go off on the exit path |
+| `Esc` | any screen of the app | same as Abort ("stopped by Esc"); the live stream keeps running |
+| **Lights off** button | common status bar | pre-empts: aborts the running operation, then switches all light off and reads it back |
+| Close every app tab on the microscope PC | browser | a watched operation aborts 10 s later (D14) |
+| Hardware stop | Ti2 controller / joystick at the stand | always available; use it if the screen does not respond |
+
+On the microscope PC, Abort and Lights off work without a login (PLAN D13: loopback stops always work).
+A remote screen can only send Abort, and it needs a login.
+
+Each move is checked against its readback. A move that reads back more than 0.25 um off in Z or 5 um
+off in XY (both tolerances *provisional*) stops the operation by itself. The record shows a `motion`
+event with `target_um`, `read_um` and the tolerance.
+
+## Step 1. Check the configuration on the microscope PC
+
+Who: the user, before any motion. Nothing moves in this step.
+
+1. Run the two read-only checks in `docs/microscope-pc-checklist.md`, section "실제 장비 백엔드 (T-033)":
+   - the `Select-String` line for `System/Startup` and `System/Shutdown`;
+   - the `check_load_settings` line.
+
+   Both read the file only. Neither opens the stand.
+2. Open and close the real backend once. Opening loads the configuration; with the lock on, it cannot
+   move anything:
+
+   ```powershell
+   uv run python -c "from dino_autofocus.engine.backends.mm_real import MmRealBackend; b = MmRealBackend(r'C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg'); i = b.open(); print(i.notes); print(b.config_record()); b.close()"
+   ```
+
+What you should see:
+- `open()` returns without `UnsafeConfig`. `UnsafeConfig` means a preset or a post-init line would set
+  ZDrive, XYStage, Nosepiece or PFS, or the config's Core role labels differ from the backend's
+  `DeviceNames`. If you see it, stop and tell the director's session. Do not edit the check to get past.
+- The checklist's `check_load_settings` line skips the role-label check. The `open()` above runs it, so
+  only the `open()` result counts as "passed".
+- `notes["bench_motion"]` reads `LOCKED` before the unlock commit and `UNLOCKED` after it.
+- `notes["stage_limits"]` reads "not read: user check needed".
+
+Write down:
+- whether a `ConfigGroup,System,Shutdown` line exists, and what it sets;
+- whether Micro-Manager applies it when the backend closes. The record does not say. To see it, give
+  Shutdown a harmless visible value (a light path) and watch it change on close (checklist row
+  "설정의 종료 프리셋").
+
+Enforced by: T-036b (Startup / post-init lines), T-036c (Shutdown), T-036d (device and role labels).
+Code: `mm_real.check_load_settings`, run in `open()` before anything is loaded.
+
+## Step 2. 4x only: Z to 0, then small XY moves
+
+Who: the user, watching the stand, with the Abort button and the hardware stop within reach.
+
+Only after the unlock commit, and only with the 4x (`1-Plan Apo LmbdD20 4x`, nosepiece State 0) in place.
+
+Before you start, read where the stand is. The hardware screen "지금 상태 (Step 0)" or a `status` read
+shows the lens, Z and PFS, and the status bar shows the position.
+- PFS must read off. Software never enables it.
+
+**By hand at the stand (the user):**
+1. Retract Z to 0 with the Ti2 controller. The hardware screen must then show ZDrive 0.0 (+- 0.25).
+2. If the 4x is not in place, turn the nosepiece to the 4x by hand. The hardware screen must then show
+   nosepiece State 0 and `1-Plan Apo LmbdD20 4x`. The 2026-09-30 session ended on the **100x Oil** with
+   ZDrive at 498 um; if the stand is still like that, clean the oil off the 100x after turning.
+
+The app's objective change cannot do this on the stand yet (see "blocked" below), so these two are not
+app moves.
+
+**Through the app (engine XY moves with `goto_xy`), with Z at 0. All values are stage um:**
+
+| # | Move | Expected readback | Rule that applies |
+|---|---|---|---|
+| a | (Z is at 0 from the hand retract) | ZDrive 0.0 +- 0.25 | `goto_xy` retracts Z first for a large move; here it is already retracted |
+| b | XY +100 in X from where it is | X +100 +- 5, Y unchanged | inside the XY box; short move |
+| c | XY -100 in X (back) | the start XY +- 5 | |
+| d | XY +100 in Y, then -100 in Y | the start XY +- 5 | |
+| e | XY +1000 in X, then back | the start XY +- 5 | under the 4x long-move row (10 mm, *provisional*), so Z may stay where it is; with Z at 0 it is retracted anyway |
+
+What each move must show:
+- The status bar position after every move.
+- A `motion` event in the log with `sent: true` and `read_um` within the tolerance.
+- The light stays off. These moves need no light.
+
+Keep every move well inside the stage. The real stage limits are unknown (`StageLimits` all None), so
+the backend cannot catch a move past the travel.
+
+**Blocked until T-032 stage 2 merges.** `goto_xy` comes with T-032 stage 2 (sample map). Per the spec it
+retracts Z first when a move is large. Until it merges, no registered operation moves XY on request; do
+the app moves above only after that.
+
+Why the existing operations cannot stand in:
+- `objective_change`, the one registered operation that retracts Z, always climbs back to 2800 afterwards.
+  On `mm-real` the runner refuses that climb in preflight until a bench clearance check exists (T-027b,
+  T-011b).
+- `scan_4x` is refused for the same reason.
+
+Do not use `scripts/*` instead.
+
+Enforced by:
+- T-036, the lock;
+- T-032 stage 2: `goto_xy`;
+- T-027b: `approach` caps, and `is_bench`, which makes every non-mock backend count as the bench;
+- T-011b: the bench clearance check in the runner's preflight;
+- `guards.XYAxis`: box, long-move rule, readback.
+
+## Step 3. No 100x Oil approach yet
+
+Who: the user. This is a rule to keep, not a move.
+
+Do not raise Z under the 100x Oil (0 -> 2800 -> sample window) until two questions in
+`docs/operations-spec.md` 10 are answered on this stand:
+- **Q13**: the safe approach step and its timing. The default `approach_step_um` is 10 um (*provisional*).
+- **Q20**: how long an XY move may be on the 100x before Z must retract (the oil film), and `z_safe`. Today
+  `Z_SAFE_UM` is 0 for every lens and the 100x long-move row is 156 um (*provisional*).
+
+What the screen shows if someone tries: the operation is refused in preflight on `mm-real`, because
+`approach` on the bench needs a clearance check.
+
+Enforced by:
+- T-027b and T-029: `approach` refuses above 2800 unless `FREE_WD_UM` covers the window, and needs a
+  clearance check on the bench;
+- T-011b: the runner's `approach_clearance` preflight;
+- `guards.OBJECTIVE_LIMITS`.
+
+## Step 4. No F5 objective change on the stand yet
+
+Who: the user. This is a rule to keep, not a move.
+
+Do not run an objective change with the F5 step-out (`escape`) on the stand until:
+- the stage X and Y travel limits are measured or read (checklist row "재물대 이동 한계", Q12);
+- the +Y 15 mm step-out (`ESCAPE_DY_UM = +15000`, *provisional*) is checked against them at the stand.
+
+What the screen shows: the objective change is refused in preflight with "the backend reports no stage
+Y limit; refusing the step-out". `mm-real` reports no stage limits today, so this already holds. Keep it
+that way: do not enter guessed limits to get past it.
+
+Note: the step-out runs only for a change *to* an immersion lens (oil or water). A dry-to-dry turn
+(e.g. 100x Oil -> 4x) has no step-out, so the missing limits do not stop it. It still needs Z retracted,
+PFS off and Out of Range, and (step 2 note) a clearance check for the climb back.
+
+Enforced by:
+- T-027 and T-029: the step-out as data, and the preflight Y-limit check;
+- T-029c: `objective_stepped_out` is written before the move, and `objective_stepped_back` only after the
+  readback confirms the stage is back;
+- `guards.step_out_target`.
+
+## Step 5. Lenses without a measured working distance stay refused
+
+Who: the user. This is a rule to keep, not a move.
+
+Only the 4x (20 mm) and the 100x Oil (130 um) have a `FREE_WD_UM` entry. 10x, 20x, 40x WI and 60x Oil are
+not rotation targets. Do not add an entry until the lens's free working distance is measured on this
+stand.
+
+What the screen shows: the objective change is refused with "free working distance not measured
+(<lens>; guards.FREE_WD_UM)".
+
+Enforced by: T-029, the `target_working_distance` preflight check, and `guards.FREE_WD_UM`.
+
+## After the session
+
+- Lights: the exit path switches them off. The status bar should read DiaLamp off and Aura off.
+- Leave Z retracted if you are not continuing.
+- Write down in the session record:
+  - which steps were done;
+  - every readback that was off;
+  - the Shutdown answer from step 1;
+  - any stop you had to use.
