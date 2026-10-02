@@ -137,3 +137,7 @@ def test_plan_shows_the_guard_ceiling():
     assert p["ceiling_um"] == 3200.0 and "ascending" in p["coarse"]
     with pytest.raises(ValueError):
         F.parse({"metric": "dino"})
+
+
+def test_default_exposure_is_the_2026_09_30_20_ms():
+    assert F.parse({}).exposure_ms == 20.0 == F.DEFAULT_EXPOSURE_MS
