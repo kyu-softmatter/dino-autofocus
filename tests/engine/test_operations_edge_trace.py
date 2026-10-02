@@ -1,11 +1,13 @@
 """edge_trace (operations-spec 8): the ported image functions, then whole traces on a simulated
 stage with a 6 mm hole (after scripts/sim_edge_track.py) behind FakeBackend.
 
-Time is simulated: the tracer's sleep advances a fake clock, so pacing costs no wall time."""
+Time is simulated in the direct runs: the tracer's sleep advances a fake clock. The runner
+tests at the end run in real time on short paths."""
 
 from __future__ import annotations
 
 import json
+import time
 
 import numpy as np
 import pytest
@@ -339,3 +341,133 @@ def test_declining_the_start_moves_nothing(sample) -> None:
     with pytest.raises(OperationAborted, match="did not start"):
         _run(w, sample, confirm=lambda k, t: k != "start_trace")
     assert not [c for c in w.calls if c[0] in ("move_xy", "light")]
+
+
+# ---------------------------------------------------------------- under the T-011 runner
+class _Live:
+    """A started T-011 runner over a HoleWorld, with the samples root in tmp_path."""
+
+    def __init__(self, world, root, monkeypatch) -> None:
+        from dino_autofocus.engine.runner import AllowAll, Runner, RunnerConfig, folder_records
+
+        monkeypatch.setattr(et.EdgeTraceOp, "samples_root", root)
+        self.r = Runner(world, control=AllowAll(), config=RunnerConfig(position_interval_s=None),
+                        records=folder_records(lambda meta: root / "records"))
+        self.events = []
+        self.r.subscribe(self.events.append)
+        self.r.start()
+        self.r.set_experiment_session(SID, 1000.0)
+
+    def cmd(self, kind, op_id="", op="", **args):
+        from dino_autofocus.engine.events import Command
+
+        return self.r.submit(Command(kind, op=op, op_id=op_id, args=args, user_id="u1",
+                                     session_id=SID))
+
+    def wait(self, pred, timeout=20.0):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            hit = next((e for e in list(self.events) if pred(e)), None)
+            if hit is not None:
+                return hit
+            time.sleep(0.02)
+        raise AssertionError(f"timed out; kinds {[e.kind for e in self.events][-12:]}")
+
+    def close(self) -> None:
+        self.r.shutdown("test teardown", timeout=5)
+        assert self.r.wait_idle(5)
+
+
+SID = "20261001_1200_1"
+
+
+@pytest.fixture
+def live(tmp_path, monkeypatch):
+    made = []
+
+    def build(world):
+        (tmp_path / SID).mkdir(exist_ok=True)
+        lv = _Live(world, tmp_path, monkeypatch)
+        made.append(lv)
+        return lv
+
+    yield build
+    for lv in made:
+        lv.close()
+
+
+def test_runner_edge_trace_confirm_update_and_finish(live, tmp_path) -> None:
+    w = HoleWorld(START)
+    lv = live(w)
+    op_id = lv.cmd("start", op="edge_trace", sample_id=SID, max_path_um=1000,
+                   speed_um_s=400)
+    ask = lv.wait(lambda e: e.kind == "confirm_required" and e.op_id == op_id)
+    assert ask.data["key"] == "start_trace"
+    lv.cmd("confirm", op_id, key="start_trace", ok=True)
+    lv.wait(lambda e: e.kind == "progress" and e.op_id == op_id
+            and e.data["status"] == "cal_result")
+    lv.cmd("update", op_id, speed_um_s=1000)
+    end = lv.wait(lambda e: e.op_id == op_id and e.kind in ("finished", "aborted", "error"))
+    assert end.kind == "finished", end.data
+    assert end.data["summary"]["why"] == "travel or time limit"
+    speeds = [e.data["data"] for e in lv.events if e.op_id == op_id and e.kind == "progress"
+              and e.data["status"] == "track_speed"]
+    assert speeds and speeds[-1]["speed_um_s"] == 1000.0
+    info = json.loads((tmp_path / SID / "sample.json").read_text(encoding="utf-8"))
+    assert info["stage_camera_calibration"]["objective"] == "4x"
+    assert ("light", "DiaLamp", "1") in w.calls and w.lights["DiaLamp"] == "0"
+    assert not [c for c in w.calls if c[0] == "move_z"]
+
+
+def test_runner_declined_start_is_aborted_without_moving(live) -> None:
+    w = HoleWorld(START)
+    lv = live(w)
+    op_id = lv.cmd("start", op="edge_trace", sample_id=SID)
+    lv.wait(lambda e: e.kind == "confirm_required" and e.op_id == op_id)
+    lv.cmd("confirm", op_id, key="start_trace", ok=False)
+    end = lv.wait(lambda e: e.op_id == op_id and e.kind in ("finished", "aborted", "error"))
+    assert end.kind == "aborted"
+    assert not [c for c in w.calls if c[0] in ("move_xy", "light") and c[-1] != "0"]
+
+
+def test_runner_abort_mid_trace_switches_off(live) -> None:
+    w = HoleWorld(START)
+    lv = live(w)
+    op_id = lv.cmd("start", op="edge_trace", sample_id=SID, speed_um_s=50)
+    lv.wait(lambda e: e.kind == "confirm_required" and e.op_id == op_id)
+    lv.cmd("confirm", op_id, key="start_trace", ok=True)
+    lv.wait(lambda e: e.kind == "progress" and e.op_id == op_id and e.data["status"] == "move")
+    lv.cmd("abort", op_id)
+    end = lv.wait(lambda e: e.op_id == op_id and e.kind in ("finished", "aborted", "error"))
+    assert end.kind == "aborted"
+    assert w.lights == {"DiaLamp": "0", "Aura": "0"}
+    assert any(e.kind == "progress" and e.op_id == op_id and e.data["status"] == "track_stop"
+               and e.data["data"]["why"] == "aborted" for e in lv.events)
+
+
+def test_runner_refuses_without_a_sample(live) -> None:
+    lv = live(HoleWorld(START))
+    op_id = lv.cmd("start", op="edge_trace")
+    fail = lv.wait(lambda e: e.op_id == op_id and e.kind == "preflight_failed")
+    assert any(c["name"] == "sample" and not c["ok"] for c in fail.data["checks"])
+
+
+def test_runner_bad_args_fail_preflight(live) -> None:
+    lv = live(HoleWorld(START))
+    op_id = lv.cmd("start", op="edge_trace", sample_id=SID, cal_um=500)
+    fail = lv.wait(lambda e: e.op_id == op_id and e.kind == "preflight_failed")
+    assert any(c["name"] == "args" and not c["ok"] for c in fail.data["checks"])
+
+
+def test_runner_uses_the_installed_sample_root(live, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    other = tmp_path / "seat_root"
+    (other / SID).mkdir(parents=True)
+    lv = live(HoleWorld(START))
+    lv.r.sample_seat = SimpleNamespace(samples_root=other)
+    op_id = lv.cmd("start", op="edge_trace", sample_id=SID)
+    ok = lv.wait(lambda e: e.op_id == op_id and e.kind in ("preflight_ok", "preflight_failed"))
+    sample_check = next(c for c in ok.data["checks"] if c["name"] == "sample")
+    assert sample_check["ok"] and sample_check["read"] == str(other / SID)
+    lv.cmd("abort", op_id)

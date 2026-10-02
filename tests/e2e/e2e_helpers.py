@@ -1,8 +1,8 @@
 """Helpers of the M1 mock bench (T-035); the fixtures are in tests/e2e/conftest.py.
 
-Test modules import from here (`from e2e_helpers import ...`), never from conftest: two
-test directories have a conftest.py, so `from conftest import` depended on load order
-(T-015d).
+Test modules import from here (`from e2e_helpers import ...`), never from a conftest
+module: several test directories have one, so importing it by name depended on load
+order (T-015d).
 
 The M1 mock bench (T-035): MockBackend, the T-011 runner, auth, records; temp folders only.
 

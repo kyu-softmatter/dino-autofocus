@@ -16,6 +16,7 @@ import {
   type Permissions,
   READ_ONLY_REMOTE,
   type StatusResultOut,
+  type StatusSummary,
 } from "./api";
 
 const NOT_REPORTED = "not reported";
@@ -37,7 +38,7 @@ export function blockedBy(
   const p = permissions[op];
   if (!p) return PERMISSION_CHECK_UNAVAILABLE;
   if (!p.allowed) return p.reason ?? PERMISSION_CHECK_UNAVAILABLE;
-  if (gate && !gate.enabled) return `${gate.op} is off: ${gate.reasons[0] ?? "no reason given"}`;
+  if (gate && !gate.enabled) return `${gate.op} is off: ${gate.reasons?.[0] ?? "no reason given"}`;
   return null;
 }
 
@@ -65,12 +66,14 @@ export function SummaryPanel({ out }: { out: HardwareProfileOut }) {
       </section>
     );
   }
-  const prev = out.previous;
-  const diff = !prev
+  const changed = out.previous?.changed ?? [];
+  const diff = !out.previous
     ? "no previous profile"
-    : prev.changed.length > 0
-      ? `changed: ${prev.changed.map((c) => c.key).join(", ")}`
+    : changed.length > 0
+      ? `changed: ${changed.map((c) => c.key).join(", ")}`
       : "no changes";
+  const configPath = typeof p.config?.path === "string" ? p.config.path : NOT_REPORTED;
+  const configSha = typeof p.config?.sha256 === "string" ? p.config.sha256 : null;
   return (
     <section aria-label="Detection summary">
       <h3>Detection summary</h3>
@@ -79,7 +82,7 @@ export function SummaryPanel({ out }: { out: HardwareProfileOut }) {
         <dt>Detected</dt><dd>{p.detected_at}</dd>
         <dt>Backend</dt><dd>{p.backend_kind}{p.bench === false ? " (not the bench)" : ""}</dd>
         <dt>Host</dt><dd>{p.host ?? NOT_REPORTED}</dd>
-        <dt>Config</dt><dd>{p.config?.path ?? NOT_REPORTED} ({short(p.config?.sha256)})</dd>
+        <dt>Config</dt><dd>{configPath} ({short(configSha)})</dd>
         <dt>Profile</dt><dd>{out.path ?? NOT_REPORTED} ({short(out.sha256)})</dd>
         <dt>Since previous</dt><dd>{diff}</dd>
       </dl>
@@ -217,6 +220,11 @@ export function ConfirmedPanel({ out, blocked, onSave }: {
   );
 }
 
+function needs(g: GateRow): string {
+  const r = g.requires;
+  return [...(r?.devices ?? []), ...(r?.objectives ?? []), ...(r?.confirmed ?? []), ...(r?.checks ?? [])].join(", ");
+}
+
 /** Off rows first, then by op. */
 export function sortGates(gates: GateRow[]): GateRow[] {
   return [...gates].sort((a, b) => Number(a.enabled) - Number(b.enabled) || a.op.localeCompare(b.op));
@@ -239,9 +247,8 @@ export function GatesPanel({ gates, selected, onSelect }: {
                   onClick={() => onSelect(g.op)}>
                 <td>{g.op}</td>
                 <td>{g.enabled ? "On" : "Off"}</td>
-                <td>{g.reasons.length > 0 ? <ul>{g.reasons.map((r) => <li key={r}>{r}</li>)}</ul> : ""}</td>
-                <td>{[...g.requires.devices, ...g.requires.objectives, ...g.requires.confirmed,
-                      ...(g.requires.checks ?? [])].join(", ")}</td>
+                <td>{(g.reasons ?? []).length > 0 ? <ul>{(g.reasons ?? []).map((r) => <li key={r}>{r}</li>)}</ul> : ""}</td>
+                <td>{needs(g)}</td>
               </tr>
             ))}
           </tbody>
@@ -261,7 +268,7 @@ export function CurrentStatePanel({ status, zUm, blocked, onRun }: {
   blocked: string | null;
   onRun: () => void;
 }) {
-  const s = status?.summary;
+  const s = status?.summary as StatusSummary | undefined;
   return (
     <section aria-label="Current state">
       <h3>Current state</h3>

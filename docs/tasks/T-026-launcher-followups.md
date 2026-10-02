@@ -33,3 +33,13 @@
   `taskkill /F` only after that, and write to the launcher log that a forced kill was needed.
 - The user check must warn before `build.ps1 -Force` overwrites the existing Desktop exe (it may be the
   user's own build from main).
+
+## T-026 stage 3 (AF 실행10, after T-009i merges; review AF 검토보조2) — backend choice in the launcher
+
+- `build.ps1 -Backend` (default `mock`), compiled into the exe like `-Port`; the exe passes `--backend <x>`
+  explicitly. `-Backend mm-real` is accepted only with an explicit `-Bench` switch, so a desktop build never starts
+  the bench backend by accident.
+- No fallback: a backend that cannot open exits non-zero; the launcher's existing "server stopped while starting"
+  dialog shows the server's message (headless test with the stub).
+- Runbook (`docs/runbooks/launcher.md`): backend choice, records folders per backend (records-mock vs records), and
+  that mm-real is for the microscope PC only.

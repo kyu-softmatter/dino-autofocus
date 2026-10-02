@@ -89,7 +89,7 @@ export type FitStatus = "none" | "this_session" | "previous_session";
 export function holeFitStatus(state: MapState | null): FitStatus {
   const h = state?.hole;
   if (!h) return "none";
-  if (h.fitted_at === null || state.session_started_at === null) return "previous_session";
+  if (h.fitted_at == null || state.session_started_at == null) return "previous_session";
   return h.fitted_at >= state.session_started_at ? "this_session" : "previous_session";
 }
 
@@ -107,12 +107,12 @@ export function clock(t: number | null | undefined): string {
 
 /** Retired flags stay in the record (T-027c) but are not in play. */
 export function isRetired(f: Flag): boolean {
-  return f.retired === true || f.retired_at !== null;
+  return f.retired === true || f.retired_at != null;
 }
 
 /** Flags as drawn: a flag replaced by a newer one is hidden; retired ones only on request. */
 export function visibleFlags(flags: Flag[], showRetired: boolean): Flag[] {
-  const replaced = new Set(flags.map((f) => f.replaces).filter((r): r is string => r !== null));
+  const replaced = new Set(flags.map((f) => f.replaces).filter((r): r is string => typeof r === "string"));
   return flags.filter((f) => !replaced.has(f.flag_id) && (showRetired || !isRetired(f)));
 }
 
@@ -121,6 +121,6 @@ export function visibleFlags(flags: Flag[], showRetired: boolean): Flag[] {
  * which is then hidden. Rejected ones only on request. Nothing is overwritten.
  */
 export function visibleCandidates(cands: Candidate[], showRejected: boolean): Candidate[] {
-  const decided = new Set(cands.map((c) => c.decides).filter((d): d is string => d !== null));
+  const decided = new Set(cands.map((c) => c.decides).filter((d): d is string => typeof d === "string"));
   return cands.filter((c) => !decided.has(c.candidate_id) && (showRejected || c.source !== "person_rejected"));
 }

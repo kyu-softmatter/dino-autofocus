@@ -71,3 +71,16 @@ Stage B, implementation (mock first):
   generated ones. Keep only what the schema does not cover (the shared reason texts, PATHS).
 - Owned paths: `web/src/features/console/` only. Run your own test files plus ruff (sessions.md b4a60e6).
 - `[검토요청 T-100b]` to AF 검토보조4.
+
+## Follow-up T-100c (after T-100b merges)
+
+- Owner: AF 실행18. Branch from main's hash after T-100b.
+- Rename the console's pydantic model `FileInfoOut` to `ConsoleFileInfoOut` in
+  `server/api/console.py` (the simulation router has a model of the same name, and gen:api then
+  emits a long disambiguated name). Update `tests/server/test_api_console.py` and any web use;
+  the web picks up the new name at 실행4's next regeneration, so keep a one-line alias in
+  `features/console/api.ts` until then.
+- Update the stale "Web types" note in `docs/screens/console.md` (generated types since T-100b).
+- Owned paths: `server/api/console.py`, `tests/server/test_api_console.py`,
+  `web/src/features/console/`, `docs/screens/console.md`. Own test files plus ruff.
+- `[검토요청 T-100c]` to AF 검토보조4.

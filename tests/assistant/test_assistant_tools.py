@@ -214,10 +214,9 @@ def test_proposal_book_states():
             "kind": "lights_off",
             "op": "",
             "args": {},
-            "origin": "assistant",
+            "origin": "human",
             "proposal_id": p.proposal_id,
             "conversation_id": "c",
-            "confirmed_by": "kyu",
             "user_id": "kyu",
             "session_id": "sess-1",
         }
