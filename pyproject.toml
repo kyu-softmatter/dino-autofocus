@@ -20,11 +20,13 @@ dependencies = [
 [dependency-groups]
 # httpx2: the HTTP client starlette.testclient wants since starlette 1.x
 dev = ["pytest>=8", "ruff>=0.6", "httpx2>=2.13"]
-# local web app back end (FastAPI); pillow encodes the live-view JPEGs
+# local web app back end (FastAPI); pillow encodes the live-view JPEGs; anthropic is the
+# assistant's Claude provider (T-013), imported only when that provider is switched on
 server = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pillow>=10",
+    "anthropic>=1.11.0",
 ]
 web = [
     "nodejs-wheel>=22,<23",
