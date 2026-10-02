@@ -6,9 +6,10 @@ Access scope (PLAN.md 5, D13, D16; the rules live in `server/api/__init__.py`):
 - The Host header must be in an allow-list (loopback names, plus this PC's names and
   addresses under remote view), so a page that rebinds its own domain to 127.0.0.1 is refused.
 - Every `/api/*` route and `/ws/*` needs a live login (the `dinoaf_session` cookie), except
-  `GET /api/health`, the login routes `POST /api/auth/{login, logout, lock, unlock,
-  activity, signup}`, `POST /api/shutdown` from the microscope PC (the launcher has no login),
-  and the stops `abort` / `lights_off` from the microscope PC.
+  `GET /api/health`, `GET /api/auth/setup`, the login routes `POST /api/auth/{login, logout,
+  lock, unlock, activity, signup}`, first-run `POST /api/auth/setup/admin` (from the microscope
+  PC and this server's own page only), `POST /api/shutdown` from the microscope PC (the
+  launcher has no login), and the stops `abort` / `lights_off` from the microscope PC.
 - A write (any method other than GET/HEAD/OPTIONS, and command messages on `/ws/events`) is
   accepted only from the microscope PC itself, and only from a page served by this server or
   a loopback dev server (or a non-browser client), so a page in another tab cannot drive the
@@ -53,6 +54,7 @@ from .api import (
     logged_in_refusal,
     login_state,
     origin_refusal,
+    own_origin_refusal,
     remote_view,
     server_action_why,
 )
@@ -75,7 +77,11 @@ READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 COMMANDS_PATH = "/api/commands"  # checked in the endpoint, which knows the command kind
 SHUTDOWN_PATH = "/api/shutdown"
-OPEN_READS = frozenset({"/api/health"})
+OPEN_READS = frozenset({"/api/health", "/api/auth/setup"})  # setup: first-run state (T-105)
+# reads a locked login still gets: the lock screen needs who is locked (T-105 `/me`)
+LOCKED_OK_READS = frozenset({"/api/auth/me"})
+# the one write that works with no login: making the first admin (T-105 handles 409 after)
+SETUP_ADMIN_PATH = "/api/auth/setup/admin"
 # remote viewers must be able to log in (PLAN.md 5); T-018 adds the routes in server/api/auth.py
 AUTH_OPEN_PATHS = frozenset(
     f"/api/auth/{name}" for name in ("login", "logout", "lock", "unlock", "activity", "signup")
@@ -129,7 +135,13 @@ def _http_refusal(request: Request) -> Refusal | None:
     route, which needs the command kind and checks in its handler."""
     path = request.url.path
     if request.method in READ_METHODS:
-        return None if path in OPEN_READS else logged_in_refusal(login_state(request))
+        if path in OPEN_READS:
+            return None
+        return logged_in_refusal(login_state(request), locked_ok=path in LOCKED_OK_READS)
+    if path == SETUP_ADMIN_PATH:
+        if not is_local(request):
+            return remote_view("remote view: first-run setup is done on the microscope PC")
+        return own_origin_refusal(request)
     if path in AUTH_OPEN_PATHS:
         return origin_refusal(request)
     if path == COMMANDS_PATH:

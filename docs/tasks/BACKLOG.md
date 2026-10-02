@@ -131,3 +131,14 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   query 0x8007000e, a .pyc read 0xc000070a, pure Python in engine/sample.py 0xc000070a) = machine-wide memory /
   commit-charge exhaustion, not a code bug (same code as docs/integration-notes.md). 0xc000070a / 0x8007000e in a
   test run means "rerun when the machine is quieter", not a failure. Run-limit rule proposed to the director.
+  Measured (AF 검토, after T-031b's run): commit charge 9.0 GB free of 81.9 GB, while physical RAM had 25.7 GB free.
+  The limit is commit (mostly the ~30 open sessions), so a full suite needs commit headroom; pausing does not free
+  it, closing a session or a bigger pagefile does (both are the user's).
+  Hangs (two, at 22-25 %): in collection order that band is tests/e2e, then test_backends_mm_demo / mm_demo_core
+  (native pymmcore demo adapters). Both hung only while other full suites ran; a lone run with
+  faulthandler_timeout=180 passed in 7 min (검토보조2, 13b75b3 + T-037). Unnamed until a dump is captured.
+- User (T-012 txt reader, 실행9): three small `trajectory.txt` samples from the WSL run folders, one per layout:
+  run-20260924-001-smoke-g2k2 (2D, 98 kB), run-20260923-201-v5-k3-o3 (3D, 134 kB), and the first ~2000 lines of an
+  ABP run with theta (e.g. run-20260923-042-small-s2). Put them outside both repos (soft-matter-agents stays
+  read-only), e.g. `D:\AutoFocus\sim_samples\<run_id>\trajectory.txt`, and give the WSL source path for
+  `DINO_AF_SIM_TRAJECTORY_ROOTS`.

@@ -201,3 +201,16 @@
    `test_server_rest.py::test_no_area_routers_yet` (`include_area_routers(FastAPI()) == []`) with a test that does
    not name areas: every module under `server/api/` not starting with "_" exposes a module-level `router` and is
    mounted at `/api/<name>`; a module without `router` raises TypeError (use a temporary test package).
+
+## T-009e (AF 실행7, after T-009d; review AF 검토보조3) — records store and server lifespan (from T-106, G10/G11)
+
+- G10: `create_app` puts the records store on `app.state.records` as well as `engine.sample_seat`, so the sessions
+  router does not reach into the engine.
+- G11, a `create_app` lifespan:
+  - Shutdown: flush and stop the AutoCommitter (after the engine shutdown, before exit).
+  - Start-up (manager decision, safe default): any experiment session still `open` (left by a crash) is closed
+    with `close(note="interrupted: server restart")` and is not handed to the runner. The operator continues it
+    with `continue_from` (T-106 "Continue"), so a restarted server never resumes motion context on its own. The
+    sample record (awaiting_return etc.) is read as usual when the operator continues.
+  - Tests: an open session at start-up becomes closed with that note; the AutoCommitter is flushed and stopped at
+    shutdown; the server-side Sessions holder is empty after start-up.
