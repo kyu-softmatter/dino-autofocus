@@ -1,7 +1,7 @@
 # T-027 WP-H: sample operations and geometry (engine side)
 
 - Owner: AF 실행1 (wrote `sample.py` in T-002-3)
-- Prerequisites: T-002 stages 2 and 3 merged. T-011 (runner) not required: implement the ops against the
+- Prerequisites: T-002 stages 2 and 3 merged, and T-019 merged (records/events.py fold, session.sample_event). T-011 (runner) not required: implement the ops against the
   T-002 operation lifecycle and register them when T-011 lands
 - Branch: `exec1/T-027-sample-ops`
 - Review: AF 검토보조1
@@ -48,3 +48,12 @@
 
 - Common criteria, trailer `Session: AF 실행1`. Tests use `tmp_path` for both the session folder and the
   legacy root. Send `[검토요청 T-027]` to AF 검토보조1.
+
+## Session and sample (manager decision, answers 실행1)
+
+- One sample per experiment session, as T-019 is written. `sample_open` and `sample_new` run with no session
+  open (they choose the sample for the next session; nothing moves) and refuse with `preflight_failed` when a
+  session is open for a different sample. `sample_geometry_set`, `loading_confirm_person` and
+  `loading_check_image` need the open session of that sample.
+- Build on the T-019 API. `geometry_set` and `loading_step` are new sample-event kinds written through
+  `session.sample_event()`. Do not edit `records/*`.

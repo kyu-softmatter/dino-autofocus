@@ -114,7 +114,8 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 - `light_set` and `lights_off` are available from M3, on the microscope PC in read-only mode. Nothing moves.
 - Gate light commands exactly like motion: operator logged in with the control token, experiment session open.
-  `lights_off` as a stop stays exempt (always accepted, also when locked or remote under D13).
+  `lights_off` as a stop stays exempt locally (any logged-in user, also when locked). Remote clients may
+  send `abort` only (D13, confirmed); remote `lights_off` is refused.
 - Allow-list unchanged: Aura lines; DiaLamp `State` and `Intensity` only. Every exit path turns the lights off.
 
 ## Graceful shutdown (from the T-016 merge review)
@@ -156,3 +157,11 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 - The control grant arrives attached to the Command by the server, never from the browser. The engine checks
   the grant against the control object (T-018) and ignores any token-like field supplied in command args.
+
+## From the objective screen contract (T-104 stage A)
+
+- Event kind `objective` (label, state, readback) in EVENT_KINDS.
+- `plan(cmd) -> dict`: run an operation's `plan` step only, with no hardware calls, for the screen's GET plan.
+- Session and sample rule (manager decision, answers 실행1): one sample per experiment session (T-019 as
+  written). `sample_open` and `sample_new` run with no session open (they pick the sample for the next
+  session; nothing moves); with a session open they refuse unless the sample is the session's own.

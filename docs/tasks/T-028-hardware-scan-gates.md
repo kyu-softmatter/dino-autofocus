@@ -29,3 +29,8 @@
 ## Done when
 
 - Common criteria, trailer `Session: AF 실행17`. Send `[검토요청 T-028]` to AF 검토보조1.
+
+## From the objective screen contract (T-104)
+
+- One engine call that returns, per nosepiece position, the lens label, whether it is selectable now, and the
+  reasons when it is not (`objective_options()`), so the screen does not assemble reasons itself.
