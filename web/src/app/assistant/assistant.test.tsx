@@ -232,7 +232,7 @@ describe("clientAssistantApi over the shared client", () => {
     expect(fake.sockets).toHaveLength(0); // no socket of its own
   });
 
-  it("a 401 on ask makes the shared client re-read the login", async () => {
+  it("a 401 on ask starts the shared re-login through postStream", async () => {
     const fake = streaming(
       { "/api/auth/me": refused(401, "login_required", "log in first") },
       () => new Response(JSON.stringify({ detail: { code: "login_required", message: "log in first" } }), { status: 401 }),
@@ -244,7 +244,8 @@ describe("clientAssistantApi over the shared client", () => {
       .ask({ question: "q", context: { area: "map" }, conversation_id: null }, () => {})
       .catch((e) => e);
     expect(err.status).toBe(401);
-    expect(failures).toEqual([401]);
+    expect(failures).toEqual([401]); // straight from postStream: no extra /api/auth/me read
+    expect(fake.calls.map((c) => c.path)).toEqual(["/api/assistant/ask"]);
   });
 
   it("a remote_view refusal on confirm turns the app read-only; another 403 does not", async () => {
