@@ -79,7 +79,7 @@ T-024 (실행17): 0.1 과 각 절의 호출 이름을 main `543c5ee` 의 `backen
   `scope.lamp_on()` / `scope.aura_line_on()` 을 거친다. `axis.require_pfs_quiet(disable=True)` 는 `pfs()` 로 읽고
   `pfs_off()` 로 끄는 가드 메서드다.
 - 임시 가드 값 (`guards.py`, 모두 "unmeasured provisional", 쓰인 모션 기록에도 표시): `Z_SAFE_UM` 0,
-  `RETRACTED_MAX_Z_UM` 1, `Z_TOL_UM` 0.25, `XY_TOL_UM` 5.0, `ESCAPE_DY_UM` None, 렌즈별 `OBJECTIVE_LIMITS`
+  `RETRACTED_MAX_Z_UM` 1, `Z_TOL_UM` 0.25, `XY_TOL_UM` 5.0, `ESCAPE_DY_UM` +15000 (F5 이탈 +Y 15 mm, PLAN v1.3), 렌즈별 `OBJECTIVE_LIMITS`
   (`long_xy_um`: 4x 10 mm, 100x Oil 156 µm, `approach_step_um`: 10 µm). 확인 항목은 `docs/microscope-pc-checklist.md`.
 - 백엔드의 z 는 언제나 벤치 좌표 (ZDrive µm, 창 2800–3200) 다. 데모 Z 처럼 원점이 다른 장치는 백엔드 안에서 오프셋한다.
 - 조명 메서드와 쓰기는 모두 `Readback` (또는 그 목록) 을 돌려준다. "readback 확인" 은 `verified` 가 모두 참인지 본다.
@@ -406,7 +406,7 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 | 엔진 인자 | 기본값 | 비고 |
 |---|---|---|
 | `target_state` | (필수) | Nosepiece State. UI 는 Label 로 고르고 State 로 보낸다 |
-| `escape_dy_um` | 없음 | Y 이탈 거리, 부호 있는 값 (부호가 방향). PLAN 은 15–20 mm, 방향은 사용자 확인 뒤 (PLAN v1.2, 10절). **값이 정해지기 전에는 기본값을 두지 않는다.** mock 은 자체 값 |
+| `escape_dy_um` | +15000 µm | 작업 인자가 아니라 가드 상수 `guards.ESCAPE_DY_UM`. **+Y, 15 mm 로 정해졌다** (사용자, PLAN v1.3: 15–20 mm 중 짧은 쪽). "unmeasured provisional" 이고 기록에도 그렇게 남는다. 이동 전에 재물대 Y 한계를 읽어 넘으면 거부한다 (`step_out_target`) |
 | `escape` | True | False 면 3·6 단계를 건너뛴다 (건조 렌즈끼리 바꿀 때) |
 | `approach_target_um` | 2800 | 7단계 단계 접근의 목표. 원본 `RETURN_Z_UM` |
 | `approach_step_um` | 미정 | 7단계 한 걸음. 10절 질문 |
@@ -415,7 +415,7 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 **2) plan** (보여 줄 것)
 
 - 시작 상태: 현재 렌즈, XY, Z, PFS.
-- 순서와 각 단계의 목표값: Z → 0, Y → `y + escape_dy_um`, Nosepiece → `target_state`, 수동 로딩, XY → 시작 XY,
+- 순서와 각 단계의 목표값: Z → 0, Y → `y + ESCAPE_DY_UM` (+15 mm), Nosepiece → `target_state`, 수동 로딩, XY → 시작 XY,
   Z → `approach_target_um` 까지 `approach_step_um` 걸음.
 - 새 렌즈의 액침 종류 (렌즈 표: 4x 건조, 100x Oil 오일, 40x WI 물) 와 작동 거리.
 
@@ -425,7 +425,7 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 |---|---|
 | `target_state` 가 현재 State 와 같다 | `preflight_failed("already on that objective")` (원본 2번) |
 | 목표 렌즈가 렌즈 표에 있다 (`info().objectives` 의 state 와 `free_wd_um`, 레지스트리 키) | 없거나 `free_wd_um` 이 None 이면 `preflight_failed`. **40x WI 는 작동 거리 값이 없어 거부한다** (PLAN 10절, soft-matter-agents 과제 026 5절) |
-| `escape=True` 인데 `escape_dy_um` 이 없다 | `preflight_failed("escape distance not set")`. 정해질 때까지는 `escape=False` 로만 쓸 수 있다 |
+| `escape=True` | 이탈 거리는 `ESCAPE_DY_UM` (+Y 15 mm, 임시). 이탈 위치는 아래 줄의 Y 한계 검사를 지나야 한다 |
 | 이탈 위치가 재물대 한계 안이다 | 한계는 `info().stage_limits.y_um` (F2 구성 파일에서 채움). None 이면 `preflight_failed` |
 | 실행 중인 다른 작업, 조명 | 다른 작업이 없어야 한다. 조명은 켜져 있으면 1단계에서 끈다 (`all_off()`) |
 | 이전 `objective_change` 가 "복귀 대기" 로 끝났다 | 4.2 의 5항 참고. 새 회전 대신 복귀(6·7)를 먼저 하라고 `preflight_failed` |
@@ -437,7 +437,7 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 | 1 현재 XY, Z, 렌즈 기록 | `positions()`, `nosepiece()`, `pfs()` | `started` 시작 상태에 `return_xy`, `z_before`, `objective_before` 저장 | 원본 1번 |
 | (1b) 소등 | `all_off()` | readback | 원본에 없음 |
 | 2 PFS off → Z 후퇴 → PFS Out of Range 확인 | `axis.require_pfs_quiet(disable=True)`, `axis.park_at(0.0)`, `positions()`, `pfs()` | Z readback 이 후퇴값 ± 허용 오차인지 확인. `pfs().out_of_range` 가 아니면 (In Range 또는 읽기 실패) 중단 (Z 는 0) | 원본 4–6번 |
-| 3 Y 이탈 | `xy.goto(x, y + escape_dy_um)` | **큰 XY 이동 가드: Z 후퇴가 readback 으로 확인될 때만.** 이동 직전에 Z 를 다시 읽는다. XY readback 비교 | 원본에 없음 |
+| 3 Y 이탈 | `xy.goto(*step_out_target(backend, x, y)[:2])` (= `y + ESCAPE_DY_UM`) | **큰 XY 이동 가드: Z 후퇴가 readback 으로 확인될 때만.** 이동 직전에 Z 를 다시 읽는다. XY readback 비교 | 원본에 없음 |
 | 4 렌즈 회전, 읽기 확인 | `rotate_nosepiece(backend, axis, target_state)` → label, 새 렌즈로 `FocusAxis` 다시 만들기, `info()` | `rotate_nosepiece` 가 Z 후퇴, PFS off·Out of Range, readback 을 확인한다. label 이 목표 렌즈와 다르면 중단. Z 는 0, XY 는 이탈 위치에 둔다 | 원본 7–8, 10번 |
 | 5 사용자: 액침액 로딩 → "로딩 완료" | `scope.ask("load_immersion", "Loading done", immersion=<oil\|water>)` 로 기다린다 (종류 `manual_step` 은 T-011) | 기다리는 동안 이 작업은 Z, XY, Nosepiece 에 명령을 보내지 않는다. 응답을 `manual_step` 기록으로 남긴다 | 원본 `--park` 후 사람이 오일 |
 | (5b) `park_only` 면 여기서 `finished(state="awaiting_return")` | | | 원본 `--park` 종료 |
@@ -703,7 +703,7 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 | `--step` | 2.0 µm | `step_um` | |
 | `--fine-half` | 3.0 µm | `fine_half_um` | |
 | `--fine-step` | 0.2 µm | `fine_step_um` | |
-| `--exposure` | 30.0 ms | `exposure_ms` | 9/30 결론은 20 ms (포화 없음) |
+| `--exposure` | 30.0 ms | `exposure_ms` | **엔진 기본값은 20 ms** (`focus_100x.DEFAULT_EXPOSURE_MS`, unmeasured provisional: 9/30 실행 한 번, 포화 없음) |
 | `--aura LINE PERCENT` | GREEN 1 | `aura_line`, `aura_percent` | |
 | `--metric` | `peak` | `metric` (`peak` / `vollath`) | `peak`: 4×4 비닝 최댓값 − 중앙값. 성긴 입자 시야용 |
 | `--out` | `D:\AutoFocus\samples\20260930_1849_1` (고정 샘플!) | `sample_id` | 원본 기본값은 9/30 샘플 폴더다. 엔진은 현재 샘플 |
@@ -779,7 +779,7 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 | `-202011` | 200 ms | 2890–2980 | 위 끝 피크, 오르지 않음 | 8a, 상향 연장 확인 |
 | `-202226` | 50 ms | 2965–3005 | 2982.0, 포화, 3005 근처 가짜 상승 (오일) | `sat` 기록, 이중 피크 경고 (아래) |
 | `-202507` | 30 ms | 2955–3015 | 2988.45 at (8164.7, 523.4), 오일 추가 후 깨끗한 피크 | |
-| `-202813` | 20 ms | 2968–3008 | 2989.42 at (7811.0, 1529.0), 포화 없음, 최대 3435 ADU | 20 ms 를 기본값 후보로 |
+| `-202813` | 20 ms | 2968–3008 | 2989.42 at (7811.0, 1529.0), 포화 없음, 최대 3435 ADU | 엔진 기본값 20 ms (임시) |
 
 - 이중 피크: 거친 곡선에 떨어진 극대가 두 개면 "check immersion oil" 경고를 낸다 (고전 판정, 모델 아님).
   이 경고가 나면 4.2 의 재로딩 변형으로 이어진다.
@@ -921,7 +921,7 @@ FocusAxis (`C:\agentic_microscope\hardware\focus.py`) 를 읽거나 벤치에서
 | Q9 | `open_core` 의 Startup 프리셋 (`LappMainBranch1 State 1`) 은 눈에 보이는 변화가 있는가 | 엔진이 config 를 한 번만 로드해도 되는지 |
 | Q10 | Aura 마스터 State 0 만으로 모든 라인이 꺼지는가 | `all_off()` 의 정의 |
 | Q11 | XYStage readback 의 정상 오차 범위 | XY readback 비교 허용 오차 |
-| Q12 | F5 의 Y 이탈 방향과 거리 (15–20 mm), 재물대 Y 한계, 샘플의 24 mm 변 방향 | `escape_dy_um` 의 값과 preflight 의 한계 검사 (PLAN 10절) |
+| Q12 | F5 의 Y 이탈 방향과 거리 (지금은 임시로 +Y 15 mm, PLAN v1.3), 재물대 Y 한계, 샘플의 24 mm 변 방향 | `escape_dy_um` 의 값과 preflight 의 한계 검사 (PLAN 10절) |
 | Q13 | 100x Oil 을 0 에서 2800 µm 로 올릴 때 안전한 `approach` 걸음과 걸린 시간. 원본처럼 2800 까지는 한 번에 가도 되는가 | `approach_step_um` 기본값 |
 | Q14 | `waitForDevice("Nosepiece")` 는 회전이 기계적으로 끝난 뒤 돌아오는가 | 4단계 readback 의 의미 |
 | Q15 | 100x 천장 `min(3200, centre + 0.4 × 130)` 은 어디서 계산되는가 (FocusAxis, 레지스트리). 기준이 plan 의 중심인가 | `focus_100x` plan 의 천장 표시와 상향 연장 범위 |
