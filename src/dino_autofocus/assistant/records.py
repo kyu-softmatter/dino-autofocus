@@ -28,6 +28,7 @@ RECORD_KINDS = (
     "proposal",  # a proposal card was created (nothing ran)
     "proposal_confirmed",  # a person confirmed it; the command went to the engine
     "proposal_rejected",  # a person rejected it
+    "confirm_refused",  # a confirmation without the permission (role, loopback; D16)
     "proposal_failed",  # confirmed, but the engine refused the submission
     "answer",  # the end of one question: text, stop reason, summed usage
     "error",  # the provider failed

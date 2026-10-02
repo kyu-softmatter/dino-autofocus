@@ -278,6 +278,18 @@ def _draft_focus_100x(_src: Sources, inp: dict) -> dict:
     }
 
 
+def _draft_map_flag(_src: Sources, inp: dict) -> dict:
+    args = {k: inp[k] for k in ("sample_id", "x_um", "y_um", "name") if k in inp}
+    args["note"] = inp.get("note", "")
+    return {
+        "command": {"kind": "start", "op": "map_flag", "args": args},
+        "summary": (
+            f"Add the flag {inp['name']!r} at x={_num(inp['x_um'])} um, y={_num(inp['y_um'])} um "
+            f"on the map of sample {inp['sample_id']}. Nothing moves."
+        ),
+    }
+
+
 # --------------------------------------------------------------------------- specs
 
 
@@ -445,6 +457,24 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
             ["sample_id", "reason"],
         ),
         _draft_focus_100x,
+    ),
+    ToolSpec(
+        "propose_map_flag",
+        "action",
+        "Propose adding a named flag at an XY position on a sample map. Only the operator on "
+        "the microscope PC can confirm it." + _ACTION_NOTE,
+        _obj(
+            {
+                "sample_id": _SAMPLE,
+                "x_um": {"type": "number"},
+                "y_um": {"type": "number"},
+                "name": {"type": "string"},
+                "note": {"type": "string"},
+                "reason": _REASON,
+            },
+            ["sample_id", "x_um", "y_um", "name", "reason"],
+        ),
+        _draft_map_flag,
     ),
 )
 
@@ -616,6 +646,26 @@ class ToolSet:
 
 PROPOSAL_STATES = ("proposed", "confirmed", "rejected", "failed")
 
+# Permission names are `auth.roles.Action` values (T-018), repeated so this package imports
+# alone. D16: map flag and candidate decisions need WRITE_MAP_FLAG (operator, loopback), the
+# same check as the map routes; abort and lights_off need nothing (rule 12); the rest OPERATE.
+PERM_OPERATE = "operate"
+PERM_STOP = "stop"
+PERM_WRITE_MAP_FLAG = "write_map_flag"
+MAP_WRITE_OPS = frozenset({"map_flag", "map_flag_retire", "candidate_confirm", "candidate_reject"})
+STOP_KINDS = frozenset({"abort", "lights_off"})
+
+# `allows(role, permission, local=...)`: `auth.roles.allows` once T-018 is merged
+Allows = Callable[..., bool]
+
+
+def required_permission(command: dict) -> str:
+    if command.get("kind") in STOP_KINDS:
+        return PERM_STOP
+    if command.get("op") in MAP_WRITE_OPS:
+        return PERM_WRITE_MAP_FLAG
+    return PERM_OPERATE
+
 
 @dataclass
 class Proposal:
@@ -654,10 +704,17 @@ class ProposalBook:
     proposal_id, conversation_id, confirmed_by, user_id, session_id) and returns the op_id.
     The server wires it to `EngineAPI.submit`; until T-011 adds those fields to `Command`
     the adapter there decides what to keep.
+
+    Before anything is submitted, `allows(role, required_permission(command), local=...)`
+    must say yes (D16, T-018). Without an `allows` only stops can be confirmed: a missing
+    check refuses rather than lets through. A refused confirmation leaves the card proposed.
     """
 
-    def __init__(self, submit: Callable[[dict], str] | None = None):
+    def __init__(
+        self, submit: Callable[[dict], str] | None = None, *, allows: Allows | None = None
+    ):
         self._submit = submit
+        self._allows = allows
         self._items: dict[str, Proposal] = {}
         self._lock = threading.Lock()
 
@@ -693,11 +750,35 @@ class ProposalBook:
             p.status, p.decided_by, p.decided_t, p.note = status, by, time.time(), note
             return p
 
-    def confirm(self, proposal_id: str, *, by: str, session_id: str | None = None) -> Proposal:
+    def check_permission(self, proposal_id: str, *, role: str | None, local: bool) -> str:
+        """The permission the proposal's command needs; PermissionError if `role` lacks it."""
+        p = self.get(proposal_id)
+        if p.status != "proposed":
+            raise ValueError(f"proposal {proposal_id} is already {p.status}")
+        perm = required_permission(p.command)
+        if perm == PERM_STOP:
+            return perm
+        if self._allows is None:
+            raise PermissionError(f"no permission check connected: {perm} cannot be confirmed")
+        if role is None or not self._allows(role, perm, local=local):
+            where = "on the microscope PC" if local else "from a remote browser"
+            raise PermissionError(f"role {role!r} may not confirm {perm} {where}")
+        return perm
+
+    def confirm(
+        self,
+        proposal_id: str,
+        *,
+        by: str,
+        role: str | None = None,
+        local: bool = False,
+        session_id: str | None = None,
+    ) -> Proposal:
         if not by:
             raise ValueError("a confirmation needs the person who confirmed")
         if self._submit is None:
             raise RuntimeError("no engine connected: a proposal cannot be confirmed")
+        self.check_permission(proposal_id, role=role, local=local)
         p = self._decide(proposal_id, "confirmed", by, "")
         cmd = {
             **p.command,

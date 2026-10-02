@@ -31,7 +31,15 @@ from typing import Any
 
 from .providers import PROVIDERS, Provider, TurnRequest, add_usage, make_provider
 from .records import GRADE_MODEL, RecordLog, model_graded
-from .tools import DATA_POLICIES, ProposalBook, Sources, ToolSet, check_policy
+from .tools import (
+    DATA_POLICIES,
+    Allows,
+    ProposalBook,
+    Sources,
+    ToolSet,
+    check_policy,
+    required_permission,
+)
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
@@ -207,12 +215,13 @@ class Assistant:
         provider: Provider | None = None,
         sources: Sources | None = None,
         submit: Callable[[dict], str] | None = None,
+        allows: Allows | None = None,
         records: RecordLog | None = None,
     ):
         self.config = config or AssistantConfig()
         self.provider = provider or make_provider(self.config.provider)
         self.tools = ToolSet(sources, policy=self.config.data_policy)
-        self.proposals = ProposalBook(submit)
+        self.proposals = ProposalBook(submit, allows=allows)
         self.records = records or RecordLog(self.config.records_dir)
         self._conversations: dict[str, Conversation] = {}
         self._lock = threading.Lock()
@@ -454,10 +463,39 @@ class Assistant:
 
     # ------------------------------------------------------------------ human decisions
 
-    def confirm(self, proposal_id: str, *, by: str, session_id: str | None = None) -> dict:
-        """A person confirmed on screen (the API takes this from loopback only). The command
-        goes to the engine, which applies its gates and guards as for any command."""
-        p = self.proposals.confirm(proposal_id, by=by, session_id=session_id)
+    def confirm(
+        self,
+        proposal_id: str,
+        *,
+        by: str,
+        role: str | None = None,
+        local: bool = False,
+        session_id: str | None = None,
+    ) -> dict:
+        """A person confirmed on screen. `role` is the logged-in user's role and `local`
+        whether the request came from the microscope PC (loopback); the command's permission
+        is checked with both (D16) before it goes to the engine, which then applies its gates
+        and guards as for any command. A refusal is recorded and leaves the card proposed."""
+        try:
+            perm = self.proposals.check_permission(proposal_id, role=role, local=local)
+        except PermissionError as e:
+            p = self.proposals.get(proposal_id)
+            self.records.write(
+                "confirm_refused",
+                conversation_id=p.conversation_id,
+                user_id=by,
+                session_id=session_id or p.session_id,
+                proposal_id=p.proposal_id,
+                command=p.command,
+                role=role,
+                local=local,
+                permission=required_permission(p.command),
+                reason=str(e),
+            )
+            raise
+        p = self.proposals.confirm(
+            proposal_id, by=by, role=role, local=local, session_id=session_id
+        )
         kind = "proposal_failed" if p.status == "failed" else "proposal_confirmed"
         self.records.write(
             kind,
@@ -466,6 +504,9 @@ class Assistant:
             session_id=session_id or p.session_id,
             proposal_id=p.proposal_id,
             command=p.command,
+            role=role,
+            local=local,
+            permission=perm,
             op_id=p.op_id,
             note=p.note,
             decided_t=p.decided_t,

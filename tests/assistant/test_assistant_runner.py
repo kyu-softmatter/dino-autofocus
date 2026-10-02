@@ -34,8 +34,17 @@ class FakeEngine:
         return {"position": {"x_um": 10.0, "y_um": 20.0, "z_um": 2950.0}, "running": None}
 
 
-def tool_use(name, **inp):
-    return {"type": "tool_use", "name": name, "input": inp}
+def fake_allows(role, action, *, local=False):
+    """The T-018 `auth.roles.allows` rules for the actions used here."""
+    if action in {"operate", "write_map_flag"} and not local:
+        return False
+    rank = {"viewer": 0, "operator": 1, "admin": 2}
+    need = {"operate": 1, "write_map_flag": 1, "stop": 0}
+    return rank[role] >= need[action]
+
+
+def tool_use(tool, **inp):
+    return {"type": "tool_use", "name": tool, "input": inp}
 
 
 def text(s):
@@ -50,6 +59,7 @@ def make(script, engine=None, **cfg):
         provider=provider,
         sources=Sources(snapshot=engine.snapshot),
         submit=engine.submit,
+        allows=fake_allows,
         records=RecordLog(),
     )
     return a, provider, engine
@@ -151,7 +161,7 @@ def test_engine_refusal_keeps_the_card_as_failed():
         engine=FakeEngine(refuse=True),
     )
     pid = a.ask("focus").proposals[0]["proposal_id"]
-    out = a.confirm(pid, by="kyu")
+    out = a.confirm(pid, by="kyu", role="operator", local=True)
     assert out["status"] == "failed" and "Z window" in out["note"]
     assert a.records.entries("proposal_failed")
 
@@ -473,3 +483,119 @@ def test_tool_definitions_are_byte_stable_across_toolsets():
     one = json.dumps(ToolSet().definitions()).encode()
     two = json.dumps(ToolSet(Sources(snapshot=lambda: {})).definitions()).encode()
     assert one == two
+
+
+# --------------------------------------------------------------------------- D16, rule 12
+
+
+def flag_proposal(a):
+    ans = a.ask(
+        "flag it",
+        context={"area": "map"},
+    )
+    return ans.proposals[0]["proposal_id"]
+
+
+def flag_assistant():
+    return make(
+        [
+            [
+                tool_use(
+                    "propose_map_flag",
+                    sample_id="s1",
+                    x_um=5.0,
+                    y_um=6.0,
+                    name="dust",
+                    reason="looks like dust",
+                )
+            ],
+            [text("proposed")],
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "role, local", [("viewer", True), ("viewer", False), ("operator", False), (None, True)]
+)
+def test_map_flag_proposal_needs_write_map_flag(role, local):
+    a, _, engine = flag_assistant()
+    pid = flag_proposal(a)
+    assert a.proposals.get(pid).command["op"] == "map_flag"
+    with pytest.raises(PermissionError):
+        a.confirm(pid, by="someone", role=role, local=local)
+    assert engine.submitted == [] and a.proposals.get(pid).status == "proposed"
+    (rec,) = a.records.entries("confirm_refused")
+    assert rec["permission"] == "write_map_flag" and rec["role"] == role
+
+
+def test_map_flag_proposal_confirmed_by_the_local_operator():
+    a, _, engine = flag_assistant()
+    pid = flag_proposal(a)
+    out = a.confirm(pid, by="kyu", role="operator", local=True)
+    assert out["status"] == "confirmed" and engine.submitted[0]["op"] == "map_flag"
+    assert a.records.entries("proposal_confirmed")[0]["permission"] == "write_map_flag"
+
+
+@pytest.mark.parametrize(
+    "op", ["map_flag", "map_flag_retire", "candidate_confirm", "candidate_reject"]
+)
+def test_every_map_write_needs_write_map_flag(op):
+    from dino_autofocus.assistant.tools import ProposalBook, required_permission
+
+    cmd = {"kind": "start", "op": op, "args": {}}
+    assert required_permission(cmd) == "write_map_flag"
+    seen = []
+
+    def allows(role, perm, *, local=False):
+        seen.append(perm)
+        return False
+
+    book = ProposalBook(lambda c: "op-1", allows=allows)
+    p = book.add(
+        conversation_id="c", tool="t", command=cmd, summary="s", reason="r", expected_gate={}
+    )
+    with pytest.raises(PermissionError):
+        book.confirm(p.proposal_id, by="kyu", role="operator", local=True)
+    assert seen == ["write_map_flag"] and p.status == "proposed"
+
+
+def test_motion_needs_operate_and_stops_need_nothing():
+    a, _, engine = make(
+        [
+            [
+                tool_use("propose_goto_xy", x_um=1.0, y_um=2.0, sample_id="s", reason="r"),
+                tool_use("propose_lights_off", reason="r"),
+            ],
+            [text("x")],
+        ]
+    )
+    move, off = (p["proposal_id"] for p in a.ask("q").proposals)
+    with pytest.raises(PermissionError):
+        a.confirm(move, by="v", role="viewer", local=True)
+    with pytest.raises(PermissionError):
+        a.confirm(move, by="op", role="operator", local=False)  # remote: read only
+    a.confirm(off, by="anyone", role=None, local=False)  # rule 12: stops always pass
+    a.confirm(move, by="op", role="operator", local=True)
+    assert [c["kind"] for c in engine.submitted] == ["lights_off", "start"]
+
+
+def test_without_a_permission_check_only_stops_confirm():
+    engine = FakeEngine()
+    a = Assistant(
+        provider=FakeProvider(
+            [
+                [
+                    tool_use("propose_scan_4x", sample_id="s", reason="r"),
+                    tool_use("propose_lights_off", reason="r"),
+                ],
+                [text("x")],
+            ]
+        ),
+        submit=engine.submit,
+        records=RecordLog(),
+    )
+    scan, off = (p["proposal_id"] for p in a.ask("q").proposals)
+    with pytest.raises(PermissionError, match="no permission check"):
+        a.confirm(scan, by="kyu", role="admin", local=True)
+    a.confirm(off, by="kyu")
+    assert [c["kind"] for c in engine.submitted] == ["lights_off"]
