@@ -30,3 +30,12 @@
 ## Done when
 
 - Common criteria, trailer `Session: AF 실행12`. Send `[검토요청 T-036] SAFETY top priority` to AF 검토보조2.
+
+## T-036b follow-up (from the T-036 pre-review): startup preset must not move the stand
+
+- `open()` loads the bench config, and Micro-Manager applies its System/Startup preset (and any preset run at load)
+  automatically. Before loading, parse the `.cfg` text and refuse with a named reason if any preset applied at load
+  sets a property of a MOTION_DEVICES device (ZDrive / XYStage position, Nosepiece State, PFS on/offset).
+  Light-path and shutter settings stay allowed. Record what the preset sets in `config_record()`.
+- Tests with small synthetic `.cfg` files (one clean, one with a motion property in Startup).
+- Owner AF 실행12, review AF 검토보조2, priority right after T-036 merges.
