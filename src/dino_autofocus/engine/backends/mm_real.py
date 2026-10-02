@@ -21,6 +21,14 @@ only when the backend opens; the piezo DLL only when the piezo is read.
   measured positions and closes. No position command, no security-level change: piezo moves
   are out of scope (operations-spec 9.2, M5).
 - Failed reads are fields (`Positions.errors`, `PropertyInfo.read_ok`, `PiezoReading.error`).
+- **SAFETY, bench motion is locked (T-036).** `BENCH_MOTION` ships as "LOCKED". While it is
+  anything but "UNLOCKED", every motion method (`move_z`, `move_xy`, `move_xy_rel`,
+  `set_nosepiece`) raises `BenchMotionLocked` before touching the core, so nothing that
+  guards' `move_to` / `park_at` / `approach` / `sweep` or `rotate_nosepiece` reaches can move
+  the stand. Reads, frames, streams, light on/off (D15) and PFS off stay allowed. Only a
+  reviewed commit that edits the constant lifts it: no argument, environment variable,
+  config file or setting is read for it. Lifting waits for T-027 (approach refuses without
+  clearance on bench) and the T-011 bench check, with the manager's and director's sign-off.
 
 Nothing here has run on the stand: what only the microscope PC can confirm is listed in
 `USER_CHECKS` (and `info().notes["user_check"]`).
@@ -63,8 +71,13 @@ from ..backend import (
 if TYPE_CHECKING:
     from pymmcore_plus import CMMCorePlus
 
-__all__ = ["BENCH_CONFIG", "BENCH_DEVICES", "DEMO_DEVICES", "USER_CHECKS", "DeviceNames",
-           "MmRealBackend", "MmUnavailable", "config_path"]
+__all__ = ["BENCH_CONFIG", "BENCH_DEVICES", "BENCH_MOTION", "DEMO_DEVICES", "USER_CHECKS",
+           "BenchMotionLocked", "DeviceNames", "MmRealBackend", "MmUnavailable", "config_path"]
+
+#: SAFETY (T-036): ships "LOCKED". Lifted only by a reviewed commit that edits this line,
+#: after T-027 and the T-011 bench check are on main. Nothing else may set or override it.
+BENCH_MOTION = "LOCKED"
+MOTION_LOCK_REASON = "bench motion locked until clearance guards land (T-027, T-011)"
 
 BENCH_CONFIG = Path(r"C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg")
 CONFIG_ENV = "DINO_AF_MM_CONFIG"
@@ -91,6 +104,20 @@ USER_CHECKS = (
 
 class MmUnavailable(RuntimeError):
     """pymmcore-plus, the Micro-Manager install or the config is missing, or loading failed."""
+
+
+class BenchMotionLocked(RuntimeError):
+    """A motion call on mm-real while `BENCH_MOTION` is locked (T-036)."""
+
+
+def _motion_state() -> str:
+    """Fail-safe: anything but exactly "UNLOCKED" is locked. The one read of BENCH_MOTION."""
+    return "UNLOCKED" if BENCH_MOTION == "UNLOCKED" else f"LOCKED: {MOTION_LOCK_REASON}"
+
+
+def _require_motion_unlocked(what: str) -> None:
+    if _motion_state() != "UNLOCKED":
+        raise BenchMotionLocked(f"{what}: {MOTION_LOCK_REASON}")
 
 
 @dataclass(frozen=True)
@@ -228,7 +255,8 @@ class MmRealBackend:
 
     def info(self) -> BackendInfo:
         core, d = self._c(), self.devices
-        notes = {"user_check": "; ".join(USER_CHECKS),
+        notes = {"bench_motion": _motion_state(),
+                 "user_check": "; ".join(USER_CHECKS),
                  "stage_limits": "not read: user check needed",
                  "xy_timeout_s": f"{DEFAULT_XY_TIMEOUT_S:g}, {PROVISIONAL}",
                  **{f"aura.{ln}": PROVISIONAL for ln in AURA_LINES
@@ -444,8 +472,9 @@ class MmRealBackend:
     def all_off(self) -> list[Readback]:
         return [*self.aura_off(), *self.lamp_off()]
 
-    # -- motion: engine.guards only
+    # -- motion: engine.guards only, and locked while BENCH_MOTION is (T-036)
     def move_z(self, z_um: float, *, token: MotionToken) -> float:
+        _require_motion_unlocked("move_z")
         require_token(token)
         z = float(z_um)
         if not math.isfinite(z):
@@ -459,6 +488,7 @@ class MmRealBackend:
                 timeout_s: float | None = None) -> tuple[float, float]:
         """Move and wait up to `timeout_s` (default `DEFAULT_XY_TIMEOUT_S`), not the core's
         fixed wait. On timeout the stage is stopped and TimeoutError raised."""
+        _require_motion_unlocked("move_xy")
         require_token(token)
         x, y = float(x_um), float(y_um)
         if not (math.isfinite(x) and math.isfinite(y)):
@@ -477,12 +507,14 @@ class MmRealBackend:
 
     def move_xy_rel(self, dx_um: float, dy_um: float, *, token: MotionToken,
                     timeout_s: float | None = None) -> tuple[float, float]:
+        _require_motion_unlocked("move_xy_rel")
         require_token(token)
         x, y = self._c().getXYPosition(self.devices.xy)  # from the read
         return self.move_xy(float(x) + float(dx_um), float(y) + float(dy_um), token=token,
                             timeout_s=timeout_s)
 
     def set_nosepiece(self, state: int, *, token: MotionToken) -> Readback:
+        _require_motion_unlocked("set_nosepiece")
         require_token(token)
         n = len(self._labels())
         if not 0 <= int(state) < n:
