@@ -25,3 +25,15 @@
 
 - Common criteria, trailer `Session: AF 실행6`. Send `[검토요청 T-035]` (first version with what exists) to
   AF 검토보조1; later steps as follow-up commits.
+
+## T-035b (AF 실행6; review AF 검토보조1) — lower the e2e memory footprint
+
+- Crash frames now point at tests/e2e (검토보조3, three full runs on 121456c/336ec69): scipy.special import via
+  mock_world.py:47 while collecting tests/e2e/conftest.py:35; `git` subprocess in GitFolderStore.ensure_repo from the
+  `bench`/`day` fixtures (conftest.py:201, 368, 378); and edge_trace in test_e2e_m1_day.py:166. Runs before tests/e2e
+  landed had no faults. The machine's commit charge is the limit (BACKLOG), and e2e is the heaviest part.
+- Reduce it: one records repo per module or session (not `git init` per test fixture), reuse one mock world per
+  module, and import scipy lazily where only some tests need it (mock_world.py is T-021's; a lazy import there is
+  allowed in this task, imports only). Measure peak memory before and after (e.g. psutil in a conftest hook or
+  `pytest --durations`), and put the numbers in the review request.
+- Keep coverage the same. Done when tests/e2e passes alone and in the full run, and the peak is lower.
