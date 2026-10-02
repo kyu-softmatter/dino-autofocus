@@ -8,6 +8,7 @@ import pkgutil
 import subprocess
 import sys
 
+import pytest
 from engine_fakes import FakeBackend
 
 import dino_autofocus.engine.operations as ops
@@ -38,6 +39,7 @@ def test_every_operation_is_registered() -> None:
 
 
 def test_a_server_built_by_create_app_knows_every_operation(tmp_path) -> None:
+    pytest.importorskip("fastapi")  # the server group
     from dino_autofocus.server import create_app
 
     r = Runner(FakeBackend(), config=RunnerConfig(position_interval_s=None))
@@ -51,6 +53,7 @@ def test_a_server_built_by_create_app_knows_every_operation(tmp_path) -> None:
 def test_importing_the_server_alone_registers_them_and_touches_nothing(tmp_path) -> None:
     """A fresh interpreter that imports only the server app (as the launcher does) sees every
     operation; the import writes no file."""
+    pytest.importorskip("fastapi")  # the server group
     code = ("import json; import dino_autofocus.server.app; "
             "from dino_autofocus.engine.runner import OPERATIONS; "
             "print(json.dumps(OPERATIONS.names()))")

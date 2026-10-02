@@ -289,7 +289,7 @@ def test_every_known_lens_label_has_a_table_row(label, key):
 def test_config_lens_names_map_to_table_rows():
     from pathlib import Path
 
-    import yaml
+    yaml = pytest.importorskip("yaml")  # the synth extra
 
     root = Path(__file__).resolve().parents[2] / "configs"
     names = [yaml.safe_load(p.read_text(encoding="utf-8"))["system"]["name"]
