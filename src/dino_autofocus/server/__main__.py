@@ -53,16 +53,21 @@ log = logging.getLogger("dino_autofocus.server")
 
 
 class PlaceholderEngine:
-    """Stands in for the engine runner. No hardware, no backend, no decisions."""
+    """Stands in for the engine runner. No hardware, no backend, no decisions. Two cameras, as
+    on the dual-camera stand: the red one sees blobs 0-2 of the blue one plus two of its own,
+    so a merged view shows both overlap and difference."""
 
     frame_hz = 10.0
     position_every_s = 1.0
+    #: camera label -> blob indices it shows (0-4 shared phases, 5-6 red only)
+    CAMERAS = {"Kinetix_blue": (0, 1, 2, 3, 4), "Kinetix_red": (0, 1, 2, 5, 6)}
 
     def __init__(self, shape: tuple[int, int] = (1200, 1600)) -> None:
         self._sinks: list[Callable[[Event], None]] = []
         self._lock = threading.Lock()
         self._ticker: threading.Thread | None = None
         self._frame: tuple[np.ndarray, dict[str, Any]] | None = None
+        self._frames: dict[str, tuple[np.ndarray, dict[str, Any]]] = {}
         # the runner's one light shape (engine/runner.py `_light_payload`)
         self._lights = {"dialamp": {"state": "off", "intensity": None},
                         "aura": {"state": "off", "lines": {}}, "verified": True, "records": []}
@@ -134,6 +139,9 @@ class PlaceholderEngine:
     def latest_frame(self) -> tuple[np.ndarray, dict[str, Any]] | None:
         return self._frame
 
+    def latest_frames(self) -> dict[str, tuple[np.ndarray, dict[str, Any]]]:
+        return dict(self._frames)
+
     def _tick(self) -> None:
         last_position = 0.0
         while True:
@@ -142,20 +150,23 @@ class PlaceholderEngine:
                     self._ticker = None
                     return
             now = time.time()
-            self._frame = (self._picture(now), {"t": now, **self._positions,
-                                                "bit_depth": 12, "placeholder": True})
+            frames = {cam: (self._picture(now, blobs), {
+                "t": now, **self._positions, "bit_depth": 12, "placeholder": True,
+                "camera": cam}) for cam, blobs in self.CAMERAS.items()}
+            self._frames = frames
+            self._frame = frames["Kinetix_red"]
             self._emit("frame_ready")
             if now - last_position >= self.position_every_s:
                 self._emit("position", **self._positions)
                 last_position = now
             time.sleep(max(0.0, now + 1.0 / self.frame_hz - time.time()))
 
-    def _picture(self, t: float) -> np.ndarray:
+    def _picture(self, t: float, blobs: tuple[int, ...] = (0, 1, 2, 3, 4)) -> np.ndarray:
         h, w = self._shape
         self._n += 1
         img = self._noise[self._n % 2].copy()
         sigma, r = 40.0, 160  # each drifting blob is drawn only within 4 sigma of its centre
-        for k in range(5):
+        for k in blobs:
             cy = int(h * (0.5 + 0.3 * np.sin(0.3 * t + 1.3 * k)))
             cx = int(w * (0.5 + 0.3 * np.cos(0.2 * t + 1.7 * k)))
             y0, y1, x0, x1 = max(cy - r, 0), min(cy + r, h), max(cx - r, 0), min(cx + r, w)

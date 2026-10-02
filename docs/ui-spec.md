@@ -325,7 +325,7 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 |---|---|---|---|
 | 명령 `start` / `abort` / `confirm` / `lights_off` / `update` | REST `POST`, 응답은 접수 결과 (`op_id` 또는 거부 사유). 결과는 이벤트로 온다 | `POST /api/commands` (T-009) | **거부** (403). 예외 (D13): 이 PC (loopback) 에서는 `abort` 와 `lights_off` 를 로그인 없이 받는다. 원격에서는 로그인한 사용자의 `abort` 만 받고, 원격 `lights_off` 를 포함한 나머지는 거부 (PLAN 6절 12항) |
 | 이벤트 (아래 표 전부) | WebSocket, JSON 한 줄씩 | `/ws/events` (T-009) | 허용 (구독만) |
-| 라이브 영상 | WebSocket, 바이너리 JPEG (약 800 px, 서버에서 비닝, 목표 10 fps) + 그 프레임의 `frame_id` | `/ws/frames` (T-009) | 허용 |
+| 라이브 영상 | WebSocket, 바이너리 JPEG (약 800 px, 서버에서 비닝, 카메라마다 목표 10 fps) + 그 프레임의 `frame_id` 와 `camera`. 듀얼캠이면 두 카메라가 같은 소켓으로 오고 화면은 나란히·합쳐서(blue 녹색, red 마젠타)·하나씩 보여 준다 | `/ws/frames` (T-009) | 허용 |
 | 현재 상태 한 번에 읽기 (접속 직후, 재접속 후) | REST `GET`, 엔진 `snapshot()` | `/api/state` (T-009) | 허용 |
 | 기록 읽기 (샘플 목록, `sample.json`, 스캔 결과, 원본 프레임 한 장) | REST `GET` | `/api/<영역>/...` (제안, `server/api/<영역>.py`) | 허용 |
 

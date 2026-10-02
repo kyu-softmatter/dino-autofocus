@@ -208,6 +208,44 @@ body {
   background: #000;
 }
 
+.live-side {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.live-panel {
+  margin: 0;
+}
+
+.live-panel .live-frame {
+  width: 100%;
+  height: auto;
+}
+
+.live-modes {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.live-modes button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.live-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.live-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
 .notice-warn {
   border-color: var(--warn);
   color: var(--warn);

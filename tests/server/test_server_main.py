@@ -4,6 +4,8 @@ import json
 import subprocess
 import sys
 
+import numpy as np
+
 from dino_autofocus.server.__main__ import PlaceholderEngine, main
 from dino_autofocus.server.schemas import Command
 
@@ -36,6 +38,15 @@ def test_import_pulls_no_heavy_modules():
         "assert not bad, bad\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_placeholder_engine_has_two_cameras_that_share_some_blobs():
+    eng = PlaceholderEngine(shape=(600, 800))  # blobs are sigma 40 px: a small frame saturates
+    t = 12.3
+    blue, red = (eng._picture(t, eng.CAMERAS[c]) for c in ("Kinetix_blue", "Kinetix_red"))
+    assert blue.shape == red.shape == (600, 800) and blue.dtype == red.dtype == np.uint16
+    assert not np.array_equal(blue, red)
+    assert sorted(eng.CAMERAS) == ["Kinetix_blue", "Kinetix_red"]
 
 
 def test_placeholder_engine_moves_nothing():

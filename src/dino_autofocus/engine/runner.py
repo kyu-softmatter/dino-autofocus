@@ -594,6 +594,7 @@ class Runner:
         self._info: Any = None  # BackendInfo, read once at start()
         self._info_dict: dict | None = None
         self._latest: tuple[Any, dict] | None = None  # newest frame (image, meta)
+        self._latest_by_camera: dict[str, tuple[Any, dict]] = {}  # newest per camera
         self._frame_ids = itertools.count(1)
         self._last_shutdown = self._read_state(LAST_SHUTDOWN)  # ui-spec 5.2, first screen
         self._unclean: dict | None = None
@@ -777,6 +778,12 @@ class Runner:
         meta with `frame_id`), or None before the first one. Nothing is queued."""
         return self._latest
 
+    def latest_frames(self) -> dict[str, tuple[Any, dict]]:
+        """MultiFrameSource for `/ws/frames`: the newest frame of each camera, keyed by the
+        camera label ("" for a frame that names none). Dual-camera setups send both."""
+        with self._lock:
+            return dict(self._latest_by_camera)
+
     def publish_frame(self, frame: Frame, source_op: str = "", op_id: str = "") -> int:
         """Called by operations (`ctx.publish_frame`) and the acquisition stream: keep it as
         the newest frame and announce it with a `frame_ready` carrying meta, never pixels."""
@@ -784,6 +791,7 @@ class Runner:
             frame_id = next(self._frame_ids)
             meta = {"frame_id": frame_id, **frame.meta(), "source_op": source_op}
             self._latest = (frame.image, meta)
+            self._latest_by_camera[frame.camera or ""] = self._latest
         self._emit(Event("frame_ready", op_id, dict(meta)))
         return frame_id
 

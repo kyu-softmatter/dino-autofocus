@@ -178,8 +178,375 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reject */
+        /**
+         * Reject
+         * @description Clearing a card needs the same permission as confirming it (T-013c, D16).
+         */
         post: operations["reject_api_assistant_proposals__proposal_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup State
+         * @description Whether the first admin still has to be made. Never says which email is configured.
+         */
+        get: operations["setup_state_api_auth_setup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/setup/admin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create First Admin
+         * @description First run only, on the microscope PC only: the first admin, then logged in.
+         */
+        post: operations["create_first_admin_api_auth_setup_admin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signup
+         * @description Name, email, password only. The account waits for an admin, who sets its role (D12).
+         */
+        post: operations["signup_api_auth_signup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description Ends the login (and frees device control if it held it). Fine without a login.
+         */
+        post: operations["logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lock */
+        post: operations["lock_api_auth_lock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unlock */
+        post: operations["unlock_api_auth_unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activity
+         * @description Someone is working: keeps the idle lock from firing. A locked login stays locked.
+         */
+        post: operations["activity_api_auth_activity_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who Am I */
+        get: operations["who_am_i_api_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Accounts */
+        get: operations["accounts_api_auth_accounts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts/{email}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve
+         * @description The role is chosen here by the admin, and nowhere else (D12).
+         */
+        post: operations["approve_api_auth_accounts__email__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts/{email}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Role */
+        post: operations["set_role_api_auth_accounts__email__role_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts/{email}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable */
+        post: operations["disable_api_auth_accounts__email__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts/{email}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable */
+        post: operations["enable_api_auth_accounts__email__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts/{email}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Password
+         * @description The admin sets a new password; every login of that account ends.
+         */
+        post: operations["reset_password_api_auth_accounts__email__password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/accounts/{email}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete
+         * @description Pending or disabled accounts only; the audit log keeps the history.
+         */
+        post: operations["delete_api_auth_accounts__email__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Control */
+        get: operations["control_api_auth_control_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/control/acquire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acquire */
+        post: operations["acquire_api_auth_control_acquire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/control/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Release */
+        post: operations["release_api_auth_control_release_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/control/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke */
+        post: operations["revoke_api_auth_control_revoke_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -533,6 +900,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/objective/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** State */
+        get: operations["state_api_objective_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/objective/lenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lenses */
+        get: operations["lenses_api_objective_lenses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/objective/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Plan */
+        get: operations["plan_api_objective_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/objective/focus100x/defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Focus100X Defaults */
+        get: operations["focus100x_defaults_api_objective_focus100x_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sample/list": {
         parameters: {
             query?: never;
@@ -665,6 +1100,105 @@ export interface paths {
          *     no record.
          */
         post: operations["open_folder_api_sample__sample_id__open_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sessions
+         * @description Every experiment session, oldest first, optionally filtered.
+         */
+        get: operations["list_sessions_api_sessions_get"];
+        put?: never;
+        /**
+         * Open Session
+         * @description Open a session for the engine's current sample (one sample per session).
+         */
+        post: operations["open_session_api_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current Session
+         * @description The open experiment session, or null.
+         */
+        get: operations["current_session_api_sessions_current_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Session Detail */
+        get: operations["session_detail_api_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{session_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Session */
+        post: operations["close_session_api_sessions__session_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{session_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Continue Session
+         * @description A new session on the same sample as `session_id` (F7.4): the sample is picked again
+         *     (nothing moves) and a session opens for it with `continues` set.
+         */
+        post: operations["continue_session_api_sessions__session_id__continue_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -834,6 +1368,29 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountOut */
+        AccountOut: {
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "viewer";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "active" | "disabled";
+            /** Created At */
+            created_at: string;
+            /** Approved By */
+            approved_by: string | null;
+            /** Approved At */
+            approved_at: string | null;
+        };
         /** ApiError */
         ApiError: {
             detail: components["schemas"]["RefusalDetail"];
@@ -881,6 +1438,15 @@ export interface components {
             };
         } & {
             [key: string]: unknown;
+        };
+        /** AwaitingReturn */
+        AwaitingReturn: {
+            /** Since */
+            since?: unknown;
+            /** Return Xy Um */
+            return_xy_um?: number[] | null;
+            /** Objective Before */
+            objective_before?: string | null;
         };
         /** BoundaryPoint */
         BoundaryPoint: {
@@ -961,6 +1527,28 @@ export interface components {
              */
             data: unknown;
         };
+        /** CloseIn */
+        CloseIn: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /** CodeOut */
+        CodeOut: {
+            /**
+             * Repo
+             * @default
+             */
+            repo: string;
+            /** Commit */
+            commit?: string | null;
+            /** Dirty */
+            dirty?: boolean | null;
+            /** Error */
+            error?: string | null;
+        };
         /** CommandAccepted */
         CommandAccepted: {
             /** Op Id */
@@ -1002,6 +1590,10 @@ export interface components {
             by?: string | null;
             /** At */
             at?: string | null;
+        };
+        /** ControlOut */
+        ControlOut: {
+            holder: components["schemas"]["HolderOut"] | null;
         };
         /**
          * ConversationOut
@@ -1084,6 +1676,26 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** Escape */
+        Escape: {
+            /** Allowed */
+            allowed: boolean;
+            /** Reason */
+            reason: string | null;
+            /** Note */
+            note?: string | null;
+            /**
+             * Sign
+             * @enum {string}
+             */
+            sign: "+Y" | "-Y";
+            /** Dy Um */
+            dy_um: number | null;
+            /** Mark */
+            mark: string;
+            /** Default */
+            default: boolean;
+        };
         /** Flag */
         Flag: {
             /** Flag Id */
@@ -1134,6 +1746,57 @@ export interface components {
             note: string;
             /** Replaces */
             replaces?: string | null;
+        };
+        /** Focus100xDefaults */
+        Focus100xDefaults: {
+            /** Z 4X Focus Um */
+            z_4x_focus_um: number | null;
+            /** Lab Offset Um */
+            lab_offset_um: number;
+            /**
+             * Lab Offset Mark
+             * @default lab offset, to be re-measured
+             */
+            lab_offset_mark: string;
+            /** Centre Um */
+            centre_um: number | null;
+            /**
+             * Half Um
+             * @default 40
+             */
+            half_um: number;
+            /**
+             * Step Um
+             * @default 2
+             */
+            step_um: number;
+            /**
+             * Fine Half Um
+             * @default 3
+             */
+            fine_half_um: number;
+            /**
+             * Fine Step Um
+             * @default 0.2
+             */
+            fine_step_um: number;
+            /**
+             * Exposure Ms
+             * @default 20
+             */
+            exposure_ms: number;
+            /**
+             * Metric
+             * @default peak
+             * @enum {string}
+             */
+            metric: "peak" | "vollath";
+            /** Ceiling Um */
+            ceiling_um: number | null;
+            /** Above 4X Focus */
+            above_4x_focus: boolean;
+            /** Immersion Loaded This Session */
+            immersion_loaded_this_session: boolean;
         };
         /**
          * FrameOut
@@ -1275,7 +1938,11 @@ export interface components {
             /** Error */
             error?: string | null;
         };
-        /** HardwareState */
+        /**
+         * HardwareState
+         * @description `snapshot()["hardware"]`: the T-028 provider's block plus the runner's last_status.
+         *     Without a provider the runner sends `gates: {}`, hence the dict.
+         */
         HardwareState: {
             /** Profile */
             profile?: {
@@ -1283,10 +1950,20 @@ export interface components {
             } | null;
             /** Profile Path */
             profile_path?: string | null;
+            /** Sha256 */
+            sha256?: string | null;
+            /** Previous */
+            previous?: {
+                [key: string]: unknown;
+            } | null;
             /** Gates */
-            gates?: {
+            gates?: components["schemas"]["StateGateRow"][] | {
                 [key: string]: unknown;
             };
+            /** Objective Options */
+            objective_options?: {
+                [key: string]: unknown;
+            }[];
             /** Last Status */
             last_status?: {
                 [key: string]: unknown;
@@ -1324,6 +2001,15 @@ export interface components {
             at?: number | null;
             /** Status */
             status?: string | null;
+        };
+        /** HolderOut */
+        HolderOut: {
+            /** User Id */
+            user_id: string;
+            /** Name */
+            name: string;
+            /** Since */
+            since: number;
         };
         /** Hole */
         Hole: {
@@ -1438,6 +2124,30 @@ export interface components {
             /** Opened At */
             opened_at: string | null;
         };
+        /** LensRow */
+        LensRow: {
+            /** Nosepiece State */
+            nosepiece_state: number;
+            /** Label */
+            label: string;
+            /** Registry Key */
+            registry_key: string | null;
+            /** Magnification */
+            magnification: number;
+            /** Na */
+            na?: number | null;
+            /**
+             * Immersion
+             * @enum {string}
+             */
+            immersion: "dry" | "oil" | "water";
+            /** Working Distance Um */
+            working_distance_um: number | null;
+            /** Selectable */
+            selectable: boolean;
+            /** Disabled Reason */
+            disabled_reason: string | null;
+        };
         /**
          * Lights
          * @description The one light shape (light_changed, snapshot, records).
@@ -1466,6 +2176,28 @@ export interface components {
             /** Confirmed */
             confirmed: boolean;
         };
+        /** LoginIn */
+        LoginIn: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** ManifestOut */
+        ManifestOut: {
+            /** Files */
+            files: number;
+            /** Bytes */
+            bytes: number;
+            /** By Where */
+            by_where: {
+                [key: string]: number;
+            };
+            /** Entries */
+            entries: {
+                [key: string]: unknown;
+            }[];
+        };
         /** MapState */
         MapState: {
             /** Sample Id */
@@ -1482,6 +2214,26 @@ export interface components {
             /** Session Started At */
             session_started_at: number | null;
         };
+        /** Me */
+        Me: {
+            /** User Id */
+            user_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "viewer";
+            /** Locked */
+            locked: boolean;
+            /** Has Control */
+            has_control: boolean;
+            /** Local */
+            local: boolean;
+            /** Expires At */
+            expires_at: number;
+        };
         /** MosaicExtent */
         MosaicExtent: {
             /** X0 */
@@ -1496,6 +2248,25 @@ export interface components {
             um_per_px: number;
             /** Bin */
             bin: number;
+        };
+        /** ObjectivePlan */
+        ObjectivePlan: {
+            /** Steps */
+            steps: components["schemas"]["PlanStep"][];
+            escape: components["schemas"]["Escape"];
+            /**
+             * Immersion
+             * @enum {string}
+             */
+            immersion: "dry" | "oil" | "water";
+            /** Approach Target Um */
+            approach_target_um: number;
+            /** Approach Step Um */
+            approach_step_um: number | null;
+            /** Approach Step Mark */
+            approach_step_mark: string;
+            /** Refusal */
+            refusal: string | null;
         };
         /** ObjectiveRow */
         ObjectiveRow: {
@@ -1517,6 +2288,26 @@ export interface components {
             wd_source?: string | null;
             /** Pixel Um */
             pixel_um?: number | null;
+        };
+        /** ObjectiveState */
+        ObjectiveState: {
+            /** Nosepiece State */
+            nosepiece_state: number | null;
+            /** Label */
+            label: string | null;
+            /** Pixel Um */
+            pixel_um: number | null;
+            /** Z Um */
+            z_um: number | null;
+            pfs: components["schemas"]["Pfs"];
+            /** Immersion Loaded This Session */
+            immersion_loaded_this_session?: {
+                [key: string]: unknown;
+            } | null;
+            awaiting_return: components["schemas"]["AwaitingReturn"] | null;
+            running: components["schemas"]["Running"] | null;
+            /** Read At */
+            read_at?: number | null;
         };
         /** OpSummary */
         OpSummary: {
@@ -1561,6 +2352,19 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** OpenIn */
+        OpenIn: {
+            /**
+             * Sample Id
+             * @description must match the engine's current sample
+             */
+            sample_id?: string | null;
+        };
+        /** PasswordIn */
+        PasswordIn: {
+            /** Password */
+            password: string;
+        };
         /**
          * PermissionOut
          * @description One entry of `GET /api/permissions`: may the asking person do this now, and if not,
@@ -1575,6 +2379,15 @@ export interface components {
             /** Code */
             code?: string | null;
         };
+        /** Pfs */
+        Pfs: {
+            /** Enabled */
+            enabled?: unknown;
+            /** Locked */
+            locked?: unknown;
+            /** In Range */
+            in_range?: unknown;
+        };
         /** PiezoInfo */
         PiezoInfo: {
             /** Port */
@@ -1585,6 +2398,18 @@ export interface components {
             z_um?: number | null;
             /** Error */
             error?: string | null;
+        };
+        /** PlanStep */
+        PlanStep: {
+            /** Step */
+            step: number;
+            /** Name */
+            name: string;
+            /**
+             * Target
+             * @default
+             */
+            target: string;
         };
         /**
          * Positions
@@ -1791,6 +2616,13 @@ export interface components {
             /** Observable Name */
             observable_name?: string | null;
         };
+        /** RecordFileOut */
+        RecordFileOut: {
+            /** Name */
+            name: string;
+            /** Lines */
+            lines: number;
+        };
         /**
          * RefusalDetail
          * @description Why the server said no. `code` is also in the `X-DinoAF-Refusal` header. Codes:
@@ -1861,6 +2693,23 @@ export interface components {
             scan_box_um: components["schemas"]["Box"] | null;
             allowed_box_um: components["schemas"]["Box"] | null;
         };
+        /** RevokeIn */
+        RevokeIn: {
+            /** Reason */
+            reason: string;
+        };
+        /** RevokeOut */
+        RevokeOut: {
+            previous_holder: components["schemas"]["HolderOut"] | null;
+        };
+        /** RoleIn */
+        RoleIn: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "viewer";
+        };
         /** RunDetailOut */
         RunDetailOut: {
             summary: components["schemas"]["RunSummaryOut"];
@@ -1919,6 +2768,17 @@ export interface components {
             source: string;
             /** Approval Kind */
             approval_kind?: string | null;
+        };
+        /** Running */
+        Running: {
+            /** Op Id */
+            op_id: string;
+            /** Op */
+            op: string;
+            /** Step */
+            step?: number | null;
+            /** N Steps */
+            n_steps?: number | null;
         };
         /** SampleAccess */
         SampleAccess: {
@@ -2000,6 +2860,62 @@ export interface components {
             /** Observables */
             observables: unknown;
         };
+        /**
+         * SessionDetailOut
+         * @description `session.json` as recorded (code version and hardware hash are never recomputed).
+         */
+        SessionDetailOut: {
+            /** Session Id */
+            session_id: string;
+            /** User Id */
+            user_id: string;
+            /**
+             * User Name
+             * @default
+             */
+            user_name: string;
+            /** Sample Id */
+            sample_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "closed";
+            /** Started At */
+            started_at: string;
+            /** Closed At */
+            closed_at?: string | null;
+            /** Continues */
+            continues?: string | null;
+            /**
+             * Reflected
+             * @description None: no librarian ledger to tell
+             */
+            reflected?: boolean | null;
+            code: components["schemas"]["CodeOut"];
+            hardware_profile?: components["schemas"]["SessionHardwareProfileOut"] | null;
+            /** Sma Run Id */
+            sma_run_id?: string | null;
+            /**
+             * Close Note
+             * @default
+             */
+            close_note: string;
+            /** Log Tail */
+            log_tail: {
+                [key: string]: unknown;
+            }[];
+            /** Records */
+            records: components["schemas"]["RecordFileOut"][];
+            manifest: components["schemas"]["ManifestOut"];
+        };
+        /** SessionHardwareProfileOut */
+        SessionHardwareProfileOut: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+        };
         /** SessionRef */
         SessionRef: {
             /** Session Id */
@@ -2008,6 +2924,53 @@ export interface components {
             started_at?: number | null;
         } & {
             [key: string]: unknown;
+        };
+        /** SessionSummaryOut */
+        SessionSummaryOut: {
+            /** Session Id */
+            session_id: string;
+            /** User Id */
+            user_id: string;
+            /**
+             * User Name
+             * @default
+             */
+            user_name: string;
+            /** Sample Id */
+            sample_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "closed";
+            /** Started At */
+            started_at: string;
+            /** Closed At */
+            closed_at?: string | null;
+            /** Continues */
+            continues?: string | null;
+            /**
+             * Reflected
+             * @description None: no librarian ledger to tell
+             */
+            reflected?: boolean | null;
+        };
+        /** SetupIn */
+        SetupIn: {
+            /** Name */
+            name: string;
+            /** Password */
+            password: string;
+            /** Email */
+            email?: string | null;
+        };
+        /** SetupOut */
+        SetupOut: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "needs_admin_email" | "needs_admin" | "ready";
         };
         /**
          * ShutdownAccepted
@@ -2027,6 +2990,23 @@ export interface components {
              * @default api
              */
             reason: string;
+        };
+        /** SignupIn */
+        SignupIn: {
+            /** Name */
+            name: string;
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** SignupOut */
+        SignupOut: {
+            /**
+             * Status
+             * @constant
+             */
+            status: "pending";
         };
         /**
          * Snapshot
@@ -2078,6 +3058,23 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             };
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * StateGateRow
+         * @description One feature gate (T-028 `gates.gate_rows`): off rows come first. Named apart from
+         *     `server/api/hardware.GateRow` so the OpenAPI keeps both names short.
+         */
+        StateGateRow: {
+            /** Op */
+            op: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Reasons */
+            reasons?: string[];
+            /** Requires */
+            requires?: unknown;
         } & {
             [key: string]: unknown;
         };
@@ -2141,6 +3138,11 @@ export interface components {
             blocks_per_side: number;
             /** Dropout Z Um */
             dropout_z_um?: number[];
+        };
+        /** UnlockIn */
+        UnlockIn: {
+            /** Password */
+            password: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -2334,6 +3336,11 @@ export interface components {
             display_max: number;
             /** Jpeg Bytes */
             jpeg_bytes: number;
+            /**
+             * Camera
+             * @default null
+             */
+            camera: string | null;
             /** Meta */
             meta?: {
                 [key: string]: unknown;
@@ -3002,6 +4009,573 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    setup_state_api_auth_setup_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupOut"];
+                };
+            };
+        };
+    };
+    create_first_admin_api_auth_setup_admin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    signup_api_auth_signup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    lock_api_auth_lock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    unlock_api_auth_unlock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnlockIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_api_auth_activity_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    who_am_i_api_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accounts_api_auth_accounts_get: {
+        parameters: {
+            query?: {
+                status?: ("pending" | "active" | "disabled") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_auth_accounts__email__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_role_api_auth_accounts__email__role_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_api_auth_accounts__email__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_api_auth_accounts__email__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_password_api_auth_accounts__email__password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_auth_accounts__email__delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    control_api_auth_control_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlOut"];
+                };
+            };
+        };
+    };
+    acquire_api_auth_control_acquire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    release_api_auth_control_release_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_api_auth_control_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4350,6 +5924,109 @@ export interface operations {
             };
         };
     };
+    state_api_objective_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveState"];
+                };
+            };
+        };
+    };
+    lenses_api_objective_lenses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LensRow"][];
+                };
+            };
+        };
+    };
+    plan_api_objective_plan_get: {
+        parameters: {
+            query: {
+                target_state: number;
+                escape?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectivePlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    focus100x_defaults_api_objective_focus100x_defaults_get: {
+        parameters: {
+            query?: {
+                centre_um?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Focus100xDefaults"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     sample_list_api_sample_list_get: {
         parameters: {
             query?: never;
@@ -4531,6 +6208,191 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sessions_api_sessions_get: {
+        parameters: {
+            query?: {
+                user?: string | null;
+                sample?: string | null;
+                status?: ("open" | "closed") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSummaryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_session_api_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OpenIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    current_session_api_sessions_current_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSummaryOut"] | null;
+                };
+            };
+        };
+    };
+    session_detail_api_sessions__session_id__get: {
+        parameters: {
+            query?: {
+                log_tail?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_session_api_sessions__session_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CloseIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    continue_session_api_sessions__session_id__continue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionDetailOut"];
+                };
             };
             /** @description Validation Error */
             422: {

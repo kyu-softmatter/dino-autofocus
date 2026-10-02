@@ -15,6 +15,7 @@ from ...engine.runner import EngineAPI as RunnerAPI
 
 __all__ = [
     "COMMAND_KINDS", "EVENT_KINDS", "ORIGINS", "Command", "EngineAPI", "Event", "FrameSource",
+    "MultiFrameSource",
 ]
 
 
@@ -43,3 +44,12 @@ class FrameSource(Protocol):
     JSON-native (t, x_um, y_um, z_um, exposure_ms, bit_depth, frame_id, ...)."""
 
     def latest_frame(self) -> tuple[Any, dict[str, Any]] | None: ...  # (uint16 ndarray, meta)
+
+
+@runtime_checkable
+class MultiFrameSource(Protocol):
+    """Optional, for more than one camera: the newest frame of each camera, keyed by the camera
+    label (`meta["camera"]`). The bridge sends every camera whose frame changed; an engine
+    without it is read through `latest_frame` as one camera."""
+
+    def latest_frames(self) -> dict[str, tuple[Any, dict[str, Any]]]: ...

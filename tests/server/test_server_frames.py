@@ -9,6 +9,7 @@ import time
 import numpy as np
 import pytest
 from PIL import Image
+from server_fakes import FakeFrameEngine
 
 from dino_autofocus.server.ws import FrameBridge, encode_frame
 
@@ -55,7 +56,7 @@ def test_bridge_rate_limit_and_latest_only(frame_engine):
 
         async def read():
             while True:
-                meta, _ = await reader.get()
+                (meta, _), = await reader.get()  # one camera: one frame per batch
                 got.append(json.loads(meta)["seq"])
 
         stop = threading.Event()
@@ -75,7 +76,7 @@ def test_bridge_rate_limit_and_latest_only(frame_engine):
         await asyncio.sleep(0.25)  # let the last encode land
         task.cancel()
         assert idle.qsize() == 1
-        last_idle = json.loads(idle.get_nowait()[0])["seq"]
+        last_idle = json.loads(idle.get_nowait()[0][0])["seq"]
         bridge.remove(reader)
         bridge.remove(idle)
         assert frame_engine.sinks == []
@@ -86,3 +87,63 @@ def test_bridge_rate_limit_and_latest_only(frame_engine):
     assert frame_engine.frame_reads <= 12
     assert got == sorted(got)
     assert last_idle == seq  # the idle client holds the newest frame, not the first
+
+
+class TwoCameraEngine(FakeFrameEngine):
+    def __init__(self) -> None:
+        super().__init__()
+        self.frames: dict = {}
+
+    def latest_frames(self):
+        return dict(self.frames)
+
+
+def test_encode_frame_names_the_camera():
+    frame, _ = encode_frame(np.zeros((8, 8), np.uint16), {"camera": "Kinetix_blue"}, 1)
+    assert frame.camera == "Kinetix_blue"
+    assert encode_frame(np.zeros((8, 8), np.uint16), {}, 2)[0].camera is None
+
+
+def test_bridge_sends_each_camera_and_skips_one_that_did_not_change():
+    eng = TwoCameraEngine()
+    img = np.zeros((32, 32), np.uint16)
+    eng.frames = {"Kinetix_blue": (img, {"t": 1.0, "camera": "Kinetix_blue"}),
+                  "Kinetix_red": (img, {"t": 1.0, "camera": "Kinetix_red"})}
+
+    async def scenario():
+        bridge = FrameBridge(eng, max_fps=50.0)
+        slot: asyncio.Queue = asyncio.Queue(maxsize=1)
+        bridge.add(slot)
+        eng.emit("frame_ready")
+        first = await asyncio.wait_for(slot.get(), 2)
+        eng.frames = {**eng.frames, "Kinetix_red": (img, {"t": 2.0, "camera": "Kinetix_red"})}
+        eng.emit("frame_ready")
+        second = await asyncio.wait_for(slot.get(), 2)
+        bridge.remove(slot)
+        return first, second
+
+    first, second = asyncio.run(scenario())
+    assert [json.loads(m)["camera"] for m, _ in first] == ["Kinetix_blue", "Kinetix_red"]
+    assert [json.loads(m)["camera"] for m, _ in second] == ["Kinetix_red"]
+    assert eng.frame_reads == 0  # a multi-camera engine is read through latest_frames
+
+
+def test_a_client_that_joins_later_gets_an_idle_camera_at_once():
+    eng = TwoCameraEngine()
+    img = np.zeros((32, 32), np.uint16)
+    eng.frames = {"Kinetix_blue": (img, {"t": 1.0, "camera": "Kinetix_blue"})}
+
+    async def scenario():
+        bridge = FrameBridge(eng, max_fps=50.0)
+        first: asyncio.Queue = asyncio.Queue(maxsize=1)
+        bridge.add(first)
+        await asyncio.wait_for(first.get(), 2)
+        late: asyncio.Queue = asyncio.Queue(maxsize=1)
+        bridge.add(late)  # no new frame_ready: the blue camera is idle
+        got = await asyncio.wait_for(late.get(), 2)
+        bridge.remove(first)
+        bridge.remove(late)
+        return got
+
+    got = asyncio.run(scenario())
+    assert [json.loads(m)["camera"] for m, _ in got] == ["Kinetix_blue"]

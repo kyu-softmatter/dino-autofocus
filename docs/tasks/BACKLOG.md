@@ -22,8 +22,8 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 
 ### Carded but not started (unassigned; pick up from the card)
 
-- Schema regen 4: a fresh `gen:api` on main 31565db adds T-104's objective routes (/api/objective/focus100x/defaults,
-  lenses, plan, state), merged after regen 3; then T-104's screen can swap to generated types (T-010 owner).
+- ~~Schema regen 4~~ (done with the dual-camera live view, 2026-10-02: `WsFrame.camera`; the clashing
+  `GateRow` / `HardwareProfileOut` names were split). Left: T-104's screen can swap to generated types.
 - T-035d import torch only inside torch tests: tests/test_backbone.py and tests/test_live.py (T-035 card).
 - T-106b session.json carries backend kind/bench; T-106c records/librarian_mock.py skips bench:false sessions in the
   real root (T-106 card).

@@ -166,6 +166,9 @@ class WsFrame(BaseModel):
     display_min: float
     display_max: float
     jpeg_bytes: int
+    #: the camera label (e.g. "Kinetix_blue"); null when the engine names none. With two
+    #: cameras both arrive on the same socket, told apart by this field.
+    camera: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 
 

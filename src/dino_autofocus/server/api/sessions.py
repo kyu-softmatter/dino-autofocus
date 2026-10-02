@@ -64,7 +64,7 @@ class CodeOut(BaseModel):
     error: str | None = None
 
 
-class HardwareProfileOut(BaseModel):
+class SessionHardwareProfileOut(BaseModel):
     path: str
     sha256: str
 
@@ -85,7 +85,7 @@ class SessionDetailOut(SessionSummaryOut):
     """`session.json` as recorded (code version and hardware hash are never recomputed)."""
 
     code: CodeOut
-    hardware_profile: HardwareProfileOut | None = None
+    hardware_profile: SessionHardwareProfileOut | None = None
     sma_run_id: str | None = None
     close_note: str = ""
     log_tail: list[dict[str, Any]]

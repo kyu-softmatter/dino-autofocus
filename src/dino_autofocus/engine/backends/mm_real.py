@@ -383,7 +383,8 @@ class MmRealBackend:
     # -- camera
     def _frame(self, img) -> Frame:
         p = self.positions()
-        return Frame(img, time.time(), float(self._c().getExposure()), p.x_um, p.y_um, p.z_um)
+        return Frame(img, time.time(), float(self._c().getExposure()), p.x_um, p.y_um, p.z_um,
+                     camera=self._c().getCameraDevice() or None)
 
     def snap(self) -> Frame:
         if self._streaming:

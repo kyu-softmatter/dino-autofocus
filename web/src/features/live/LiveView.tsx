@@ -3,27 +3,81 @@ import { useEffect, useRef, useState } from "react";
 import { useClient } from "../../app/client";
 import { EncoderZ } from "../../app/Verdict";
 import { FpsMeter, type FrameMeta, FramePairer } from "./frames";
+import { MergedView, mergeColor } from "./MergedView";
 
 type Conn = "connecting" | "open" | "closed" | "unsupported";
+
+/** Several cameras: both at once, one composite, or one of them. */
+export type Mode = "side" | "merged" | `one:${string}`;
+
+export interface CamFrame {
+  camera: string;
+  url: string;
+  /** the JPEG itself: the merged view decodes this, never `url`, which is freed on the next frame */
+  jpeg: Blob;
+  meta: FrameMeta;
+  fps: number | null;
+}
 
 const RETRY_MS = 2000;
 
 // a module constant: a new default function on every render would reconnect each time
 const performanceNow = () => performance.now();
 
+/** The camera a frame came from; "" when the server names none (one-camera engines). */
+const cameraOf = (meta: FrameMeta) => meta.camera ?? "";
+
+function FrameInfo({ frame, testIds }: { frame: CamFrame; testIds: boolean }) {
+  const { meta, fps } = frame;
+  const id = (s: string) => (testIds ? s : undefined);
+  const z = meta.meta && typeof meta.meta.z_um === "number" ? (meta.meta.z_um as number) : null;
+  return (
+    <>
+      <span data-testid={id("live-time")}>frame {new Date(meta.t * 1000).toLocaleTimeString()}</span>
+      <span data-testid={id("live-fps")}>{fps === null ? "— fps" : `${fps.toFixed(1)} fps`}</span>
+      <span className="muted" data-testid={id("live-size")}>
+        #{meta.seq} · {meta.width}×{meta.height} (bin {meta.binning} of {meta.source_width}×{meta.source_height}) ·
+        display {meta.display_min.toFixed(0)}–{meta.display_max.toFixed(0)} counts
+      </span>
+      {z !== null && (
+        <span
+          data-testid={id("live-z")}
+          title="ZDrive encoder read when the frame was taken from the camera buffer; it can lag the exposure"
+        >
+          <EncoderZ readbackUm={z} />
+        </span>
+      )}
+    </>
+  );
+}
+
+function CameraPanel({ frame }: { frame: CamFrame }) {
+  return (
+    <figure className="live-panel" aria-label={`Camera ${frame.camera}`}>
+      <figcaption className="live-info">
+        <strong>{frame.camera}</strong>
+        <FrameInfo frame={frame} testIds={false} />
+      </figcaption>
+      <img className="live-frame" src={frame.url} alt={`Live frame ${frame.camera}`} />
+    </figure>
+  );
+}
+
 /**
  * The live view: the server bins each camera frame to about 800 px and sends it
- * as JPEG (T-009 /ws/frames, about 10 fps). Shows the frame, its time and the
- * receive rate. Display only: raw frames stay on disk.
+ * as JPEG (T-009 /ws/frames, about 10 fps per camera). With one camera it shows
+ * the frame, its time and the receive rate. With two (the dual-camera stand)
+ * both arrive on the same socket, told apart by `camera`: side by side, merged
+ * (blue camera green, red camera magenta) or one at a time. Display only: raw
+ * frames stay on disk.
  */
 export function LiveView({ now = performanceNow }: { now?: () => number }) {
   const client = useClient();
-  const [url, setUrl] = useState<string | null>(null);
-  const [meta, setMeta] = useState<FrameMeta | null>(null);
-  const [fps, setFps] = useState<number | null>(null);
+  const [cams, setCams] = useState<Record<string, CamFrame>>({});
+  const [mode, setMode] = useState<Mode>("side");
   const [conn, setConn] = useState<Conn>("connecting");
   const [detail, setDetail] = useState<string | null>(null);
-  const urlRef = useRef<string | null>(null);
+  const urls = useRef(new Map<string, string>());
 
   useEffect(() => {
     let live = true;
@@ -31,7 +85,8 @@ export function LiveView({ now = performanceNow }: { now?: () => number }) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let unsupported = false; // the engine has no frames: do not retry
     const pairer = new FramePairer();
-    const meter = new FpsMeter();
+    const meters = new Map<string, FpsMeter>();
+    const held = urls.current;
 
     const connect = () => {
       if (!live) return;
@@ -52,12 +107,15 @@ export function LiveView({ now = performanceNow }: { now?: () => number }) {
           }
           return;
         }
+        const camera = cameraOf(got.meta);
         const next = URL.createObjectURL(got.jpeg);
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        urlRef.current = next;
-        setUrl(next);
-        setMeta(got.meta);
-        setFps(meter.tick(now()));
+        const old = held.get(camera);
+        if (old) URL.revokeObjectURL(old);
+        held.set(camera, next);
+        let meter = meters.get(camera);
+        if (!meter) meters.set(camera, (meter = new FpsMeter()));
+        const fps = meter.tick(now());
+        setCams((c) => ({ ...c, [camera]: { camera, url: next, jpeg: got.jpeg, meta: got.meta, fps } }));
       };
       ws.onclose = () => {
         socket = null;
@@ -71,13 +129,15 @@ export function LiveView({ now = performanceNow }: { now?: () => number }) {
       live = false;
       if (timer) clearTimeout(timer);
       socket?.close();
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
+      held.forEach((u) => URL.revokeObjectURL(u));
+      held.clear();
     };
   }, [client, now]);
 
-  const frameTime = meta ? new Date(meta.t * 1000).toLocaleTimeString() : "—";
-  const z = meta?.meta && typeof meta.meta.z_um === "number" ? (meta.meta.z_um as number) : null;
+  const names = Object.keys(cams).sort();
+  const frames = names.map((n) => cams[n]);
+  const single = frames.length === 1 ? frames[0] : null;
+  const shown: Mode = mode.startsWith("one:") && !cams[mode.slice(4)] ? "side" : mode;
 
   return (
     <div className="live">
@@ -85,29 +145,40 @@ export function LiveView({ now = performanceNow }: { now?: () => number }) {
         <span data-testid="live-conn">
           {conn === "open" ? "frames: connected" : conn === "unsupported" ? "frames: not available" : `frames: ${conn}`}
         </span>
-        <span data-testid="live-time">frame {frameTime}</span>
-        <span data-testid="live-fps">{fps === null ? "— fps" : `${fps.toFixed(1)} fps`}</span>
-        {meta && (
-          <span className="muted" data-testid="live-size">
-            #{meta.seq} · {meta.width}×{meta.height} (bin {meta.binning} of {meta.source_width}×{meta.source_height}) ·
-            display {meta.display_min.toFixed(0)}–{meta.display_max.toFixed(0)} counts
-          </span>
-        )}
-        {z !== null && (
-          <span
-            data-testid="live-z"
-            title="ZDrive encoder read when the frame was taken from the camera buffer; it can lag the exposure"
-          >
-            <EncoderZ readbackUm={z} />
+        {single && <FrameInfo frame={single} testIds />}
+        {frames.length > 1 && (
+          <span className="live-modes" role="group" aria-label="Camera view">
+            {(["side", "merged", ...names.map((n) => `one:${n}` as const)] as Mode[]).map((m) => (
+              <button key={m} type="button" aria-pressed={shown === m} onClick={() => setMode(m)}>
+                {m === "side" ? "Side by side" : m === "merged" ? "Merged" : m.slice(4)}
+              </button>
+            ))}
           </span>
         )}
       </div>
       {detail && conn === "unsupported" && <p className="muted">{detail}</p>}
-      {url ? (
-        <img className="live-frame" src={url} alt="Live camera frame" />
-      ) : (
-        <p className="muted">No frame yet.</p>
+      {frames.length === 0 && <p className="muted">No frame yet.</p>}
+      {single && <img className="live-frame" src={single.url} alt="Live camera frame" />}
+      {frames.length > 1 && shown === "side" && (
+        <div className="live-side">
+          {frames.map((f) => (
+            <CameraPanel key={f.camera} frame={f} />
+          ))}
+        </div>
       )}
+      {frames.length > 1 && shown === "merged" && (
+        <figure className="live-panel" aria-label="Merged cameras">
+          <figcaption className="live-info">
+            {frames.map((f, i) => (
+              <span key={f.camera} className="live-legend">
+                <span className="live-swatch" style={{ background: mergeColor(f.camera, i) }} /> {f.camera} #{f.meta.seq}
+              </span>
+            ))}
+          </figcaption>
+          <MergedView frames={frames} />
+        </figure>
+      )}
+      {frames.length > 1 && shown.startsWith("one:") && <CameraPanel frame={cams[shown.slice(4)]} />}
     </div>
   );
 }

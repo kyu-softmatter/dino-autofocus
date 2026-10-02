@@ -75,13 +75,17 @@ class SampleRef(_Open):
     session_id: str | None = None
 
 
-class GateRow(_Open):
-    """One feature gate (T-028 `gates.gate_rows`): off rows come first."""
+class StateGateRow(_Open):
+    """One feature gate (T-028 `gates.gate_rows`): off rows come first. Named apart from
+    `server/api/hardware.GateRow` so the OpenAPI keeps both names short."""
 
     op: str
     enabled: bool
     reasons: list[str] = Field(default_factory=list)
     requires: Any = None
+
+
+GateRow = StateGateRow  # the old import name
 
 
 class HardwareState(_Open):
@@ -92,7 +96,7 @@ class HardwareState(_Open):
     profile_path: str | None = None
     sha256: str | None = None
     previous: dict[str, Any] | None = None
-    gates: list[GateRow] | dict[str, Any] = Field(default_factory=list)
+    gates: list[StateGateRow] | dict[str, Any] = Field(default_factory=list)
     objective_options: list[dict[str, Any]] = Field(default_factory=list)
     last_status: dict[str, Any] | None = None
     error: str | None = None

@@ -374,7 +374,8 @@ class MmDemoBackend:
 
     def _frame(self, img, exposure_ms: float) -> Frame:
         p = self.positions()
-        return Frame(img, time.time(), exposure_ms, p.x_um, p.y_um, p.z_um)
+        return Frame(img, time.time(), exposure_ms, p.x_um, p.y_um, p.z_um,
+                     camera=self._d().core.getCameraDevice() or None)
 
     def _z_read(self) -> float:
         """The simulated z only while the demo stage still sits at the zone floor; if it

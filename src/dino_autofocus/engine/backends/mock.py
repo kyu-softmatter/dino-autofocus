@@ -128,7 +128,8 @@ class MockBackend:
     def _frame(self) -> Frame:
         img = self.world.snap()
         x, y = self.world.read_xy()
-        return Frame(img, time.time(), self.world.exposure_ms, x, y, self.world.read_z())
+        return Frame(img, time.time(), self.world.exposure_ms, x, y, self.world.read_z(),
+                     camera=CAMERA)
 
     def snap(self) -> Frame:
         if self._stream is not None:

@@ -14,10 +14,11 @@ import threading
 import time
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from dino_autofocus.engine import Command, Event
-from dino_autofocus.engine.backend import GUARD_TOKEN  # test fakes stand in for the guards
+from dino_autofocus.engine.backend import GUARD_TOKEN, Frame  # test fakes stand in for the guards
 from dino_autofocus.engine.runner import (
     PERMISSIONS,
     AllowAll,
@@ -680,6 +681,21 @@ def test_snapping_op_pauses_the_stream_and_puts_it_back(make, fail):
     held = r.submit(start("hold"))  # not a snapping op: the stream stays on
     sink.wait("progress", held)
     assert stream.calls == ["pause", "resume"]
+
+
+def test_latest_frames_keeps_the_newest_of_each_camera(make):
+    r, _ = make()
+    assert r.latest_frames() == {}
+    img = np.zeros((4, 4), np.uint16)
+    r.publish_frame(Frame(img, 1.0, 10.0, camera="Kinetix_blue"))
+    r.publish_frame(Frame(img, 2.0, 10.0, camera="Kinetix_red"))
+    r.publish_frame(Frame(img, 3.0, 10.0, camera="Kinetix_red"))
+    r.publish_frame(Frame(img, 4.0, 10.0))
+    got = r.latest_frames()
+    assert sorted(got) == ["", "Kinetix_blue", "Kinetix_red"]
+    red = got["Kinetix_red"][1]
+    assert red["t_read"] == 3.0 and red["camera"] == "Kinetix_red"
+    assert r.latest_frame()[1]["t_read"] == 4.0  # the newest of any camera
 
 
 def test_latest_frame_keeps_only_the_newest_and_events_carry_no_pixels(make):

@@ -4,9 +4,11 @@ Engine sinks are called from engine threads. Every sink here only serialises and
 message to the event loop with `call_soon_threadsafe`, and never raises back into the engine.
 
 Frames: the engine says `frame_ready`; the bridge then takes the newest frame from the engine
-(`FrameSource.latest_frame`), bins it to at most `target_px` on the long side, maps it to
-8 bit and encodes a JPEG, at most `max_fps` times a second however fast frames arrive. Each
-client holds one pending frame; a slow client skips to the newest instead of queueing.
+(`MultiFrameSource.latest_frames`, one per camera, else `FrameSource.latest_frame`), bins
+each camera's frame that changed to at most `target_px` on the long side, maps it to 8 bit and
+encodes a JPEG, at most `max_fps` times a second however fast frames arrive. Each client holds
+one pending batch (one frame per camera); a slow client skips to the newest instead of
+queueing.
 Nothing is encoded while nobody watches. Raw frames go to disk records only, never here.
 """
 
@@ -39,6 +41,7 @@ from .schemas import (
     Event,
     EventOut,
     FrameSource,
+    MultiFrameSource,
     WsAccepted,
     WsCommand,
     WsError,
@@ -228,19 +231,20 @@ def install(
                                               code="no_frames").model_dump_json())
             await websocket.close(CLOSE_UNSUPPORTED)
             return
-        slot: asyncio.Queue[tuple[str, bytes]] = asyncio.Queue(maxsize=1)
+        slot: asyncio.Queue[FrameBatch] = asyncio.Queue(maxsize=1)
 
         async def send() -> None:
             while True:
-                meta, jpeg = await slot.get()
+                batch = await slot.get()
                 info = _login_now(websocket, me)
                 if info is None:
                     await _refuse(websocket, LOGIN_REQUIRED)
                     return
                 if info.locked:
                     continue  # a locked page never shows data; frames resume on unlock
-                await websocket.send_text(meta)
-                await websocket.send_bytes(jpeg)
+                for meta, jpeg in batch:
+                    await websocket.send_text(meta)
+                    await websocket.send_bytes(jpeg)
 
         async def wait_disconnect() -> None:
             while (await websocket.receive())["type"] != "websocket.disconnect":
@@ -270,6 +274,10 @@ async def _until_first_done(*coros: Awaitable[None]) -> None:
                 await t
 
 
+#: one wake's frames, one per camera that changed: (WsFrame JSON, JPEG) pairs
+FrameBatch = tuple[tuple[str, bytes], ...]
+
+
 class FrameBridge:
     def __init__(
         self, engine: EngineAPI, *, max_fps: float = 10.0, target_px: int = 800,
@@ -280,7 +288,8 @@ class FrameBridge:
         self.target_px = target_px
         self.quality = quality
         self.seq = 0
-        self._clients: set[asyncio.Queue[tuple[str, bytes]]] = set()
+        self._clients: set[asyncio.Queue[FrameBatch]] = set()
+        self._sent: dict[str, object] = {}  # camera -> the frame tuple last encoded
         self._unsubscribe: Callable[[], None] | None = None
         self._pump: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
@@ -289,7 +298,7 @@ class FrameBridge:
     def watching(self) -> int:
         return len(self._clients)
 
-    def add(self, slot: asyncio.Queue[tuple[str, bytes]]) -> None:
+    def add(self, slot: asyncio.Queue[FrameBatch]) -> None:
         self._clients.add(slot)
         if self._unsubscribe is None:
             loop = asyncio.get_running_loop()
@@ -302,8 +311,11 @@ class FrameBridge:
 
             self._unsubscribe = self.engine.subscribe(sink)
             self._pump = asyncio.ensure_future(self._run())
+        # a newcomer gets every camera's current frame at once, including one that is idle
+        self._sent.clear()
+        self._wake.set()
 
-    def remove(self, slot: asyncio.Queue[tuple[str, bytes]]) -> None:
+    def remove(self, slot: asyncio.Queue[FrameBatch]) -> None:
         self._clients.discard(slot)
         if not self._clients and self._unsubscribe is not None:
             self._unsubscribe()
@@ -321,23 +333,41 @@ class FrameBridge:
             if wait > 0:
                 await asyncio.sleep(wait)
             self._wake.clear()  # frames that came during the wait are covered by this one
-            got = self.engine.latest_frame()  # type: ignore[attr-defined]
-            if got is None:
+            fresh = [(cam, got) for cam, got in self._latest().items()
+                     if self._sent.get(cam) is not got]
+            if not fresh:
                 continue
             last = loop.time()
-            try:
-                frame, jpeg = await asyncio.to_thread(
-                    encode_frame, got[0], got[1], self.seq + 1, self.target_px, self.quality
-                )
-            except Exception:
-                log.exception("live frame could not be encoded")
+            batch: list[tuple[str, bytes]] = []
+            for cam, got in sorted(fresh, key=lambda kv: kv[0]):
+                self._sent[cam] = got
+                try:
+                    frame, jpeg = await asyncio.to_thread(
+                        encode_frame, got[0], got[1], self.seq + 1, self.target_px,
+                        self.quality)
+                except Exception:
+                    log.exception("live frame could not be encoded")
+                    continue
+                self.seq = frame.seq
+                batch.append((frame.model_dump_json(), jpeg))
+            if not batch:
                 continue
-            self.seq = frame.seq
-            item = (frame.model_dump_json(), jpeg)
+            item: FrameBatch = tuple(batch)
             for slot in self._clients:
                 if slot.full():
-                    slot.get_nowait()  # drop the stale frame
+                    slot.get_nowait()  # drop the stale batch
                 slot.put_nowait(item)
+
+    def _latest(self) -> dict[str, tuple[Any, dict[str, Any]]]:
+        """The newest frame per camera; a single-camera engine counts as one camera."""
+        if isinstance(self.engine, MultiFrameSource):
+            many = self.engine.latest_frames()
+            if many:
+                return many
+        got = self.engine.latest_frame()  # type: ignore[attr-defined]
+        if got is None:
+            return {}
+        return {str(got[1].get("camera") or ""): got}
 
 
 def encode_frame(
@@ -364,6 +394,7 @@ def encode_frame(
     frame = WsFrame(
         seq=seq, t=float(meta.get("t", 0.0)), width=wb, height=hb, binning=b,
         source_width=w, source_height=h, display_min=lo, display_max=hi,
-        jpeg_bytes=len(jpeg), meta=meta,
+        jpeg_bytes=len(jpeg), camera=(str(meta["camera"]) if meta.get("camera") else None),
+        meta=meta,
     )
     return frame, jpeg

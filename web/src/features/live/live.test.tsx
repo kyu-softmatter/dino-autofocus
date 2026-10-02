@@ -96,6 +96,46 @@ describe("LiveView", () => {
     expect(screen.getByTestId("live-z").getAttribute("title")).toContain("camera buffer");
   });
 
+  it("shows two cameras side by side, one at a time, or merged", () => {
+    const ws = mount();
+    act(() => {
+      ws.open();
+      for (const camera of ["Kinetix_red", "Kinetix_blue"]) {
+        ws.send({ ...META, camera });
+        sendBinary(ws, jpeg());
+      }
+    });
+    expect(screen.queryByRole("img", { name: "Live camera frame" })).toBeNull();
+    expect(screen.getByRole("img", { name: "Live frame Kinetix_blue" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Live frame Kinetix_red" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Side by side" }).getAttribute("aria-pressed")).toBe("true");
+
+    act(() => screen.getByRole("button", { name: "Kinetix_red" }).click());
+    expect(screen.getByRole("img", { name: "Live frame Kinetix_red" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Live frame Kinetix_blue" })).toBeNull();
+
+    act(() => screen.getByRole("button", { name: "Merged" }).click());
+    expect(screen.getByRole("img", { name: "Merged camera frame" })).toBeTruthy();
+    expect(screen.getByRole("figure", { name: "Merged cameras" }).textContent).toContain("Kinetix_blue");
+  });
+
+  it("keeps each camera's newest frame and frees only that camera's old one", () => {
+    const ws = mount();
+    act(() => {
+      ws.open();
+      ws.send({ ...META, camera: "Kinetix_blue" });
+      sendBinary(ws, jpeg()); // frame-1
+      ws.send({ ...META, camera: "Kinetix_red" });
+      sendBinary(ws, jpeg()); // frame-2
+      ws.send({ ...META, camera: "Kinetix_red", seq: 9 });
+      sendBinary(ws, jpeg()); // frame-3
+    });
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:frame-2");
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith("blob:frame-1");
+    expect(screen.getByRole("img", { name: "Live frame Kinetix_blue" }).getAttribute("src")).toBe("blob:frame-1");
+    expect(screen.getByRole("img", { name: "Live frame Kinetix_red" }).getAttribute("src")).toBe("blob:frame-3");
+  });
+
   it("says so, and does not retry, when the engine provides no frames", () => {
     vi.useFakeTimers();
     const ws = mount();
