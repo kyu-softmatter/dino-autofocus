@@ -13,7 +13,13 @@ implementation follows:
 - A position read that fails is a field (`Positions.errors`), never an exception: a
   missing stage must not stop the camera.
 - The backend does not judge safety. Motion methods take the guards' `MotionToken` and
-  call `require_token` first, so only `engine.guards` can move the stage or focus.
+  call `require_token` first, so only `engine.guards` can move the stage or focus. Light
+  methods that switch on or change intensity take it too (PLAN D15); switching off never does.
+- `set_property` is an allow-list (`check_set_property`): motion devices are always refused,
+  light properties need the token, a short list of camera properties needs none, and
+  everything else is refused. Every backend calls it before writing.
+- Markings such as "unmeasured provisional" or a demo substitution go into `notes`, never
+  into device or property names.
 """
 
 from __future__ import annotations
@@ -34,10 +40,13 @@ class Readback:
     read: str
     verified: bool
     t: float = field(default_factory=time.time)
+    notes: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def of(cls, device: str, prop: str, wanted: Any, read: Any) -> Readback:
-        return cls(device, prop, str(wanted), str(read), str(read) == str(wanted))
+    def of(cls, device: str, prop: str, wanted: Any, read: Any,
+           notes: dict[str, str] | None = None) -> Readback:
+        return cls(device, prop, str(wanted), str(read), str(read) == str(wanted),
+                   notes=dict(notes or {}))
 
 
 @dataclass
@@ -95,6 +104,7 @@ class BackendInfo:
     bit_depth: int
     objectives: list[ObjectiveInfo] = field(default_factory=list)
     stage_limits: StageLimits = field(default_factory=StageLimits)
+    notes: dict[str, str] = field(default_factory=dict)  # e.g. {"aura.CYAN": PROVISIONAL}
 
     @property
     def ceiling_adu(self) -> int:
@@ -122,21 +132,81 @@ class Frame:
 
 
 class MotionToken:
-    """Held by `engine.guards`. A motion call without it is refused by the backend."""
+    """Held by `engine.guards`. A motion or light-on call without it is refused by the backend."""
 
     __slots__ = ()
 
 
 GUARD_TOKEN = MotionToken()  # used outside engine/guards.py (and test fakes) = review failure
 
+PROVISIONAL = "unmeasured provisional"  # the `notes` value for numbers not yet measured
+
 
 class UnguardedMotion(RuntimeError):
     pass
 
 
+class PropertyNotAllowed(ValueError):
+    """`set_property` on a device/property outside the allow-list."""
+
+
 def require_token(token: object) -> None:
     if token is not GUARD_TOKEN:
-        raise UnguardedMotion("motion must go through engine.guards (FocusAxis / XYAxis)")
+        raise UnguardedMotion("motion and light-on must go through engine.guards "
+                              "(FocusAxis / XYAxis / lights)")
+
+
+# ---------------------------------------------------------------- set_property allow-list
+# One place for every backend (T-015). Bench names first, then the Micro-Manager demo names.
+
+#: Always refused by set_property, token or not: motion goes only through the guarded
+#: methods. "Core" is listed because its Focus / XYStage properties would re-route motion.
+MOTION_DEVICES = frozenset({
+    "ZDrive", "XYStage", "Nosepiece", "PFS", "PFSOffset",  # bench (Ti2)
+    "Z", "XY", "Objective", "Autofocus", "Core",  # demo
+})
+
+#: Aura lines. Only GREEN was used on the bench (2026-09-30); the other names follow the
+#: demo mapping and are unmeasured provisional until read off the light engine.
+AURA_LINES = ("VIOLET", "CYAN", "GREEN", "RED")
+
+#: Token required (PLAN D15). Bench: Aura line on/off, line intensity (per-mille), master
+#: State; DiaLamp State and Intensity. Demo: White Light Shutter (DiaLamp) and the LED line
+#: selector; LED Shutter (Aura master) has no writable property and is switched by the light
+#: methods.
+LIGHT_PROPERTIES = frozenset(
+    {("Aura", line) for line in AURA_LINES}
+    | {("Aura", f"{line}_Intensity") for line in AURA_LINES}
+    | {("Aura", "State"), ("DiaLamp", "State"), ("DiaLamp", "Intensity")}
+    | {("White Light Shutter", "State"), ("LED", "Label"), ("LED", "State")}
+)
+
+#: No token, on the backend's own camera device only (`BackendInfo.camera`): what the
+#: scripts set today. Prefer `set_exposure` / `set_roi` where they exist. The Kinetix
+#: readout-mode property name is not known yet (docs/microscope-pc-checklist.md).
+CAMERA_PROPERTIES = frozenset({"Exposure", "Binning", "PixelType",
+                               "OnCameraCCDXSize", "OnCameraCCDYSize"})
+
+
+def check_set_property(device: str, prop: str, token: object, *, camera: str) -> None:
+    """Raise unless `set_property(device, prop, ..., token=token)` is allowed.
+
+    `camera` is the backend's camera device label. Motion devices raise `UnguardedMotion`
+    always; light properties raise it without the guard token; anything not listed raises
+    `PropertyNotAllowed` naming the allow-list.
+    """
+    if device in MOTION_DEVICES:
+        raise UnguardedMotion(f"set_property on {device!r} would move hardware; "
+                              "use the guarded motion methods")
+    if (device, prop) in LIGHT_PROPERTIES:
+        require_token(token)
+        return
+    if device == camera and prop in CAMERA_PROPERTIES:
+        return
+    lights = ", ".join(f"{d}.{p}" for d, p in sorted(LIGHT_PROPERTIES))
+    cams = ", ".join(f"{camera}.{p}" for p in sorted(CAMERA_PROPERTIES))
+    raise PropertyNotAllowed(f"set_property {device}.{prop} is not on the allow-list. "
+                             f"Light (token required): {lights}. Camera: {cams}")
 
 
 @runtime_checkable
@@ -158,11 +228,14 @@ class Backend(Protocol):
     def pfs(self) -> PfsState: ...
     def light_state(self) -> dict[str, str]: ...  # e.g. {"DiaLamp": "0", "Aura": "0"}
 
-    # -- writes, each returning what it read back
-    def set_property(self, device: str, prop: str, value: Any) -> Readback: ...
-    def lamp_on(self) -> list[Readback]: ...  # transmitted lamp (DiaLamp)
+    # -- writes, each returning what it read back. set_property: check_set_property first
+    def set_property(self, device: str, prop: str, value: Any, *,
+                     token: MotionToken | None = None) -> Readback: ...
+    # light on / intensity: token required (D15). Off: no token, it is a stop
+    def lamp_on(self, *, token: MotionToken) -> list[Readback]: ...  # DiaLamp
     def lamp_off(self) -> list[Readback]: ...
-    def aura_line_on(self, line: str, percent: float) -> list[Readback]: ...  # lamp off first
+    def aura_line_on(self, line: str, percent: float, *,
+                     token: MotionToken) -> list[Readback]: ...  # lamp off first
     def aura_off(self) -> list[Readback]: ...
     def all_off(self) -> list[Readback]: ...  # Aura and DiaLamp
 

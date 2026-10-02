@@ -1,7 +1,8 @@
 """FakeBackend: the Backend protocol in memory, shared by WP-B/WP-C tests.
 
 Positions follow the commands; `z_readback_offset_um` makes ZDrive read back off by that
-much; `all_off_raises` makes lights-off fail. `frame.z_um` is the commanded Z, so a test
+much; `all_off_raises` makes lights-off fail. `set_property` follows the shared allow-list
+and light-on needs the guard token, like every backend. `frame.z_um` is the commanded Z, so a test
 score can be `lambda f: -abs(f.z_um - focus)`. Every call is appended to `calls`.
 """
 
@@ -21,6 +22,7 @@ from dino_autofocus.engine.backend import (
     Positions,
     Readback,
     StageLimits,
+    check_set_property,
     require_token,
 )
 
@@ -87,7 +89,9 @@ class FakeBackend:
     def light_state(self) -> dict[str, str]:
         return dict(self.lights)
 
-    def set_property(self, device: str, prop: str, value) -> Readback:
+    def set_property(self, device: str, prop: str, value, *, token=None) -> Readback:
+        check_set_property(device, prop, token, camera="FakeCam")
+        self._log("set_property", device, prop, str(value))
         self.props[(device, prop)] = str(value)
         return Readback.of(device, prop, value, value)
 
@@ -97,13 +101,15 @@ class FakeBackend:
             self.lights[dev] = value
         return Readback.of(dev, "State", value, self.lights[dev])
 
-    def lamp_on(self):
+    def lamp_on(self, *, token):
+        require_token(token)
         return [self._light("Aura", "0"), self._light("DiaLamp", "1")]
 
     def lamp_off(self):
         return [self._light("DiaLamp", "0")]
 
-    def aura_line_on(self, line: str, percent: float):
+    def aura_line_on(self, line: str, percent: float, *, token):
+        require_token(token)
         self.props[("Aura", f"{line.upper()}_Intensity")] = str(int(round(percent * 10)))
         return [self._light("DiaLamp", "0"), self._light("Aura", "1")]
 
