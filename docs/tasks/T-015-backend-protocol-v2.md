@@ -82,3 +82,9 @@ without a token; `lamp_off`, `aura_off`, `all_off` take none.
   and the runner (T-011b) switch to it in a small follow-up each.
 - Test: a backend that does not set the field is treated as bench.
 - Owner AF 실행12 (backend.py, the backends' info()), review AF 검토보조2.
+
+## T-015c (AF 실행12, after T-015b merges; review AF 검토보조2; lock-lift prerequisite)
+
+- `is_bench`: `kind in SIMULATED_KINDS` sits outside the try, so an unhashable kind raises TypeError instead of
+  returning True. Move the comparison into the try (any error → True, fail safe) and add that test case.
+- Runs in parallel with the two is_bench follow-ups (they call `is_bench`, not its internals).
