@@ -1,17 +1,29 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
-import { EncoderZ, isVerdict, type Verdict } from "../../app/Verdict";
+import {
+  type CommandIn,
+  CommandRefused,
+  type EventOut,
+  useClient,
+  useEngineEvents,
+  useEventsConnected,
+  useReadOnly,
+} from "../../app/client";
+import { EncoderZ, FocusVerdict } from "../../app/Verdict";
 import { useScreenContext } from "../../app/screenContext";
-import type {
-  Command,
-  EngineEvent,
-  Focus100xDefaults,
-  LensRow,
-  ObjectiveApi,
-  Permission,
-  Permissions,
-  ObjectivePlan,
-  ObjectiveState,
+import {
+  type Focus100xDefaults,
+  type LensRow,
+  type ObjectivePlan,
+  type ObjectiveState,
+  type Permission,
+  type Permissions,
+  permissionOf,
+  readFocusDefaults,
+  readLenses,
+  readPermissions,
+  readPlan,
+  readState,
 } from "./api";
 import {
   type ChangeView,
@@ -24,55 +36,80 @@ import {
 } from "./model";
 import "./objective.css";
 
+type Args = Record<string, unknown>;
+
+function command(kind: CommandIn["kind"], op = "", op_id = "", args: Args = {}): CommandIn {
+  return { kind, op, op_id, args, origin: "human" };
+}
+
+const startChange = (args: Args) => command("start", "objective_change", "", args);
+const confirm = (c: PendingConfirm, ok: boolean) => command("confirm", "", c.opId, { key: c.key, ok });
+
+/** engine events that change what the permission check would answer (busy, awaiting return) */
+const STATE_EVENTS = new Set(["started", "finished", "aborted", "error"]);
+
 /**
  * The objective area (docs/screens/objective.md, ui-spec 7.5): objective change
- * with immersion loading, and the 100x focus sweep. All state comes from the
- * read endpoints and engine events; the screen never decides a motion limit.
+ * with immersion loading, and the 100x focus sweep. All state comes from the read
+ * endpoints and engine events on the shell's client; the screen never decides a
+ * motion limit or a permission.
  */
-export function ObjectiveView({ api }: { api: ObjectiveApi }) {
+export function ObjectiveView() {
+  const client = useClient();
+  const { readOnly, why } = useReadOnly();
+  const connected = useEventsConnected();
   const [state, setState] = useState<ObjectiveState | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [lenses, setLenses] = useState<LensRow[]>([]);
   const [change, dispatchChange] = useReducer(reduceChange, undefined, initialChange);
   const [focus, dispatchFocus] = useReducer(reduceFocus, undefined, initialFocus);
   const [message, setMessage] = useState<string | null>(null);
   // undefined: first check loading; null: it could not be read (every control off, progress stays)
   const [perms, setPerms] = useState<Permissions | null | undefined>(undefined);
-  const [permsTick, setPermsTick] = useState(0);
+  const [reread, setReread] = useState(0);
+
+  // (re)read the screen state on mount, and again whenever the event socket comes back:
+  // events in the gap are lost (web/README "Talking to the server")
+  useEffect(() => {
+    if (connected) setReread((n) => n + 1);
+  }, [connected]);
 
   useEffect(() => {
     let live = true;
-    void api.getState().then((s) => live && setState(s));
-    void api.getLenses().then((l) => live && setLenses(l));
-    const off = api.subscribe((ev: EngineEvent) => {
-      dispatchChange(ev);
-      dispatchFocus(ev);
-      // engine state changed: permissions (busy, awaiting return) may have changed too
-      if (["started", "finished", "aborted", "error"].includes(ev.kind)) setPermsTick((n) => n + 1);
-    });
-    return () => {
-      live = false;
-      off();
-    };
-  }, [api]);
-
-  useEffect(() => {
-    let live = true;
-    api.getPermissions(PERMISSION_OPS).then(
+    readState(client).then(
+      (s) => live && (setState(s), setLoadError(null)),
+      (e) => live && setLoadError(e instanceof CommandRefused ? e.detail : String(e)),
+    );
+    readLenses(client).then(
+      (l) => live && setLenses(l),
+      () => live && setLenses([]),
+    );
+    readPermissions(client).then(
       (p) => live && setPerms(p),
       () => live && setPerms(null),
     );
     return () => {
       live = false;
     };
-  }, [api, permsTick]);
+  }, [client, reread]);
+
+  const onEvent = useCallback((ev: EventOut) => {
+    dispatchChange(ev);
+    dispatchFocus(ev);
+    if (STATE_EVENTS.has(ev.kind)) setReread((n) => n + 1);
+  }, []);
+  useEngineEvents(onEvent);
 
   const send = useCallback(
-    async (cmd: Command) => {
-      const r = await api.send(cmd);
-      setMessage(r.ok ? null : (r.refused ?? "refused"));
-      return r;
+    async (cmd: CommandIn) => {
+      try {
+        await client.command(cmd);
+        setMessage(null);
+      } catch (e) {
+        setMessage(e instanceof CommandRefused ? e.detail : String(e));
+      }
     },
-    [api],
+    [client],
   );
 
   const details = useMemo(
@@ -85,10 +122,15 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
   );
   useScreenContext(details);
 
-  if (state === null) return <p className="muted">Loading objective…</p>;
-  const perm = (op: string): Permission => permissionOf(perms, op);
+  if (state === null) {
+    return <p className="muted">{loadError ? `Objective state unavailable: ${loadError}` : "Loading objective…"}</p>;
+  }
+  // a remote screen never sends: the shell's read-only flag wins over any permission answer (D2)
+  const perm = (op: string): Permission =>
+    readOnly ? { allowed: false, reason: `Read-only: ${why ?? "remote view"}` } : permissionOf(perms, op);
   const changePerm = perm("objective_change");
   const awaiting = state.awaiting_return !== null || change.ended?.state === "awaiting_return";
+  const awaitingReason = awaiting ? "Return to the sample position first" : null;
 
   return (
     <div className="objective">
@@ -104,35 +146,17 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
       )}
       <CurrentPanel state={state} zUm={change.zUm ?? state.z_um} />
       {awaiting && <ReturnBanner perm={changePerm} onReturn={() => send(startChange({ resume: true }))} />}
-      <ChangePanel api={api} lenses={lenses} perm={changePerm} disabledBy={awaiting ? "Return to the sample position first" : null}
+      <ChangePanel lenses={lenses} perm={changePerm} disabledBy={awaitingReason}
                    onRotate={(target, escape) => send(startChange({ target_state: target, escape }))}
                    onReload={() => send(startChange({ reload: true }))} />
-      <StepsPanel view={change} confirmPerm={perm("confirm")} remote={state.remote}
-                  onLoadingDone={(c) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok: true } })}
-                  onAnswer={(c, ok) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok } })} />
-      <Focus100xPanel api={api} perm={perm("focus_100x")} confirmPerm={perm("confirm")} view={focus} disabledBy={awaiting ? "Return to the sample position first" : null}
-                      onStart={(args) => send({ kind: "start", op: "focus_100x", args })}
-                      onAnswer={(c, ok) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok } })} />
+      <StepsPanel view={change} confirmPerm={perm("confirm")} remote={readOnly}
+                  onLoadingDone={(c) => send(confirm(c, true))}
+                  onAnswer={(c, ok) => send(confirm(c, ok))} />
+      <Focus100xPanel perm={perm("focus_100x")} confirmPerm={perm("confirm")} view={focus} disabledBy={awaitingReason}
+                      onStart={(args) => send(command("start", "focus_100x", "", args))}
+                      onAnswer={(c, ok) => send(confirm(c, ok))} />
     </div>
   );
-}
-
-/** ops whose permission the screen asks for (GET /api/permissions) */
-const PERMISSION_OPS = ["objective_change", "focus_100x", "confirm"];
-
-/** the one fallback for every screen when /api/permissions cannot be read, or leaves an op out */
-export const PERMISSION_UNAVAILABLE: Permission = { allowed: false, reason: "Permission check unavailable" };
-/** while the first permission check is loading (same text on every screen) */
-export const PERMISSION_LOADING: Permission = { allowed: false, reason: "Checking permissions…" };
-
-export function permissionOf(perms: Permissions | null | undefined, op: string): Permission {
-  if (perms === undefined) return PERMISSION_LOADING;
-  if (perms === null) return PERMISSION_UNAVAILABLE;
-  return perms[op] ?? PERMISSION_UNAVAILABLE;
-}
-
-function startChange(args: Record<string, unknown>): Command {
-  return { kind: "start", op: "objective_change", args };
 }
 
 function currentStep(v: ChangeView): number | undefined {
@@ -164,21 +188,38 @@ function ReturnBanner({ perm, onReturn }: { perm: Permission; onReturn: () => vo
   );
 }
 
+/**
+ * Default for the Y step-out: the plan's escape.default (T-029). Before the plan
+ * arrives, on for an immersion lens and off between dry lenses (ui-spec 7.5).
+ */
+export function escapeDefault(plan: ObjectivePlan | null, lens: LensRow | null): boolean {
+  if (plan !== null) return plan.escape.default;
+  return lens !== null && lens.immersion !== "dry";
+}
+
+/**
+ * The engine's refusal of the step-out, or null. It comes in the plan payload
+ * (T-029: plan(cmd).escape, from guards.step_out_target, the stage Y limit).
+ */
+export function escapeRefusal(plan: ObjectivePlan | null): string | null {
+  if (plan === null || plan.escape.allowed) return null;
+  return plan.escape.reason ?? "step-out refused";
+}
+
 function ChangePanel({
-  api,
   lenses,
   perm,
   disabledBy,
   onRotate,
   onReload,
 }: {
-  api: ObjectiveApi;
   lenses: LensRow[];
   perm: Permission;
   disabledBy: string | null;
   onRotate: (target: number, escape: boolean) => void;
   onReload: () => void;
 }) {
+  const client = useClient();
   const [target, setTarget] = useState<number | null>(null);
   const [plan, setPlan] = useState<ObjectivePlan | null>(null);
   // null until the operator ticks or unticks it; then their choice wins
@@ -191,11 +232,14 @@ function ChangePanel({
   useEffect(() => {
     if (chosen === null) return;
     let live = true;
-    void api.getPlan(chosen, wantEscape).then((p) => live && setPlan(p));
+    readPlan(client, chosen, wantEscape).then(
+      (p) => live && setPlan(p),
+      () => live && setPlan(null),
+    );
     return () => {
       live = false;
     };
-  }, [api, chosen, wantEscape]);
+  }, [client, chosen, wantEscape]);
   // the step-out runs only when wanted and the engine does not refuse it
   const refusal = escapeRefusal(plan);
   const escape = wantEscape && plan !== null && refusal === null;
@@ -255,24 +299,6 @@ function ChangePanel({
       {blocked && <span className="reason"> {blocked}</span>}
     </section>
   );
-}
-
-/**
- * Default for the Y step-out: the plan's escape.default (T-029). Before the plan
- * arrives, on for an immersion lens and off between dry lenses (ui-spec 7.5).
- */
-export function escapeDefault(plan: ObjectivePlan | null, lens: LensRow | null): boolean {
-  if (plan !== null) return plan.escape.default;
-  return lens !== null && lens.immersion !== "dry";
-}
-
-/**
- * The engine's refusal of the step-out, or null. It comes in the plan payload
- * (T-029: plan(cmd).escape, from guards.step_out_target, the stage Y limit).
- */
-export function escapeRefusal(plan: ObjectivePlan | null): string | null {
-  if (plan === null || plan.escape.allowed) return null;
-  return plan.escape.reason ?? "step-out refused";
 }
 
 const STEP_NAMES: Record<number, string> = {
@@ -346,7 +372,7 @@ function StepsPanel({
 }
 
 function ConfirmBox({
-  confirm,
+  confirm: c,
   perm,
   onAnswer,
 }: {
@@ -355,16 +381,16 @@ function ConfirmBox({
   onAnswer: (c: PendingConfirm, ok: boolean) => void;
 }) {
   if (!perm.allowed) {
-    return <p className="muted">Waiting for the operator at the microscope PC: {confirm.prompt}</p>;
+    return <p className="muted">Waiting for the operator at the microscope PC: {c.prompt}</p>;
   }
   return (
     <div className="confirm" role="dialog" aria-label="Confirm">
-      <p>{confirm.prompt}</p>
-      <button type="button" onClick={() => onAnswer(confirm, true)}>
-        {confirm.options[0] ?? "Yes"}
+      <p>{c.prompt}</p>
+      <button type="button" onClick={() => onAnswer(c, true)}>
+        {c.options[0] ?? "Yes"}
       </button>{" "}
-      <button type="button" onClick={() => onAnswer(confirm, false)}>
-        {confirm.options[1] ?? "Cancel"}
+      <button type="button" onClick={() => onAnswer(c, false)}>
+        {c.options[1] ?? "Cancel"}
       </button>
     </div>
   );
@@ -383,7 +409,6 @@ type FocusForm = {
 };
 
 function Focus100xPanel({
-  api,
   perm,
   confirmPerm,
   view,
@@ -391,39 +416,45 @@ function Focus100xPanel({
   onStart,
   onAnswer,
 }: {
-  api: ObjectiveApi;
   perm: Permission;
   confirmPerm: Permission;
   view: FocusView;
   disabledBy: string | null;
-  onStart: (args: Record<string, unknown>) => void;
+  onStart: (args: Args) => void;
   onAnswer: (c: PendingConfirm, ok: boolean) => void;
 }) {
+  const client = useClient();
   const [defaults, setDefaults] = useState<Focus100xDefaults | null>(null);
   const [form, setForm] = useState<FocusForm | null>(null);
 
   useEffect(() => {
     let live = true;
-    void api.getFocusDefaults().then((d) => {
-      if (!live) return;
-      setDefaults(d);
-      setForm({ centre_um: d.centre_um === null ? "" : String(d.centre_um), half_um: d.half_um, step_um: d.step_um,
-        fine_half_um: d.fine_half_um, fine_step_um: d.fine_step_um, exposure_ms: d.exposure_ms, metric: d.metric });
-    });
+    readFocusDefaults(client).then(
+      (d) => {
+        if (!live) return;
+        setDefaults(d);
+        setForm({ centre_um: d.centre_um === null ? "" : String(d.centre_um), half_um: d.half_um, step_um: d.step_um,
+          fine_half_um: d.fine_half_um, fine_step_um: d.fine_step_um, exposure_ms: d.exposure_ms, metric: d.metric });
+      },
+      () => undefined,
+    );
     return () => {
       live = false;
     };
-  }, [api]);
+  }, [client]);
 
   const centre = form && form.centre_um.trim() !== "" ? Number(form.centre_um) : null;
   useEffect(() => {
     if (centre === null || !Number.isFinite(centre)) return;
     let live = true;
-    void api.getFocusDefaults(centre).then((d) => live && setDefaults(d));
+    readFocusDefaults(client, centre).then(
+      (d) => live && setDefaults(d),
+      () => undefined,
+    );
     return () => {
       live = false;
     };
-  }, [api, centre]);
+  }, [client, centre]);
 
   if (defaults === null || form === null) return null;
   const centreOk = centre !== null && Number.isFinite(centre);
@@ -476,7 +507,7 @@ function Focus100xPanel({
       {view.points.length > 0 && <SweepCurve view={view} ceilingUm={view.ceilingUm ?? defaults.ceiling_um} />}
       {view.result && (
         <p data-testid="focus-result">
-          <ComputedVerdict verdict={view.result.verdict} /> <EncoderZ readbackUm={view.result.zEncoderUm} />
+          <FocusVerdict verdict={view.result.verdict} source="computed" /> <EncoderZ readbackUm={view.result.zEncoderUm} />
           {view.result.warnings.map((w) => (
             <span key={w} className="reason">
               {" "}
@@ -486,23 +517,6 @@ function Focus100xPanel({
         </p>
       )}
     </section>
-  );
-}
-
-/** Grade word for verdicts computed from classical metrics (T-010 stage 2 source "computed"). */
-export const COMPUTED_GRADE = "computed";
-
-/**
- * TEMPORARY: the shell's FocusVerdict always tags "model"; the 100x result is a
- * computed (classical-metric) verdict (ui-spec 5.3). Same five words, tagged COMPUTED_GRADE, until
- * the shared component takes a source (asked of T-010). Delete this then.
- */
-function ComputedVerdict({ verdict }: { verdict: string }) {
-  const v: Verdict = isVerdict(verdict) ? verdict : "unsure";
-  return (
-    <span className={`verdict verdict-${v}`} data-verdict={v}>
-      {v.replace(/_/g, " ")} <span className="grade">{COMPUTED_GRADE}</span>
-    </span>
   );
 }
 

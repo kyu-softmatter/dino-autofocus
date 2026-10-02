@@ -4,7 +4,9 @@
  * a step is done when an event says so, and Z comes from encoder read-backs.
  */
 
-import type { EngineEvent } from "./api";
+import type { EventOut } from "../../app/client";
+
+type EngineEvent = EventOut;
 
 export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped";
 
@@ -73,7 +75,7 @@ export function stepDetail(d: Record<string, unknown>): string {
 }
 
 function toConfirm(ev: EngineEvent): PendingConfirm {
-  const d = ev.data;
+  const d = ev.data ?? {};
   return {
     opId: ev.op_id,
     key: str(d.key),
@@ -93,7 +95,7 @@ function markRunningBefore(steps: Record<number, StepRow>, upTo: number): Record
 }
 
 export function reduceChange(v: ChangeView, ev: EngineEvent): ChangeView {
-  const d = ev.data;
+  const d = ev.data ?? {};
   if (ev.kind === "started" && str(d.op) === "objective_change") {
     return { ...initialChange(), opId: ev.op_id };
   }
@@ -185,7 +187,7 @@ export function initialFocus(): FocusView {
 }
 
 export function reduceFocus(v: FocusView, ev: EngineEvent): FocusView {
-  const d = ev.data;
+  const d = ev.data ?? {};
   if (ev.kind === "started" && str(d.op) === "focus_100x") return { ...initialFocus(), opId: ev.op_id };
   if (v.opId === null || ev.op_id !== v.opId) return v;
   switch (ev.kind) {
