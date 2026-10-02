@@ -14,7 +14,7 @@ Two interpreters are used:
 
 | Interpreter | Runs | Install |
 |---|---|---|
-| System Python 3.12 (`%LOCALAPPDATA%\Programs\Python\Python312`, or on PATH) | `scripts/launcher.py` (tkinter UI) and the hardware scripts it starts | python.org installer, then `python -m pip install numpy pillow opencv-python pymmcore==12.5.0.75.0 pymmcore-plus==0.18.1` |
+| System Python 3.12 (`%LOCALAPPDATA%\Programs\Python\Python312`, or on PATH) | the hardware scripts. The launcher (exe and Shift + click) now uses the uv env instead, see section 4 | python.org installer, then `python -m pip install numpy pillow opencv-python pymmcore==12.5.0.75.0 pymmcore-plus==0.18.1` |
 | Repo uv env (`.venv`) | plots, the DINO focus scorer, dataset generation, training, and Node 22 for the web UI build | `uv sync` in the repo (pulls torch cu126 and, via the `web` group, Node; run it as `uv run npm ...`) |
 
 ## 3. DINOv2 backbone (only for the focus scorer / training)
@@ -29,13 +29,22 @@ git -C ../dinov2 checkout 7764ea0f912e53c92e82eb78a2a1631e92725fc8
 
 ## 4. Build the desktop launcher
 
+Needs `uv` and a finished `uv sync` in this clone; no system Python.
+
 ```
 powershell -ExecutionPolicy Bypass -File tools\launcher\build.ps1
 ```
 
 Writes `DINO Autofocus.exe` to the Desktop using the .NET Framework compiler that ships
-with Windows. The exe only starts `scripts/launcher.py`, so editing the launcher needs no
-rebuild. If `autofocus.ico` is missing, `make_icon.py` (Pillow) redraws it.
+with Windows. If an exe is already there, the build stops and prints its size and date;
+check whether it is a build you want to keep before adding `-Force` to replace it.
+
+The exe starts the web app server from this clone's uv env
+(`uv run python -m dino_autofocus.server`) and opens the browser at `http://127.0.0.1:8765/`.
+Shift + click opens the old tkinter launcher (`scripts/launcher.py`), also through uv.
+Server code changes need no rebuild; moving the clone or changing the port (`-Port`) does.
+If `autofocus.ico` is missing, `uv run python tools\launcher\make_icon.py` redraws it.
+Run, stop and troubleshooting: [`docs/runbooks/launcher.md`](runbooks/launcher.md).
 
 ## 5. Trained focus head
 

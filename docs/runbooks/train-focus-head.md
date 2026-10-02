@@ -40,8 +40,87 @@ uv run pytest tests/test_backbone.py -q
 ```
 
 `DinoExtractor` 는 클론의 HEAD 가 `7764ea0` 이 아니면 실행을 거부한다.
+`tests/test_backbone.py` 는 전처리만 시험하고 모델을 읽지 않으므로, 클론과 가중치는 1.2절로 확인한다.
 
 근거: `docs/setup-new-pc.md` 2–3절, `src/dino_autofocus/backbone.py`.
+
+### 1.1 가중치는 어디서 오는가
+
+`DinoExtractor` 는 `torch.hub.load(<클론>, "dinov2_vits14", source="local")` 로 모델 코드를 클론에서
+읽는다. 코드는 인터넷에 가지 않지만, **사전학습 가중치는 처음 만들 때 인터넷에서 받는다**
+(클론의 `dinov2/hub/backbones.py`, `dinov2/hub/utils.py`, 커밋 `7764ea0` 기준):
+
+- URL: `https://dl.fbaipublicfiles.com/dinov2/<모델>/<모델>_pretrain.pth`
+- 받는 함수: `torch.hub.load_state_dict_from_url`. 해시 검사는 꺼져 있다 (`check_hash=False`).
+  파일 이름에 해시가 없어서, 잘린 파일이나 다른 파일이 있어도 torch 가 알아채지 못한다.
+- 저장 폴더: `<TORCH_HOME>\hub\checkpoints\`. 파일이 이미 있으면 받지 않는다.
+  - `TORCH_HOME` 이 없으면 `%XDG_CACHE_HOME%\torch`, 그것도 없으면 `%USERPROFILE%\.cache\torch`.
+  - 현미경 PC 의 실제 폴더는 이 명령으로 본다 (아무것도 받지 않는다):
+
+    ```
+    uv run python -c "import torch; print(torch.hub.get_dir())"
+    ```
+
+    출력 뒤에 `\checkpoints` 를 붙인 곳이 가중치 폴더다.
+
+이 저장소가 쓰는 파일:
+
+| 모델 | 쓰는 곳 | 파일 이름 | 크기 (바이트) | SHA-256 |
+|---|---|---|---|---|
+| `dinov2_vits14` | 학습, 평가, 라이브 뷰 헤드 (기본값) | `dinov2_vits14_pretrain.pth` | 88,283,115 | `b938bf1bc15cd2ec0feacfe3a1bb553fe8ea9ca46a7e1d8d00217f29aef60cd9` |
+| `dinov2_vitb14` | `bench_latency.py` 만 | `dinov2_vitb14_pretrain.pth` | 346,378,731 | `0b8b82f85de91b424aded121c7e1dcc2b7bc6d0adeea651bf73a13307fad8c73` |
+
+크기와 해시는 개발 데스크톱 캐시(`%USERPROFILE%\.cache\torch\hub\checkpoints`, 2026-09-30 에 받음)의
+파일에서 쟀다. 배포처가 공개한 값이 아니라, 이 저장소 결과를 만든 파일의 값이다.
+
+### 1.2 현미경 PC 가 오프라인일 때
+
+인터넷이 되는 PC (예: 개발 데스크톱) 에서 아래 두 가지를 USB 등으로 옮긴다. 개발 세션은 이
+복사를 대신하지 않는다. 사용자가 한다.
+
+**가중치 파일**
+
+1. 인터넷 되는 PC 의 캐시 폴더에서 1.1절 표의 파일을 복사한다. 데스크톱에는 이미 있다.
+   없으면 그 PC 에서 URL 로 직접 받는다.
+2. 현미경 PC 에서 `torch.hub.get_dir()` 출력 아래 `checkpoints` 폴더를 만들고 그 안에 넣는다.
+   파일 이름을 바꾸지 않는다. torch 는 URL 끝의 파일 이름으로 캐시를 찾는다.
+3. 크기와 해시를 표와 비교한다 (PowerShell):
+
+   ```
+   Get-Item <checkpoints 폴더>\dinov2_*_pretrain.pth | Select-Object Name, Length
+   Get-FileHash -Algorithm SHA256 <checkpoints 폴더>\dinov2_*_pretrain.pth
+   ```
+
+   하나라도 다르면 쓰지 않고 다시 복사한다.
+
+**DINOv2 클론** (커밋 `7764ea0`)
+
+1. 인터넷 되는 PC 에서 1절의 `git clone` 과 `git checkout` 을 한다 (데스크톱에는
+   `D:\codes\github\dinov2` 에 이미 있다).
+2. 폴더를 **`.git` 까지 통째로** 현미경 PC 의 저장소 옆 (`D:\AutoFocus\dinov2`) 으로 복사한다.
+   `DinoExtractor` 는 `git rev-parse HEAD` 로 커밋을 확인하므로 `.git` 이 없거나 현미경 PC 에
+   `git` 이 없으면 실행을 거부한다. 다른 위치에 두면 `DINOV2_REPO` 로 지정한다.
+3. 확인:
+
+   ```
+   git -C ..\dinov2 rev-parse HEAD
+   ```
+
+   `7764ea0f912e53c92e82eb78a2a1631e92725fc8` 이어야 한다.
+
+**함께 확인** (네트워크를 끈 채로. 가중치가 없으면 받으려다 실패하므로 빠진 것이 드러난다):
+
+```
+uv run python -c "from dino_autofocus.backbone import DinoExtractor; print(DinoExtractor().dim)"
+```
+
+`768` (ViT-S/14, 마지막 블록 1개의 CLS + 평균 패치) 이 나오면 클론과 가중치가 모두 제자리에 있다.
+`bench_latency.py` 를 돌릴 계획이면 `dinov2_vitb14_pretrain.pth` 도 같은 폴더에 있어야 한다.
+
+`uv sync` 의 패키지 내려받기도 인터넷이 필요하다. 이 절은 가중치와 클론만 다룬다.
+
+근거: `src/dino_autofocus/backbone.py`, 클론의 `hubconf.py`, `dinov2/hub/backbones.py`,
+`dinov2/hub/utils.py`, `scripts/bench_latency.py`.
 
 ## 2. 합성 데이터셋 생성
 
@@ -154,6 +233,7 @@ fp16 기본값 유지 여부의 근거가 된다.
 실행마다 아래를 텍스트로 남겨 매니저에게 전달한다. 같은 결과를 다시 만들 수 있어야 한다.
 
 - 저장소 커밋 해시 (`git rev-parse HEAD`), DINOv2 커밋 (`7764ea0` 확인)
+- 가중치 파일 SHA-256 (1.1절 표와 같은지)
 - GPU 이름, 드라이버, `torch.__version__`, CUDA 버전
 - 데이터셋 명령 전체 (인자, `--seed0`, `--workers`), 걸린 시간, 최대 커밋 메모리, 크래시 여부
 - 프레임 수, 장면 수, `valid` 비율 (`eval_synthetic.py` 첫 줄 출력)

@@ -13,7 +13,13 @@ implementation follows:
 - A position read that fails is a field (`Positions.errors`), never an exception: a
   missing stage must not stop the camera.
 - The backend does not judge safety. Motion methods take the guards' `MotionToken` and
-  call `require_token` first, so only `engine.guards` can move the stage or focus.
+  call `require_token` first, so only `engine.guards` can move the stage or focus. Light
+  methods that switch on or change intensity take it too (PLAN D15); switching off never does.
+- `set_property` is an allow-list (`check_set_property`): motion devices are always refused,
+  light properties need the token, a short list of camera properties needs none, and
+  everything else is refused. Every backend calls it before writing.
+- Markings such as "unmeasured provisional" or a demo substitution go into `notes`, never
+  into device or property names.
 """
 
 from __future__ import annotations
@@ -34,10 +40,13 @@ class Readback:
     read: str
     verified: bool
     t: float = field(default_factory=time.time)
+    notes: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def of(cls, device: str, prop: str, wanted: Any, read: Any) -> Readback:
-        return cls(device, prop, str(wanted), str(read), str(read) == str(wanted))
+    def of(cls, device: str, prop: str, wanted: Any, read: Any,
+           notes: dict[str, str] | None = None) -> Readback:
+        return cls(device, prop, str(wanted), str(read), str(read) == str(wanted),
+                   notes=dict(notes or {}))
 
 
 @dataclass
@@ -95,6 +104,7 @@ class BackendInfo:
     bit_depth: int
     objectives: list[ObjectiveInfo] = field(default_factory=list)
     stage_limits: StageLimits = field(default_factory=StageLimits)
+    notes: dict[str, str] = field(default_factory=dict)  # e.g. {"aura.CYAN": PROVISIONAL}
 
     @property
     def ceiling_adu(self) -> int:
@@ -121,22 +131,154 @@ class Frame:
                 "y_um": self.y_um, "z_um": self.z_um, "shape": list(self.image.shape)}
 
 
+# ---------------------------------------------------------------- discovery reads (F2)
+# Shapes follow `hardware_profile.json` in docs/operations-spec.md 5. Discovery writes
+# nothing, moves nothing and switches nothing on; a read that fails is a field.
+
+
+@dataclass
+class PropertyInfo:
+    value: str | None  # None when the read failed (`read_ok` False, reason in `error`)
+    read_only: bool | None = None
+    allowed: list[str] = field(default_factory=list)  # empty = free value
+    limits: tuple[float, float] | None = None
+    read_ok: bool = True
+    error: str | None = None
+
+
+@dataclass
+class DeviceInfo:
+    """A loaded device. `read_back`: its state can be read. `write_verified` stays None until
+    a write was read back, which discovery never does (soft-matter-agents preflight names)."""
+
+    label: str
+    type: str  # Micro-Manager DeviceType name: "CameraDevice", "XYStageDevice", ...
+    library: str
+    description: str
+    read_back: bool
+    write_verified: bool | None = None
+    properties: dict[str, PropertyInfo] = field(default_factory=dict)
+
+
+@dataclass
+class NosepieceLabel:
+    state: int
+    label: str
+    pixel_um: float | None  # from the backend's pixel-size table; None if it has none
+
+
+@dataclass
+class PiezoReading:
+    """Read-only piezo position. Not opening (`port` "") or failing to open is a field."""
+
+    port: str
+    connected: bool
+    x_um: float | None = None
+    y_um: float | None = None
+    z_um: float | None = None
+    error: str | None = None
+    t: float = field(default_factory=time.time)
+
+
+@dataclass
+class ConfigRecord:
+    """What loading the configuration did at `open()`.
+
+    `changed_during_load`: the file's sha256 differed before and after the load.
+    `autoshutter`: AutoShutter 0 written at open and read back. `startup_preset`: the
+    group/preset the load applied (Micro-Manager System/Startup), None if there is none.
+    """
+
+    path: str
+    sha256: str | None
+    changed_during_load: bool | None
+    autoshutter: Readback | None
+    startup_preset: str | None = None
+    t_loaded: float | None = None
+    notes: dict[str, str] = field(default_factory=dict)
+
+
+class StreamActive(RuntimeError):
+    """`snap()` while the acquisition stream runs. The engine pauses the stream first (T-011)."""
+
+
 class MotionToken:
-    """Held by `engine.guards`. A motion call without it is refused by the backend."""
+    """Held by `engine.guards`. A motion or light-on call without it is refused by the backend."""
 
     __slots__ = ()
 
 
 GUARD_TOKEN = MotionToken()  # used outside engine/guards.py (and test fakes) = review failure
 
+PROVISIONAL = "unmeasured provisional"  # the `notes` value for numbers not yet measured
+
 
 class UnguardedMotion(RuntimeError):
     pass
 
 
+class PropertyNotAllowed(ValueError):
+    """`set_property` on a device/property outside the allow-list."""
+
+
 def require_token(token: object) -> None:
     if token is not GUARD_TOKEN:
-        raise UnguardedMotion("motion must go through engine.guards (FocusAxis / XYAxis)")
+        raise UnguardedMotion("motion and light-on must go through engine.guards "
+                              "(FocusAxis / XYAxis / lights)")
+
+
+# ---------------------------------------------------------------- set_property allow-list
+# One place for every backend (T-015). Bench names first, then the Micro-Manager demo names.
+
+#: Always refused by set_property, token or not: motion goes only through the guarded
+#: methods. "Core" is listed because its Focus / XYStage properties would re-route motion.
+MOTION_DEVICES = frozenset({
+    "ZDrive", "XYStage", "Nosepiece", "PFS", "PFSOffset",  # bench (Ti2)
+    "Z", "XY", "Objective", "Autofocus", "Core",  # demo
+})
+
+#: Aura lines. Only GREEN was used on the bench (2026-09-30); the other names follow the
+#: demo mapping and are unmeasured provisional until read off the light engine.
+AURA_LINES = ("VIOLET", "CYAN", "GREEN", "RED")
+
+#: Token required (PLAN D15). Bench: Aura line on/off, line intensity (per-mille), master
+#: State; DiaLamp State and Intensity. Demo: White Light Shutter (DiaLamp) and the LED line
+#: selector; LED Shutter (Aura master) has no writable property and is switched by the light
+#: methods.
+LIGHT_PROPERTIES = frozenset(
+    {("Aura", line) for line in AURA_LINES}
+    | {("Aura", f"{line}_Intensity") for line in AURA_LINES}
+    | {("Aura", "State"), ("DiaLamp", "State"), ("DiaLamp", "Intensity")}
+    | {("White Light Shutter", "State"), ("LED", "Label"), ("LED", "State")}
+)
+
+#: No token, on the backend's own camera device only (`BackendInfo.camera`): what the
+#: scripts set today. Prefer `set_exposure` / `set_roi` where they exist. The Kinetix
+#: readout-mode property is not listed until confirmed on the PC: the candidate is
+#: `ReadoutRate` ("100MHz 12bit" in the 2026-09-30 run log; docs/microscope-pc-checklist.md).
+CAMERA_PROPERTIES = frozenset({"Exposure", "Binning", "PixelType",
+                               "OnCameraCCDXSize", "OnCameraCCDYSize"})
+
+
+def check_set_property(device: str, prop: str, token: object, *, camera: str) -> None:
+    """Raise unless `set_property(device, prop, ..., token=token)` is allowed.
+
+    `camera` is the backend's camera device label. Motion devices raise `UnguardedMotion`
+    always; light properties raise it without the guard token; anything not listed raises
+    `PropertyNotAllowed` naming the allow-list.
+    """
+    if device in MOTION_DEVICES:
+        raise UnguardedMotion(f"set_property on {device!r} would move hardware; "
+                              "use the guarded motion methods")
+    if (device, prop) in LIGHT_PROPERTIES:
+        require_token(token)
+        return
+    if device == camera and prop in CAMERA_PROPERTIES:
+        return
+    lights = ", ".join(f"{d}.{p}" for d, p in sorted(LIGHT_PROPERTIES))
+    cams = ", ".join(f"{camera}.{p}" for p in sorted(CAMERA_PROPERTIES))
+    raise PropertyNotAllowed(f"set_property {device}.{prop} is not on the allow-list. "
+                             f"Light (token required): {lights}. Camera: {cams}")
 
 
 @runtime_checkable
@@ -158,11 +300,28 @@ class Backend(Protocol):
     def pfs(self) -> PfsState: ...
     def light_state(self) -> dict[str, str]: ...  # e.g. {"DiaLamp": "0", "Aura": "0"}
 
-    # -- writes, each returning what it read back
-    def set_property(self, device: str, prop: str, value: Any) -> Readback: ...
-    def lamp_on(self) -> list[Readback]: ...  # transmitted lamp (DiaLamp)
+    # -- discovery reads (F2, hardware_scan): write nothing, move nothing, switch nothing on
+    def describe_devices(self, include_properties: bool = True) -> list[DeviceInfo]: ...
+    def nosepiece_labels(self) -> list[NosepieceLabel]: ...  # every state, not only the current
+    def piezo_read(self, port: str) -> PiezoReading: ...  # "" = do not open the port
+    def config_record(self) -> ConfigRecord: ...
+
+    # -- acquisition stream, owned by the engine (T-011). Frames carry the same meta as
+    # snap(). snap() while streaming raises StreamActive. next_frame returns the newest
+    # frame not yet returned (older ones are dropped), or None after timeout_s.
+    def start_stream(self, interval_ms: float | None = None) -> None: ...  # None = camera rate
+    def next_frame(self, timeout_s: float = 1.0) -> Frame | None: ...
+    def stop_stream(self) -> None: ...  # no-op when not streaming
+    def streaming(self) -> bool: ...
+
+    # -- writes, each returning what it read back. set_property: check_set_property first
+    def set_property(self, device: str, prop: str, value: Any, *,
+                     token: MotionToken | None = None) -> Readback: ...
+    # light on / intensity: token required (D15). Off: no token, it is a stop
+    def lamp_on(self, *, token: MotionToken) -> list[Readback]: ...  # DiaLamp
     def lamp_off(self) -> list[Readback]: ...
-    def aura_line_on(self, line: str, percent: float) -> list[Readback]: ...  # lamp off first
+    def aura_line_on(self, line: str, percent: float, *,
+                     token: MotionToken) -> list[Readback]: ...  # lamp off first
     def aura_off(self) -> list[Readback]: ...
     def all_off(self) -> list[Readback]: ...  # Aura and DiaLamp
 
@@ -170,5 +329,9 @@ class Backend(Protocol):
     def move_z(self, z_um: float, *, token: MotionToken) -> float: ...  # returns z read back
     def move_xy(self, x_um: float, y_um: float, *, token: MotionToken,
                 timeout_s: float | None = None) -> tuple[float, float]: ...
+    # relative to the current XY read (edge_trace steps); same guards as move_xy. Returns
+    # the XY read back after the move
+    def move_xy_rel(self, dx_um: float, dy_um: float, *, token: MotionToken,
+                    timeout_s: float | None = None) -> tuple[float, float]: ...
     def set_nosepiece(self, state: int, *, token: MotionToken) -> Readback: ...
     def pfs_off(self, *, token: MotionToken) -> Readback: ...
