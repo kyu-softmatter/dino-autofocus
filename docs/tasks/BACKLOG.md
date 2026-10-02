@@ -146,3 +146,6 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   `DINO_AF_SIM_TRAJECTORY_ROOTS`.
 - User (T-026 stage 2, b2f3952): the Desktop "DINO Autofocus.exe" is the user's old tkinter build. Copy it aside before
   running `build.ps1 -Force` (the script also keeps it as `.prev.exe`).
+- Microscope PC (T-029d): the bench ascent check reads `info()` and `nosepiece()` on every upward Z step (two core
+  reads per step, uncached on purpose so a lens change is never missed). Measure the per-step latency on the stand
+  before the BENCH_APPROACH flip.
