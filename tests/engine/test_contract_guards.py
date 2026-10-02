@@ -9,6 +9,7 @@ from dino_autofocus.engine.guards import (
     XYAxis,
     XYBox,
     best_z_um,
+    limits_for,
     registry_key,
     rotate_nosepiece,
     step_out_target,
@@ -252,3 +253,36 @@ def test_the_step_out_is_plus_y_and_stays_inside_the_stage_travel(fake):
     fake.info = no_limits
     with pytest.raises(GuardError, match="no stage Y limit"):
         step_out_target(fake, 8026.0, 571.6)
+
+
+LENS_LABELS = {  # nosepiece labels: bench (mm_demo_core), mock world, FakeBackend
+    "1-Plan Apo LmbdD20 4x": "4x",
+    "2-Plan Apo LmbdD 10x": "10x",
+    "2-Plan Apo 10x": "10x",
+    "3-Plan Apo LmbdD 20x": "20x",
+    "3-Plan Apo 20x": "20x",
+    "4-Apo LmbdS 40xC WI": "40x-WI",
+    "4-Plan Apo 40x WI": "40x-WI",
+    "5-Plan Apo LmbdD 60x Oil": "60x-Oil",
+    "5-Plan Apo 60x Oil": "60x-Oil",
+    "6-Plan Apo LmbdD0.13 100x Oil": "100x-Oil",
+}
+
+
+@pytest.mark.parametrize("label, key", sorted(LENS_LABELS.items()))
+def test_every_known_lens_label_has_a_table_row(label, key):
+    assert registry_key(label) == key
+    assert limits_for(label)[1] == key  # not the strictest row
+
+
+def test_config_lens_names_map_to_table_rows():
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[2] / "configs"
+    names = [yaml.safe_load(p.read_text(encoding="utf-8"))["system"]["name"]
+             for p in sorted(root.glob("ti2_*.yaml"))]
+    assert len(names) == 6
+    keys = {registry_key(n) for n in names}
+    assert keys == {"4x", "10x", "20x", "40x-WI", "60x-Oil", "100x-Oil"}

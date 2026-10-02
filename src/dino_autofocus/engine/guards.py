@@ -137,8 +137,12 @@ def plain(v: Any, what: str) -> float:
 
 
 def registry_key(nosepiece_label: str) -> str:
-    """'1-Plan Apo LmbdD20 4x' -> '4x'; '6-Plan Apo LmbdD0.13 100x Oil' -> '100x-Oil'."""
-    m = re.search(r"(\d+)x\b", nosepiece_label)
+    """'1-Plan Apo LmbdD20 4x' -> '4x'; '6-Plan Apo LmbdD0.13 100x Oil' -> '100x-Oil';
+    '4-Apo LmbdS 40xC WI' -> '40x-WI'; 'Ti2 40x/1.25 water (...)' -> '40x-WI'.
+
+    The magnification is digits then "x", followed by a letter (the "C" of 40xC) or a word
+    boundary, and not part of a decimal such as LmbdD0.13."""
+    m = re.search(r"(?<![\d.])(\d+)x(?=[A-Za-z]|\b)", nosepiece_label)
     if not m:
         raise GuardError(f"no magnification in objective label {nosepiece_label!r}")
     low = nosepiece_label.lower()
