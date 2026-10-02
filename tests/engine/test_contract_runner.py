@@ -1374,6 +1374,55 @@ def test_an_op_that_switches_off_itself_still_gets_a_verified_end_state(fake, tm
         r.shutdown("test", timeout=T)
 
 
+class Gates:
+    """Stands in for T-028's HardwareState: a snapshot provider with check(op, args)."""
+
+    def __init__(self, closed: dict[str, list[str]] | None = None, raises: bool = False):
+        self.closed, self.raises, self.asked = closed or {}, raises, []
+
+    def __call__(self) -> dict:
+        return {"profile": "bench", "gates": {op: False for op in self.closed}}
+
+    def check(self, op: str, args: dict | None = None):
+        self.asked.append((op, dict(args or {})))
+        if self.raises:
+            raise OSError("profile file unreadable")
+        return (op not in self.closed, self.closed.get(op, []))
+
+
+def test_a_gated_op_is_refused_in_preflight_with_the_gates_reasons(make, fake):
+    gates = Gates({"steps": ["no transmitted lamp in the hardware profile",
+                             "profile not confirmed"]})
+    r, sink = make(hardware=gates)
+    blocked = r.submit(start("steps", n=1))
+    failed = sink.wait("preflight_failed", blocked)
+    (gate,) = [c for c in failed.data["checks"] if c["name"] == "hardware_gate"]
+    assert gate["read"] == ["no transmitted lamp in the hardware profile",
+                            "profile not confirmed"]
+    assert gate["why"] == "no transmitted lamp in the hardware profile; profile not confirmed"
+    assert sink.wait("error", blocked).data["where"] == "preflight"
+    assert fake.calls == []  # nothing switched or moved
+    assert gates.asked == [("steps", {"n": 1})]
+    sink.wait("finished", r.submit(start("tare")))  # an open gate passes
+    sink.wait("finished", r.submit(Command("lights_off")))  # stops are never gated
+    assert ("lights_off", {}) not in gates.asked
+
+
+def test_a_gate_provider_error_fails_closed(make):
+    r, sink = make(hardware=Gates(raises=True))
+    failed = sink.wait("preflight_failed", r.submit(start("steps")))
+    (gate,) = [c for c in failed.data["checks"] if c["name"] == "hardware_gate"]
+    assert gate["why"] == ("hardware gate check failed (OSError: profile file unreadable); "
+                           "refused")
+
+
+def test_no_gate_provider_keeps_todays_behaviour(make):
+    r, sink = make(hardware=lambda: {"profile": None, "gates": {}})  # snapshot only
+    sink.wait("finished", r.submit(start("steps")))
+    r2, sink2 = make()  # no provider at all
+    sink2.wait("finished", r2.submit(start("steps")))
+
+
 def test_registry_refuses_reserved_and_duplicate_names():
     reg = Registry()
     reg.register(Steps)
