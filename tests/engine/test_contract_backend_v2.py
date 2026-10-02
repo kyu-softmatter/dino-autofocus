@@ -27,7 +27,7 @@ import json
 from dataclasses import asdict
 
 import pytest
-from conftest import FakeBackend
+from engine_fakes import FakeBackend
 
 from dino_autofocus.engine.backend import (
     CAMERA_PROPERTIES,

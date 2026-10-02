@@ -227,3 +227,14 @@
 - Item 2 (from 실행13, T-105): `test_server_access.py::test_login_routes_open_to_remote_viewers` asserts 404 for
   `POST /api/auth/{login,…,signup}` with `json={}` ("until T-018 adds them"). With T-105's router it gets 422, or 401
   for lock/activity. Assert what the test means: a remote viewer is not refused with 403 `remote_view` on those paths.
+- T-009c wire shape for (b) (manager, matches T-010-8 and T-105 b11f23e): a `WsLock` model in
+  `server/schemas/common.py`, `{"type": "lock", "locked": true|false}`, sent once on connect and on every change of the
+  login's lock state. While locked, no `event` messages are sent; replies to commands (`accepted` / `error`) still
+  are, since stops stay allowed. Test the sequence connect → lock → unlock.
+
+## T-009g (AF 실행7, after T-009c and T-028 merge; review AF 검토보조3) — wire the hardware provider (from T-028)
+
+- In `create_app`: `hw = register_hardware(OPERATIONS, ProfileStore(<records root>/microscope/hardware))` and
+  `Runner(..., hardware=hw)`; the assistant's tool `gates=` uses `hw.check`. The profile store lives in the
+  microscope's own records folder, not per session (manager decision, from 실행17). Test that hardware_scan and
+  hardware_confirm are registered and that a gated op is refused through the server.
