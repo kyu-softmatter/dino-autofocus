@@ -186,5 +186,7 @@ describe("auth failures and stale values", () => {
     expect(pos.getAttribute("data-stale")).toBe("true");
     expect(pos.textContent?.startsWith("position: unknown")).toBe(true);
     expect(pos.querySelector(".encoder-z")).toBeNull();
+    // "idle" would be a claim about now; while disconnected it is unknown
+    expect(screen.getByTestId("sb-running").textContent).toBe("operation: unknown");
   });
 });

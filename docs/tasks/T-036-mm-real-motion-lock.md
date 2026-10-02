@@ -30,3 +30,28 @@
 ## Done when
 
 - Common criteria, trailer `Session: AF 실행12`. Send `[검토요청 T-036] SAFETY top priority` to AF 검토보조2.
+
+## T-036b follow-up (from the T-036 pre-review): startup preset must not move the stand
+
+- `open()` loads the bench config, and Micro-Manager applies its System/Startup preset (and any preset run at load)
+  automatically. Before loading, parse the `.cfg` text and refuse with a named reason if any preset applied at load
+  sets a property of a MOTION_DEVICES device (ZDrive / XYStage position, Nosepiece State, PFS on/offset).
+  Light-path and shutter settings stay allowed. Record what the preset sets in `config_record()`.
+- Tests with small synthetic `.cfg` files (one clean, one with a motion property in Startup).
+- Owner AF 실행12, review AF 검토보조2, priority right after T-036 merges.
+
+## T-036c follow-up (after T-036b merges)
+
+- Apply the same check to the `System/Shutdown` preset (applied at unload by some cores): refuse to open a config whose
+  Shutdown preset touches MOTION_DEVICES, listing the devices. Owner AF 실행12, review AF 검토보조2.
+
+## T-036d follow-up (from 검토보조2's T-036b pass; lock-lift prerequisite)
+
+- The preset check matches the fixed `MOTION_DEVICES` names only. A bench cfg that labels the stage differently
+  (e.g. "TIZDrive") and is opened with `DeviceNames` pointing at that label would let a Startup preset move it.
+  Also refuse settings on the configured `self.devices.z / xy / nosepiece / pfs` labels. Test with a renamed device.
+- Director: also take labels from the cfg's own role lines (`Property,Core,Focus,<label>`, `...,XYStage,<label>`,
+  `...,AutoFocus,<label>`), not only from `DeviceNames`. A cfg whose role labels differ from `DeviceNames` is still
+  refused, and the refusal names the role mismatch. Test: Startup sets `TIZDrive.Position` with
+  `Property,Core,Focus,TIZDrive` → refused.
+- Owner AF 실행12, branch `exec12/T-036d-device-labels` from main's hash after T-036b merges, review AF 검토보조2.

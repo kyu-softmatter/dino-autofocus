@@ -30,6 +30,10 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 ## Manager to-do on events
 
+- **Quota pause (director, after the 19:20 outage):** active 실행1, 3, 4, 6, 7, 10, 11, 12, 15, 17 + AF 검토,
+  검토보조1, 2. Paused: 실행2, 5, 8, 9, 13, 14, 16 (after T-037 commit), 18, 19, 20, 검토보조3, 4, 업무분배보조.
+  Resume all when T-009b and T-010 stage 4 merge, then tell the director. No broadcasts.
+- T-009 reviews go to 검토보조1 while 검토보조3 is paused.
 - T-009 and T-010 first skeletons merged → tell AF 업무분배보조 (screen stage B starts).
 - 실행14 (T-020) or 실행5 (T-004) review cleared → offer the seat to AF 업무분배보조 for T-103 / T-104.
 - T-018 merged → 실행13 starts T-105 (screen manager). T-019 merged → 실행2 starts T-106.
@@ -40,7 +44,14 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 - Merge order: T-009b (remote_view mark) and T-010 stage 4 (client rule) before any screen router (T-100..T-106 stage B).
 
-- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard and T-011's bench check are both on main. Tell the director when they are.
+- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag, T-027b's per-lens approach ceiling (37f5c6c), the two is_bench follow-ups (guards: T-027b item 3; runner: 실행15), T-015c (is_bench never raises) and T-036d (preset check on configured device labels) are all on main. Tell the director when they are.
+
+- On resume of the screen routers: T-106 (실행2) calls `ensure_sample_created(session, store)` on session open (T-027 seam).
+- T-015b merged → one bench rule: 실행1 switches `FocusAxis._simulated` and the guards to `is_bench(info)` (T-027b item 3,
+  review 검토보조1); 실행15 switches `runner._on_bench` (runner.py ~1144) to it. Review 검토보조2.
+  Done when `git grep` finds no direct `BackendInfo.bench` read outside `is_bench()` (today guards.py ~353
+  `getattr(info, "bench", None)` and runner.py ~1151 `info.bench`). The lift plan to the director carries the three
+  merge hashes (T-015b, guards, runner) and that grep output (director, d960ffd).
 
 ## 후속 과제 후보
 
@@ -106,3 +117,5 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - 암전 판정 방식: T-003 은 프레임마다 p99.9 − median < 20 ADU, T-006 명세의 focus_100x preflight 는
   최댓값이 암전 오프셋 (약 102 ADU) 근처. 둘 중 무엇을 쓸지
 - 임시 가드 값 (T-015): 큰 XY 이동 문턱 min(렌즈 시야, 1 mm), z_safe 0 µm, F5 이탈 거리 기본값 없음
+- Microscope PC: free working distance (`FREE_WD_UM`) for 10x, 20x, 40x WI, 60x before they become rotation targets (T-029).
+- Microscope PC (T-036b, b7c8c98): the bench cfg passes `check_load_settings` (no motion device in System/Startup, System/Shutdown or post-init Property lines), and whether the core applies System/Shutdown at unload.

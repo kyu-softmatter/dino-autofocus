@@ -66,7 +66,6 @@ YES = ("yes", "ok", "done", "true")
 RUNNING_MARK = "running.json"
 LAST_SHUTDOWN = "last_shutdown_lights.json"
 UNCLEAN_LOG = "unclean_shutdowns.jsonl"
-BENCH_BACKENDS = ("mm-real",)  # real hardware: approach() needs a clearance callback
 AWAITING_WHY = "the stage is away from the sample; return it first"
 
 
@@ -183,11 +182,16 @@ class DeviceControlSeat:
         self._control = control
 
     def check(self, user_id: str | None, grant: str | None) -> bool:
+        """Fails closed: no grant, no user, a refused grant. Any other error from the
+        control object propagates, and the runner refuses with it as the reason."""
+        if not grant or not user_id:
+            return False
         try:
             g = self._control.check(grant)
         except PermissionError:
             return False
-        return user_id is not None and g.user_id.lower() == user_id.lower()
+        owner = getattr(g, "user_id", None)
+        return isinstance(owner, str) and owner.lower() == user_id.lower()
 
 
 class AcquisitionStream(Protocol):
@@ -473,6 +477,19 @@ class OpContext:
         self.runner.set_current_sample(sample_id, reserved=reserved)
 
     @property
+    def record_dir(self) -> Path | None:
+        """This operation's record folder (e.g. scan_4x writes its scan.json there), or None
+        when the record seat writes no folder (or during `Runner.plan`)."""
+        d = getattr(self._op.record, "dir", None)
+        return None if d is None else Path(d)
+
+    @property
+    def backend_info(self) -> Any:
+        """The `BackendInfo` read once at `start()` (stage limits, objectives, bench), so
+        `plan()` can use it without touching hardware. None if that read failed."""
+        return self.runner._info
+
+    @property
     def session_started_at(self) -> float | None:
         """Start of the open experiment session: the "re-trace every session" check."""
         return (self.runner._session or {}).get("started_at")
@@ -572,6 +589,8 @@ class Runner:
         self._last_lights: dict | None = None  # last state seen (readback or read)
         self._last_off: dict | None = None  # last all_off: records, verified, error
         self._last_status: dict | None = None
+        self._info: Any = None  # BackendInfo, read once at start()
+        self._info_dict: dict | None = None
         self._latest: tuple[Any, dict] | None = None  # newest frame (image, meta)
         self._frame_ids = itertools.count(1)
         self._last_shutdown = self._read_state(LAST_SHUTDOWN)  # ui-spec 5.2, first screen
@@ -593,6 +612,7 @@ class Runner:
             if self._started:
                 return self
             self._check_unclean()
+            self._read_info()
             self._write_state(RUNNING_MARK, {"started_at": time.time(), "pid": os.getpid()})
             iv = self.config.position_interval_s
             if iv:
@@ -688,6 +708,7 @@ class Runner:
                 "last_shutdown_lights": self._last_shutdown,
                 "unclean_shutdown": self._unclean,
                 "hardware": self._hardware_state(),
+                "backend_info": self._info_dict,
                 "stream": {"running": bool(self._stream.running())},
                 "recent": [o.public() for o in ops if o.state in ENDED],
                 "operations": self._registry.names(),
@@ -1115,19 +1136,28 @@ class Runner:
             checks.append({"name": "awaiting_return", "ok": False, "want": "sample returned",
                            "read": aw.get("op_id"), "why": AWAITING_WHY})
         if op.cls.approaches and op.instance.clearance() is None:
-            kind = self._backend_kind()
-            if kind is None or kind in BENCH_BACKENDS:
+            bench = self._on_bench()
+            if bench is not False:
                 checks.append({"name": "approach_clearance", "ok": False,
-                               "want": "a clearance callback", "read": kind,
+                               "want": "a clearance callback", "read": {"bench": bench},
                                "why": "on the bench an approach needs a clearance check"})
         return checks
 
-    def _backend_kind(self) -> str | None:
-        """None when info() fails: treated as the bench, the strict side."""
+    def _on_bench(self) -> bool | None:
+        """`BackendInfo.bench` (T-033: True on mm-real), from the start() read or, if that
+        failed, a fresh one. None when unknown, which the clearance check treats as the
+        bench: the strict side."""
+        info = self._info or self._read_info()
+        return None if info is None else bool(info.bench)
+
+    def _read_info(self) -> Any:
         try:
-            return self._backend.info().kind
+            info = self._backend.info()
+            self._info, self._info_dict = info, info.to_dict()
         except Exception:
+            log.exception("backend info() failed")
             return None
+        return info
 
     def check(self, ops: list[str] | None = None, context: dict | None = None) -> dict:
         """`{op: {allowed, reason}}` for the screens (T-009b `GET /api/permissions`), from
@@ -1244,10 +1274,14 @@ class Runner:
         out["dialamp"]["state"] = _on_off(state.get("DiaLamp"))
         out["aura"]["state"] = _on_off(state.get("Aura"))
         out["dialamp"]["intensity"] = _number(self._prop("DiaLamp", "Intensity"))
+        if out["aura"]["state"] == "off":
+            return out  # lines only matter while Aura is on: 2 reads in the common case
         for line in AURA_LINES:  # a line counts when its switch reads on, or, where the
             on = _on_off(self._prop("Aura", line))  # device has no switch, when it has power
+            if on == "off":
+                continue
             permille = _number(self._prop("Aura", f"{line}_Intensity"))
-            if on == "on" or (on == "unknown" and permille):
+            if on == "on" or permille:
                 out["aura"]["lines"][line] = None if permille is None else permille / 10
         return out
 
@@ -1340,8 +1374,13 @@ class Runner:
         """The grant comes from `cmd.control_grant`, set by the server; anything token-like
         inside `cmd.args` is never looked at."""
         perm = permission(op)
-        if perm.control and not self._control.check(cmd.user_id, cmd.control_grant):
-            return f"user {cmd.user_id!r} does not hold equipment control"
+        if perm.control:
+            try:  # fail closed: a control seat that breaks refuses, with the reason
+                held = self._control.check(cmd.user_id, cmd.control_grant) is True
+            except Exception as e:
+                return f"control check failed ({type(e).__name__}: {e}); refused"
+            if not held:
+                return f"user {cmd.user_id!r} does not hold equipment control"
         if perm.session:
             open_id = (self._session or {}).get("session_id")
             if open_id is None:
