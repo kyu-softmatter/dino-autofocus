@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File tools\launcher\build.ps1
 | Click | Server already answering `GET /api/health` → opens `http://127.0.0.1:<port>/`. Otherwise starts the server hidden, shows "Starting the server…" until `/api/health` answers (up to 60 s), then opens the browser. |
 | Click while a start is in progress | Waits for that server; never starts a second one. |
 | Shift + click (or `--classic`) | Old tkinter launcher: `uv run python scripts\launcher.py`. |
-| Ctrl + click (or `--stop`) | Stops the server this launcher started, after a confirmation. |
+| Ctrl + click (or `--stop`) | Stops the server after a confirmation: graceful first, forced only if it does not exit (see Stop). |
 
 - The server binds `127.0.0.1` only. The exe never turns on remote view.
 - Server output goes to `%LOCALAPPDATA%\dino-autofocus\server.log` (the previous run is kept as
@@ -57,18 +57,31 @@ Windows Firewall only for the network you need.
 
 ## Stop
 
-- Ctrl + click the exe, or run `"DINO Autofocus.exe" --stop`. This ends the process tree
-  (`cmd.exe` → `uv.exe` → `python.exe`) with `taskkill /T /F`. It is a forced stop: the server
-  gets no chance to clean up. With mock hardware that is harmless. Before real hardware is
-  connected, the server needs a graceful shutdown path, and the launcher should use it.
-- A server started by hand in a terminal stops with Ctrl+C there. The launcher only stops the
-  one it started.
+Ctrl + click the exe, or run `"DINO Autofocus.exe" --stop`:
+
+1. `POST /api/shutdown` (T-009, accepted from this PC without a login). The engine switches the
+   lights off with readback, aborts what runs, finishes its records, and the server exits.
+2. The launcher waits up to 10 s for `/api/health` to stop answering and the process to exit.
+3. Only if it is still running is the process tree it started (`cmd.exe` → `uv.exe` →
+   `python.exe`) killed with `taskkill /T /F`. The message then says the stop was forced:
+   check the lights on the microscope.
+
+| Case | Result |
+|---|---|
+| Server answers and exits | Graceful. "The server stopped: lights off and records finished by the engine." |
+| Server answers (or refuses) but does not exit within 10 s | Forced kill of the tree the launcher started, said in the message and in `launcher.log` |
+| No server running (it died, or was never started) | "No DINO Autofocus server is running."; a stale `server.pid` is removed |
+| Server started by hand, not by this launcher | Graceful request only. If it does not exit, the launcher never kills it: stop it with Ctrl+C in its terminal |
+
+Every stop and how it ended is one line in `%LOCALAPPDATA%\dino-autofocus\launcher.log`
+(next to `server.log`), for example `stop: no exit within 10 s of the shutdown request; FORCED
+KILL (taskkill /T /F) done`.
 
 ## Testing without a desktop
 
 Set `DINO_AF_LAUNCHER_HEADLESS=<file>` before starting the exe. No window or browser opens;
-each message, confirmation (answered OK), wait and browser open is appended to `<file>`, and
-`server.log` / `server.pid` go next to it. Build a test copy with `-Out` so the Desktop exe is
+each message, confirmation (answered OK), wait, browser open and stop log line is appended to
+`<file>`, and `server.log` / `server.pid` / `launcher.log` go next to it. Build a test copy with `-Out` so the Desktop exe is
 untouched, and stop any server the test started (`--stop` with the same variable set).
 
 ## Troubleshooting
@@ -82,3 +95,5 @@ untouched, and stop any server the test started (`--stop` with the same variable
 | `The server stopped while starting` | The server exited. The message shows the end of `server.log`; the full log has the traceback. Run the same command in a terminal to see it live: `uv run python -m dino_autofocus.server --port 8765`. |
 | `The server did not answer … within 60 s` | Usually a slow first `uv run` after a pull. Click again to keep waiting, or Ctrl + click to stop it, then check `server.log`. |
 | Nothing happens for a few seconds after clicking | Antivirus scans a freshly built, unsigned exe on its first runs. |
+| `The server did not exit within 10 s, so it was killed (forced)` | The engine did not finish its stop in time. Check the lights on the microscope, then `launcher.log` and `server.log`. |
+| `The server did not stop within 10 s. This launcher did not start it` | A server started by hand ignored the stop request. Stop it with Ctrl+C where it runs. |
