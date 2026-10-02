@@ -5,7 +5,9 @@ Numbers checked against the 2026-09-30 bench run where it gave one
 """
 
 import json
+import os
 import re
+import statistics
 import subprocess
 import sys
 import time
@@ -359,15 +361,30 @@ def test_state_round_trip_through_json(world):
 # ---------------------------------------------------------------- cost and imports
 
 
-def test_512_frame_renders_under_50_ms(world):
+PERF = os.environ.get("DINOAF_PERF") == "1"
+
+
+def _snap_times(world, n=5):
     world.move_xy(world.spec.hole_centre_um[0] + world.sample.radius_um, world.y_um)
     world.move_z(world.in_focus_z())
     world.set_dialamp(True)
     particle_light(world)
     world.set_dialamp(True)  # both lights: the most work per frame
     world.snap()
-    best = min(_timed(world.snap) for _ in range(5))  # min: robust to a busy machine
+    return [_timed(world.snap) for _ in range(n)]
+
+
+@pytest.mark.skipif(not PERF, reason="strict timing bound; set DINOAF_PERF=1 on an idle machine")
+def test_512_frame_renders_under_50_ms(world):
+    best = min(_snap_times(world))  # min: robust to a busy machine
     assert best < 0.05, f"{best * 1e3:.0f} ms"
+
+
+def test_512_frame_renders_in_reasonable_time(world):
+    """Always on: loose enough for a machine loaded by other test runs, tight enough that a
+    real regression (a frame ten times over the 50 ms target) still fails."""
+    median = statistics.median(_snap_times(world))
+    assert median < 0.5, f"{median * 1e3:.0f} ms"
 
 
 def _timed(fn):

@@ -3,7 +3,10 @@
 //   click             server already answering -> open the browser; else start it, wait for
 //                     GET /api/health, then open the browser
 //   Shift + click     old tkinter launcher (uv run python scripts\launcher.py), or --classic
-//   Ctrl + click      stop the server this launcher started, or --stop
+//   Ctrl + click      stop the server, or --stop: POST /api/shutdown first (the engine switches
+//                     the lights off and finishes its records), wait up to ShutdownWaitSec for
+//                     /api/health to go quiet, and only then kill the process tree it started.
+//                     Every stop and how it ended goes to launcher.log next to server.log.
 // Remote view is never switched on here: the server binds 127.0.0.1 only.
 // Tests set DINO_AF_LAUNCHER_HEADLESS=<file>: messages, confirmations (answered OK) and browser
 // opens are appended to that file instead of shown, no window opens, and server.log /
@@ -30,6 +33,8 @@ static class Program
 
     const string Title = "DINO Autofocus";
     const int StartTimeoutSec = 60;  // the first `uv run` after a pull may sync the env
+    const int ShutdownPostTimeoutMs = 20000;  // the engine aborts, switches off, finishes records
+    const int ShutdownWaitSec = 10;  // then /api/health must stop answering within this
 
     static string Url { get { return "http://127.0.0.1:" + Port + "/"; } }
 
@@ -48,6 +53,21 @@ static class Program
 
     static string LogPath { get { return Path.Combine(DataDir, "server.log"); } }
     static string PidPath { get { return Path.Combine(DataDir, "server.pid"); } }
+    static string LauncherLogPath { get { return Path.Combine(DataDir, "launcher.log"); } }
+
+    // One line per stop: when, what was asked, how it ended. server.log stays the server's own.
+    static void LauncherLog(string text)
+    {
+        try
+        {
+            Directory.CreateDirectory(DataDir);
+            File.AppendAllText(LauncherLogPath, string.Format("{0:yyyy-MM-dd HH:mm:ss} {1}\r\n",
+                                                            DateTime.Now, text), new UTF8Encoding(false));
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        Note("log", text);
+    }
 
     // ---- uv ----------------------------------------------------------------------------
 
@@ -208,25 +228,117 @@ static class Program
         return null;
     }
 
-    static void StopServer()
+    // POST /api/shutdown: the engine aborts, switches the lights off with readback and finishes
+    // its records, then the server exits. Returns the HTTP status, or 0 when nothing answered.
+    static int PostShutdown(out string body)
     {
-        Process p = RecordedServer();
-        if (p == null)
+        body = "";
+        try
         {
-            string extra = PortOpen()
-                ? "\n\nSomething is listening on port " + Port + ", but this launcher did not start it."
-                : "";
-            Info("No server started by this launcher is running." + extra);
-            return;
+            var req = (HttpWebRequest)WebRequest.Create(Url + "api/shutdown");
+            req.Method = "POST";
+            req.ContentType = "application/json";
+            req.Timeout = ShutdownPostTimeoutMs;
+            req.ReadWriteTimeout = ShutdownPostTimeoutMs;
+            req.Proxy = null;
+            byte[] data = Encoding.UTF8.GetBytes("{\"reason\": \"launcher stop\"}");
+            req.ContentLength = data.Length;
+            using (Stream s = req.GetRequestStream()) s.Write(data, 0, data.Length);
+            using (var resp = (HttpWebResponse)req.GetResponse())
+            using (var sr = new StreamReader(resp.GetResponseStream()))
+            {
+                body = sr.ReadToEnd();
+                return (int)resp.StatusCode;
+            }
         }
-        if (!Confirm("Stop the DINO Autofocus server (" + Url + ")?\n\n"
-                     + "Open pages lose their connection.")) return;
+        catch (WebException e)
+        {
+            var resp = e.Response as HttpWebResponse;
+            if (resp == null) { body = e.Message; return 0; }
+            using (resp)
+            using (var sr = new StreamReader(resp.GetResponseStream()))
+            {
+                body = sr.ReadToEnd();
+                return (int)resp.StatusCode;
+            }
+        }
+    }
+
+    // True once /api/health stops answering and (if known) the process tree has exited.
+    static bool WaitStopped(Process p, int seconds)
+    {
+        DateTime end = DateTime.Now.AddSeconds(seconds);
+        while (true)
+        {
+            bool alive = (p != null && !p.HasExited) || HealthOk(500);
+            if (!alive) return true;
+            if (DateTime.Now >= end) return false;
+            Thread.Sleep(250);
+        }
+    }
+
+    static void KillTree(Process p)
+    {
         // cmd.exe -> uv.exe -> python.exe: end the whole tree
         var kill = new ProcessStartInfo("taskkill", "/PID " + p.Id + " /T /F");
         kill.UseShellExecute = false;
         kill.CreateNoWindow = true;
         using (Process k = Process.Start(kill)) k.WaitForExit(10000);
+    }
+
+    static void StopServer()
+    {
+        Process p = RecordedServer();
+        bool answering = HealthOk(1500);
+        if (p == null && !answering)
+        {
+            LauncherLog("stop: no server running (already gone)");
+            try { File.Delete(PidPath); } catch (IOException) { }
+            Info("No DINO Autofocus server is running."
+                 + (PortOpen() ? "\n\nSomething else is listening on port " + Port + "." : ""));
+            return;
+        }
+        string whose = p != null ? "" : "\n\nThis launcher did not start it: it is stopped through "
+                                        + "the server only, never killed.";
+        if (!Confirm("Stop the DINO Autofocus server (" + Url + ")?\n\n"
+                     + "The engine switches the lights off and finishes its records first. "
+                     + "Open pages lose their connection." + whose)) return;
+
+        string body;
+        int code = PostShutdown(out body);
+        bool accepted = code >= 200 && code < 300;
+        LauncherLog("stop: POST /api/shutdown -> " + (code == 0 ? "no answer" : code.ToString())
+                    + (body.Length > 0 ? " " + body.Replace("\r", " ").Replace("\n", " ") : ""));
+        if (WaitStopped(p, ShutdownWaitSec))
+        {
+            LauncherLog(accepted ? "stop: graceful, server exited"
+                                 : "stop: server gone without a graceful answer");
+            try { File.Delete(PidPath); } catch (IOException) { }
+            Info(accepted
+                 ? "The server stopped: lights off and records finished by the engine."
+                 : "The server is gone, but it did not confirm a graceful stop (HTTP " + code
+                   + "). Check the lights on the microscope.\n\nLog: " + LauncherLogPath);
+            return;
+        }
+        if (p == null)
+        {
+            LauncherLog("stop: still answering after " + ShutdownWaitSec + " s; not started by "
+                        + "this launcher, not killed");
+            Error("The server did not stop within " + ShutdownWaitSec + " s. This launcher did not "
+                  + "start it, so it is not killed from here: stop it where it runs (Ctrl+C in "
+                  + "its terminal).\n\nLog: " + LauncherLogPath);
+            return;
+        }
+        KillTree(p);
+        bool gone = WaitStopped(p, 5);
+        LauncherLog("stop: no exit within " + ShutdownWaitSec + " s of the shutdown request; "
+                    + "FORCED KILL (taskkill /T /F) " + (gone ? "done" : "did not end it"));
         try { File.Delete(PidPath); } catch (IOException) { }
+        Error("The server did not exit within " + ShutdownWaitSec + " s, so it was killed "
+              + "(forced). " + (accepted
+                                ? "The engine had accepted the shutdown, so the lights should be off,"
+                                : "The engine did not confirm the shutdown (HTTP " + code + "),")
+              + " but check the lights on the microscope.\n\nLog: " + LauncherLogPath);
     }
 
     static void StartClassic(string uv)

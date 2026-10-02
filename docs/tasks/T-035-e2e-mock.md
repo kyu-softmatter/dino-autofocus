@@ -37,3 +37,9 @@
   allowed in this task, imports only). Measure peak memory before and after (e.g. psutil in a conftest hook or
   `pytest --durations`), and put the numbers in the review request.
 - Keep coverage the same. Done when tests/e2e passes alone and in the full run, and the peak is lower.
+- Also in T-035b (from 검토보조2, the "hang" diagnosed): `tests/e2e/conftest.py` `Bench.wait()` defaults to
+  `timeout=240` s. A predicate that never matches (e.g. `lamp_is_on` before T-011e's d518cf5) or a slow edge_trace
+  under load makes each safety test sit 4 min, which is what both "hangs" at 20-27 % were
+  (test_e2e_safety.py: abort_mid_trace, lights_off_preempts, watched_trace_stops). Set the default to 30 s (a test
+  that needs more passes it explicitly, with a comment), and fail with the predicate's name and the last events seen.
+  No new dependency (pyproject is held by T-012).
