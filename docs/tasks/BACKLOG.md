@@ -34,6 +34,10 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - 실행14 (T-020) or 실행5 (T-004) review cleared → offer the seat to AF 업무분배보조 for T-103 / T-104.
 - T-018 merged → 실행13 starts T-105 (screen manager). T-019 merged → 실행2 starts T-106.
 
+- T-009 merged → T-010 reruns gen:api (schema.ts from T-009 b9fb6cc); T-026 stage 2 (실행10); screen routers start;
+  T-009b starts (실행7).
+- T-009 + T-105 merged → user browser check of the live view and login (via the director).
+
 ## 후속 과제 후보
 
 - **WP-C 초점 이식에 같이 넣을 것** (실행2 메모, 2026-10-01): `focus/classical.py` 에
