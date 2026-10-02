@@ -7,10 +7,11 @@ sample per session, the session's owner, closed sessions), as plain refusals tha
 `remote_view`.
 
 The records store is the T-019 `RecordsStore` the server was created with. Commits go to one
-`AutoCommitter` per app, so a handler never waits on git; the code version is read once per app
-(G4). The open session object lives in `app.state.sessions` (`SessionSeat`), so the engine's
-sample operations write through the same object and share its seq counter; the engine hears
-about every change through `set_experiment_session`.
+`AutoCommitter` per app (`app.state.committer` when the app provides one, T-009e), so a handler
+never waits on git; the code version is read once per app (G4). The open session object lives
+in `app.state.sessions` (`SessionSeat`), so the engine's sample operations write through the
+same object and share its seq counter; the engine hears about every change through
+`set_experiment_session`.
 """
 
 from __future__ import annotations
@@ -116,6 +117,12 @@ def _store(request: Request) -> Any:
 
 
 def _committer(request: Request, store: Any) -> AutoCommitter:
+    """The server's one commit worker. `create_app` puts it on `app.state.committer` (T-009e)
+    and flushes and stops it at shutdown; only without it does the router make its own, so
+    there is never a second commit thread on the same records repository (index.lock)."""
+    shared = getattr(request.app.state, "committer", None)
+    if shared is not None:
+        return shared
     with _app_lock:
         c = getattr(request.app.state, "records_committer", None)
         if c is None or c.store is not store:

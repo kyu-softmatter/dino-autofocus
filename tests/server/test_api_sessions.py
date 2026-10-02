@@ -238,3 +238,17 @@ def test_the_router_never_waits_on_git(client, tmp_path):
     finally:
         gate.set()
         committer.stop()
+
+
+def test_the_app_committer_is_used_when_there_is_one(client, store):
+    c = client()
+    shared = AutoCommitter(store)
+    c.app.state.committer = shared  # what create_app sets (T-009e)
+    try:
+        sid = c.post("/api/sessions").json()["session_id"]
+        assert c.app.state.sessions.session_for(sid).committer is shared
+        assert getattr(c.app.state, "records_committer", None) is None  # no second thread
+        assert c.post(f"/api/sessions/{sid}/close").status_code == 200
+        assert shared.flush(30) and not shared.failures
+    finally:
+        shared.stop()
