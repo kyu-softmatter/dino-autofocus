@@ -37,6 +37,17 @@ import {
 import "./objective.css";
 
 type Args = Record<string, unknown>;
+/** the buttons a refusal can belong to */
+type Action = "rotate" | "reload" | "return" | "confirm" | "focus";
+
+function Refused({ text }: { text: string | null }) {
+  return text === null ? null : (
+    <span className="refusal" role="alert">
+      {" "}
+      {text}
+    </span>
+  );
+}
 
 function command(kind: CommandIn["kind"], op = "", op_id = "", args: Args = {}): CommandIn {
   return { kind, op, op_id, args, origin: "human" };
@@ -63,7 +74,8 @@ export function ObjectiveView() {
   const [lenses, setLenses] = useState<LensRow[]>([]);
   const [change, dispatchChange] = useReducer(reduceChange, undefined, initialChange);
   const [focus, dispatchFocus] = useReducer(reduceFocus, undefined, initialFocus);
-  const [message, setMessage] = useState<string | null>(null);
+  // the last refusal, shown next to the action that caused it; no global state changes here
+  const [refusal, setRefusal] = useState<{ action: Action; text: string } | null>(null);
   // undefined: first check loading; null: it could not be read (every control off, progress stays)
   const [perms, setPerms] = useState<Permissions | null | undefined>(undefined);
   const [reread, setReread] = useState(0);
@@ -101,16 +113,19 @@ export function ObjectiveView() {
   useEngineEvents(onEvent);
 
   const send = useCallback(
-    async (cmd: CommandIn) => {
+    async (action: Action, cmd: CommandIn) => {
       try {
         await client.command(cmd);
-        setMessage(null);
+        setRefusal(null);
       } catch (e) {
-        setMessage(e instanceof CommandRefused ? e.detail : String(e));
+        // a remote_view 403 also switches the shell to read-only (client.tsx); any other refusal is
+        // this action's reason only
+        setRefusal({ action, text: e instanceof CommandRefused ? e.detail : String(e) });
       }
     },
     [client],
   );
+  const refusedFor = (action: Action): string | null => (refusal?.action === action ? refusal.text : null);
 
   const details = useMemo(
     () => ({
@@ -139,22 +154,20 @@ export function ObjectiveView() {
           {changePerm.reason}
         </p>
       )}
-      {message && (
-        <p className="refusal" role="alert">
-          {message}
-        </p>
-      )}
       <CurrentPanel state={state} zUm={change.zUm ?? state.z_um} />
-      {awaiting && <ReturnBanner perm={changePerm} onReturn={() => send(startChange({ resume: true }))} />}
+      {awaiting && <ReturnBanner perm={changePerm} refused={refusedFor("return")}
+                                 onReturn={() => send("return", startChange({ resume: true }))} />}
       <ChangePanel lenses={lenses} perm={changePerm} disabledBy={awaitingReason}
-                   onRotate={(target, escape) => send(startChange({ target_state: target, escape }))}
-                   onReload={() => send(startChange({ reload: true }))} />
-      <StepsPanel view={change} confirmPerm={perm("confirm")} remote={readOnly}
-                  onLoadingDone={(c) => send(confirm(c, true))}
-                  onAnswer={(c, ok) => send(confirm(c, ok))} />
+                   refusedRotate={refusedFor("rotate")} refusedReload={refusedFor("reload")}
+                   onRotate={(target, escape) => send("rotate", startChange({ target_state: target, escape }))}
+                   onReload={() => send("reload", startChange({ reload: true }))} />
+      <StepsPanel view={change} confirmPerm={perm("confirm")} remote={readOnly} refused={refusedFor("confirm")}
+                  onLoadingDone={(c) => send("confirm", confirm(c, true))}
+                  onAnswer={(c, ok) => send("confirm", confirm(c, ok))} />
       <Focus100xPanel perm={perm("focus_100x")} confirmPerm={perm("confirm")} view={focus} disabledBy={awaitingReason}
-                      onStart={(args) => send(command("start", "focus_100x", "", args))}
-                      onAnswer={(c, ok) => send(confirm(c, ok))} />
+                      refused={refusedFor("focus")}
+                      onStart={(args) => send("focus", command("start", "focus_100x", "", args))}
+                      onAnswer={(c, ok) => send("confirm", confirm(c, ok))} />
     </div>
   );
 }
@@ -176,7 +189,7 @@ function CurrentPanel({ state, zUm }: { state: ObjectiveState; zUm: number | nul
   );
 }
 
-function ReturnBanner({ perm, onReturn }: { perm: Permission; onReturn: () => void }) {
+function ReturnBanner({ perm, refused, onReturn }: { perm: Permission; refused: string | null; onReturn: () => void }) {
   return (
     <section className="banner" role="alert" aria-label="Awaiting return">
       <p>Objective change interrupted: return to the sample position.</p>
@@ -184,6 +197,7 @@ function ReturnBanner({ perm, onReturn }: { perm: Permission; onReturn: () => vo
         Return to sample position
       </button>
       {!perm.allowed && perm.reason && <span className="reason"> {perm.reason}</span>}
+      <Refused text={refused} />
     </section>
   );
 }
@@ -210,12 +224,16 @@ function ChangePanel({
   lenses,
   perm,
   disabledBy,
+  refusedRotate,
+  refusedReload,
   onRotate,
   onReload,
 }: {
   lenses: LensRow[];
   perm: Permission;
   disabledBy: string | null;
+  refusedRotate: string | null;
+  refusedReload: string | null;
   onRotate: (target: number, escape: boolean) => void;
   onReload: () => void;
 }) {
@@ -292,10 +310,12 @@ function ChangePanel({
       )}
       <button type="button" disabled={chosen === null || blocked !== null} onClick={() => chosen !== null && onRotate(chosen, escape)}>
         Rotate
-      </button>{" "}
+      </button>
+      <Refused text={refusedRotate} />{" "}
       <button type="button" disabled={!perm.allowed || disabledBy !== null} onClick={onReload}>
         Re-load immersion
       </button>
+      <Refused text={refusedReload} />
       {blocked && <span className="reason"> {blocked}</span>}
     </section>
   );
@@ -315,12 +335,14 @@ function StepsPanel({
   view,
   confirmPerm,
   remote,
+  refused,
   onLoadingDone,
   onAnswer,
 }: {
   view: ChangeView;
   confirmPerm: Permission;
   remote: boolean;
+  refused: string | null;
   onLoadingDone: (c: PendingConfirm) => void;
   onAnswer: (c: PendingConfirm, ok: boolean) => void;
 }) {
@@ -353,6 +375,7 @@ function StepsPanel({
           )}
         </div>
       )}
+      <Refused text={refused} />
       {view.confirm && <ConfirmBox confirm={view.confirm} perm={confirmPerm} onAnswer={onAnswer} />}
       {view.approach && (
         <div aria-label="Z approach">
@@ -413,6 +436,7 @@ function Focus100xPanel({
   confirmPerm,
   view,
   disabledBy,
+  refused,
   onStart,
   onAnswer,
 }: {
@@ -420,6 +444,7 @@ function Focus100xPanel({
   confirmPerm: Permission;
   view: FocusView;
   disabledBy: string | null;
+  refused: string | null;
   onStart: (args: Args) => void;
   onAnswer: (c: PendingConfirm, ok: boolean) => void;
 }) {
@@ -502,6 +527,7 @@ function Focus100xPanel({
                 metric: form.metric })}>
         Find 100x focus
       </button>
+      <Refused text={refused} />
       {blocked && <span className="reason"> {blocked}</span>}
       {view.confirm && <ConfirmBox confirm={view.confirm} perm={confirmPerm} onAnswer={onAnswer} />}
       {view.points.length > 0 && <SweepCurve view={view} ceilingUm={view.ceilingUm ?? defaults.ceiling_um} />}

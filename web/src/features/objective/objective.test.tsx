@@ -282,13 +282,35 @@ describe("objective change", () => {
     expect(w.sent).toHaveLength(0);
   });
 
-  it("goes read-only when the server refuses a command with 403", async () => {
-    const w = await ready({ commands: () => ({ status: 403, body: { detail: "remote view" } }) });
+  it("goes read-only on a 403 marked remote_view", async () => {
+    // T-009b marks the remote refusal with detail.code "remote_view" (and a header)
+    const w = await ready({ commands: () => ({ status: 403, body: { detail: { code: "remote_view", message: "remote view" } } }) });
     await waitFor(() => expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", false));
     fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", true));
     w.emit(toLoading("op-4"));
     expect(screen.queryByRole("button", { name: "Loading done" })).toBeNull();
+  });
+
+  it("shows a plain 403 next to the action that caused it", async () => {
+    await ready({ commands: () => ({ status: 403, body: { detail: "Open an experiment session first" } }) });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", false));
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+    const panel = screen.getByRole("region", { name: "Change objective" });
+    await waitFor(() => expect(within(panel).getByRole("alert").textContent).toContain("Open an experiment session first"));
+    // the reason belongs to Rotate only: the 100x panel shows no refusal
+    expect(within(screen.getByRole("region", { name: "100x focus" })).queryByRole("alert")).toBeNull();
+  });
+
+  // Enable when T-010 stage 4 (1278cd0 rule) is on main: until then the shell's client turns every 403
+  // into read-only, so Rotate would grey out here.
+  it.skip("keeps the app writable after a plain 403 (needs T-010 stage 4)", async () => {
+    await ready({ commands: () => ({ status: 403, body: { detail: "Open an experiment session first" } }) });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", false));
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+    await screen.findByText(/Open an experiment session first/);
+    expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", false);
+    expect(screen.queryByText(/Read-only/)).toBeNull();
   });
 
   it("says Checking permissions… while the first check loads", async () => {
