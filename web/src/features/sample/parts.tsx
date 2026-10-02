@@ -111,7 +111,8 @@ export function SampleSummaryPanel({
         Hole:{" "}
         {h
           ? `${h.diameter_mm} mm at (${h.centre_um[0]}, ${h.centre_um[1]}) um, rms ${h.fit_rms_um} um, ` +
-            `${h.n_points} points, ${h.arc_deg}° arc, fitted ${h.fitted_at ?? "unknown"}`
+            `${h.n_points} points, ${h.arc_deg}° arc, fitted ${h.fitted_at ?? "unknown"}` +
+            (h.status ? ` (${h.status})` : "")
           : "not traced"}
       </p>
       <p>

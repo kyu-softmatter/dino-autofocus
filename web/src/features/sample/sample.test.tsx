@@ -166,6 +166,33 @@ describe("sample screen", () => {
     }
   });
 
+  it("permissions unreadable: every sample control is off with the shared fallback reason", async () => {
+    const api = withOpenSample();
+    api.permissionsFail = true;
+    mount(api);
+    await screen.findByLabelText("Sample thickness");
+    await waitFor(() => expect(screen.getAllByText("Permission check unavailable").length).toBeGreaterThanOrEqual(4));
+    for (const name of ["New sample", "Save geometry", "Sample is on the stage", "Check with an image"]) {
+      expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect((screen.getByRole("button", { name: "Open 20260930_1849_1" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("an op left out of the permissions answer is off, never allowed", async () => {
+    const api = withOpenSample();
+    const full = api.permissions.bind(api);
+    api.permissions = async (ops) => {
+      const p = await full(ops);
+      delete p.loading_check_image;
+      return p;
+    };
+    mount(api);
+    const btn = await screen.findByRole("button", { name: "Check with an image" });
+    await waitFor(() => expect((btn as HTMLButtonElement).disabled).toBe(true));
+    expect((screen.getByRole("button", { name: "Sample is on the stage" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText("Permission check unavailable")).toBeTruthy();
+  });
+
   it("shows a server refusal and an engine preflight_failed next to the control", async () => {
     const api = withOpenSample();
     api.refuse.set("loading_confirm_person", "anna has control of the microscope");
@@ -190,6 +217,17 @@ describe("sample screen", () => {
     await waitFor(() => expect(window.location.hash).toBe("#/sample?sample_id=20261001_1200_1"));
     expect(await screen.findByText("reserved, no session yet")).toBeTruthy();
     expect(screen.getByRole("region", { name: "Opened sample" }).textContent).toContain("20261001_1200_1");
+  });
+
+  it("shows the engine's hole fit status text as is", async () => {
+    const api = withOpenSample();
+    api.samples.get(ID)!.detail.hole = {
+      centre_um: [100, 200], diameter_mm: 6.1, fit_rms_um: 4, n_points: 40, arc_deg: 140,
+      fitted_at: "2026-10-01T09:50", status: "partial trace",
+    };
+    mount(api);
+    await waitFor(() => expect(screen.getByRole("region", { name: "Opened sample" }).textContent).toContain("140° arc"));
+    expect(screen.getByRole("region", { name: "Opened sample" }).textContent).toContain("(partial trace)");
   });
 
   it("Open folder calls the server route and never opens anything itself", async () => {

@@ -58,6 +58,8 @@ export interface Hole {
   n_points: number;
   arc_deg: number;
   fitted_at: string | null;
+  /** the engine's own words about the fit, e.g. "partial trace" (T-031); shown as is */
+  status: string | null;
 }
 
 export interface SampleDetail extends SampleSummary {
@@ -100,6 +102,28 @@ export interface Permission {
   reason: string | null;
 }
 export type Permissions = Partial<Record<SampleOp, Permission>>;
+
+/** the one fallback for every screen: no verdict means the control is off */
+export const PERMISSION_UNAVAILABLE = "Permission check unavailable";
+
+/**
+ * The screen's only way to the shared verdicts. If `/api/permissions` cannot be read, or its answer
+ * leaves an op out, that op is off with `PERMISSION_UNAVAILABLE`. A failure never counts as allowed.
+ * (The shell's Abort and Lights off do not go through this.)
+ */
+export async function readPermissions(
+  api: SampleApi,
+  ops: readonly SampleOp[],
+): Promise<Record<SampleOp, Permission>> {
+  let got: Permissions = {};
+  try {
+    got = await api.permissions(ops);
+  } catch {
+    got = {};
+  }
+  const off: Permission = { allowed: false, reason: PERMISSION_UNAVAILABLE };
+  return Object.fromEntries(ops.map((op) => [op, got[op] ?? off])) as Record<SampleOp, Permission>;
+}
 
 /** engine snapshot()["sample"] via GET /api/state (T-011) */
 export interface CurrentSample {
@@ -178,9 +202,8 @@ export const httpSampleApi: SampleApi = {
   geometry: (id) => getJson(`/api/sample/${enc(id)}/geometry`),
   loading: (id) => getJson(`/api/sample/${enc(id)}/loading`),
   access: (id) => getJson(`/api/sample/access${id ? `?sample_id=${enc(id)}` : ""}`),
-  // Until T-009b serves it, a failed call means "no pre-click reasons": refusals then show
-  // after the click, from the 403 detail or preflight_failed.
-  permissions: (ops) => getJson<Permissions>(`/api/permissions?ops=${ops.join(",")}`).catch(() => ({})),
+  // a failure throws; readPermissions() turns it into the shared fallback
+  permissions: (ops) => getJson<Permissions>(`/api/permissions?ops=${ops.join(",")}`),
   current: async () => ((await getJson<{ sample?: CurrentSample | null }>("/api/state")).sample ?? null),
   send: (cmd) => post("/api/commands", cmd),
   openFolder: (id) => post(`/api/sample/${enc(id)}/open-folder`, {}),
@@ -238,6 +261,8 @@ export class FakeSampleApi implements SampleApi {
   accessFor: (id: string | null) => SampleAccess = () => ({ can_open_folder: true, open_reason: null });
   /** the fake /api/permissions answer per op; default: allowed */
   permissionFor: (op: SampleOp) => Permission = () => ({ allowed: true, reason: null });
+  /** make the fake /api/permissions fail, as a 404 or a dropped connection would */
+  permissionsFail = false;
   sent: CommandIn[] = [];
   opened: string[] = [];
   /** op -> refusal detail, as the server's 403 would give */
@@ -300,6 +325,7 @@ export class FakeSampleApi implements SampleApi {
     return this.accessFor(id);
   }
   async permissions(ops: readonly SampleOp[]) {
+    if (this.permissionsFail) throw new Error("/api/permissions: 404");
     return Object.fromEntries(ops.map((op) => [op, this.permissionFor(op)])) as Permissions;
   }
   async current() {

@@ -20,7 +20,8 @@ import {
   type Geometry,
   type GeometryField,
   type LoadingState,
-  type Permissions,
+  type Permission,
+  readPermissions,
   SAMPLE_OPS,
   type SampleAccess,
   type SampleDetail,
@@ -69,7 +70,7 @@ export default function SampleScreen() {
   const [current, setCurrent] = useState<CurrentSample | null>(null);
   const [selected, setSelected] = useState<Selected | null>(null);
   const [access, setAccess] = useState<SampleAccess | null>(null);
-  const [perms, setPerms] = useState<Permissions>({});
+  const [perms, setPerms] = useState<Record<SampleOp, Permission> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [imageStatus, setImageStatus] = useState<string | null>(null);
@@ -97,12 +98,10 @@ export default function SampleScreen() {
 
   useEffect(() => {
     let live = true;
-    Promise.all([api.access(viewId), api.permissions(SAMPLE_OPS)])
-      .then(([a, p]) => {
-        if (!live) return;
-        setAccess(a);
-        setPerms(p);
-      })
+    void readPermissions(api, SAMPLE_OPS).then((p) => live && setPerms(p));
+    api
+      .access(viewId)
+      .then((a) => live && setAccess(a))
       .catch((e: Error) => live && setError(e.message));
     if (viewId === null) {
       setSelected(null);
@@ -199,8 +198,9 @@ export default function SampleScreen() {
 
   // the shared verdict first (ui-spec 7.0 order is the server's), then the sample-specific one
   const denied = (op: SampleOp): string | null => {
+    if (perms === null) return "Checking permissions…";
     const p = perms[op];
-    return p && !p.allowed ? (p.reason ?? `${op} is not allowed now`) : null;
+    return p.allowed ? null : (p.reason ?? `${op} is not allowed now`);
   };
   const openBlocked = denied("sample_open") ?? access?.open_reason ?? null;
   const newBlocked = denied("sample_new") ?? access?.open_reason ?? null;
