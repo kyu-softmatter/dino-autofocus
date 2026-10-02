@@ -94,7 +94,6 @@ def test_mock_build_refuses_the_real_records_root(tmp_path):
 
 @pytest.mark.parametrize(("backend", "message"), [
     ("nope", "unknown backend 'nope'; choose one of mock, mm-demo, replay, mm-real"),
-    ("replay", "not available yet"),
 ])
 def test_backends_that_do_not_exist_exit_with_the_reason(backend, message, tmp_path):
     with pytest.raises(SystemExit, match=message):

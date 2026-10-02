@@ -5,10 +5,13 @@ The server starts the real engine (T-009i): the T-011 runner over the chosen bac
 `app.build_runner` with every operation and the hardware gates, plus the records store,
 login and the sample seat.
 
-- `--backend mock` (default), `mm-demo` (Micro-Manager's demo devices), `mm-real` (the stand;
-  bench motion stays locked, T-036): a backend that cannot open exits with the reason, and
-  nothing falls back to another backend. `replay` has no Backend yet. `placeholder` moves
-  nothing and needs no records (tests and the OpenAPI dump).
+- `--backend mock` (default), `mm-demo` (Micro-Manager's demo devices), `replay
+  --replay-source PATH` (saved z-stacks, T-034: anything `stacks.load_stacks` reads),
+  `mm-real` (the stand; bench motion stays locked, T-036): a backend that cannot open exits
+  with the reason, and nothing falls back to another backend. `placeholder` moves nothing and
+  needs no records (tests and the OpenAPI dump).
+- Operation records: an op run in the open experiment session is recorded in that session
+  (committed with it); any other goes to `<data root>/engine_records`, outside git.
 - Records (director, T-009i): only a bench backend (mm-real) uses the real records
   `D:\\AutoFocus\\records` (and `data`, `samples`). Every other backend defaults to the
   `*-mock` folders beside them, and an explicit `--records-root` at the real root is refused
@@ -36,8 +39,8 @@ from typing import Any
 
 import numpy as np
 
-from .api import AuthSeat
-from .app import build_runner, create_app
+from .api import AuthSeat, SessionSeat
+from .app import build_runner, create_app, session_records
 from .schemas import Command, Event
 
 DEFAULT_PORT = 8765
@@ -167,27 +170,32 @@ class BackendUnavailable(SystemExit):
     """The chosen backend cannot run here; the message says why. Never a fallback."""
 
 
-def open_backend(kind: str, *, mm_config: str | None = None) -> tuple[Any, Any]:
+def open_backend(kind: str, *, mm_config: str | None = None,
+                 replay_source: str | None = None) -> tuple[Any, Any]:
     """Open the backend the operator chose and return `(backend, info)`."""
     if kind not in BACKENDS or kind == "placeholder":
         raise BackendUnavailable(f"unknown backend {kind!r}; choose one of "
                                  f"{', '.join(b for b in BACKENDS if b != 'placeholder')}")
-    if kind == "replay":
-        raise BackendUnavailable("backend 'replay' is not available yet: there is no replay "
-                                 "Backend (T-005 built only the z-stack data layer)")
-    if kind == "mock":
-        from ..engine.backends.mock import MockBackend
-
-        backend = MockBackend(seed=0)
-    elif kind == "mm-demo":
-        from ..engine.backends.mm_demo import MmDemoBackend
-
-        backend = MmDemoBackend()
-    else:
-        from ..engine.backends.mm_real import MmRealBackend
-
-        backend = MmRealBackend(mm_config)
+    if kind == "replay" and not replay_source:
+        raise BackendUnavailable("backend 'replay' needs --replay-source PATH: saved z-stacks "
+                                 "(anything engine/backends/stacks.load_stacks reads)")
     try:
+        if kind == "mock":
+            from ..engine.backends.mock import MockBackend
+
+            backend = MockBackend(seed=0)
+        elif kind == "mm-demo":
+            from ..engine.backends.mm_demo import MmDemoBackend
+
+            backend = MmDemoBackend()
+        elif kind == "replay":
+            from ..engine.backends.replay import ReplayBackend
+
+            backend = ReplayBackend(replay_source)
+        else:
+            from ..engine.backends.mm_real import MmRealBackend
+
+            backend = MmRealBackend(mm_config)
         info = backend.open()
     except Exception as e:
         raise BackendUnavailable(
@@ -260,10 +268,11 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
                      engine, "placeholder")
     from ..auth import config as auth_config
     from ..engine.backend import is_bench
-    from ..engine.runner import RunnerConfig, folder_records
+    from ..engine.runner import RunnerConfig
     from ..records import AutoCommitter, FolderStore, GitFolderStore, RecordsConfig
 
-    backend, info = open_backend(args.backend, mm_config=args.mm_config)
+    backend, info = open_backend(args.backend, mm_config=args.mm_config,
+                                 replay_source=args.replay_source)
     try:
         bench = is_bench(info)
         records, data, samples = roots = record_roots(args.records_root, bench)
@@ -274,14 +283,14 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
             log.warning("git not found: records under %s are written without commits", records)
             store = FolderStore(cfg)
         state_dir = auth_config.config_dir(args.config_dir) / "engine_state" / args.backend
+        sessions = SessionSeat()
         runner, hardware = build_runner(
             backend, records_root=records, auth=auth, state_dir=state_dir,
-            records=folder_records(lambda meta: data / "engine_records"),
-            config=RunnerConfig())
+            records=session_records(sessions, data / "engine_records"), config=RunnerConfig())
         runner.start()
         app = create_app(runner, auth=auth, records=store, committer=AutoCommitter(store),
-                         samples_root=samples, hardware=hardware, engine_name=args.backend,
-                         **common)
+                         samples_root=samples, hardware=hardware, sessions=sessions,
+                         engine_name=args.backend, **common)
     except BaseException:
         backend.close()
         raise
@@ -349,6 +358,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="records git folder (data and samples go beside it as <dir>-data and "
                         "<dir>-samples); default: the real folders for mm-real, the *-mock "
                         "folders for every other backend")
+    p.add_argument("--replay-source", default=None, metavar="PATH",
+                   help="saved z-stacks for --backend replay (a synth shard folder, a sample "
+                        "folder, a stack_*.npy, a find_particle_*_field*.npz, a scan.json)")
     p.add_argument("--mm-config", default=None,
                    help="Micro-Manager .cfg for mm-real (default: see engine/backends/mm_real.py)")
     p.add_argument("--config-dir", type=Path, default=None,
