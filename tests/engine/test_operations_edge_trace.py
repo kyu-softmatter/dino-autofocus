@@ -9,7 +9,7 @@ import json
 
 import numpy as np
 import pytest
-from conftest import FakeBackend
+from engine_fakes import FakeBackend
 
 from dino_autofocus.engine.backend import Frame, Positions
 from dino_autofocus.engine.guards import GuardError, OperationAborted
