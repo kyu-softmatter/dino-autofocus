@@ -69,9 +69,11 @@ def test_commands_refused_from_foreign_pages(engine, make_client):
     assert evil.status_code == 403
     same = c.post("/api/commands", json=body, headers={"origin": "http://127.0.0.1:8765"})
     assert same.status_code == 200
-    # the Vite dev server on this PC proxies to the API from another port
-    dev = c.post("/api/commands", json=body, headers={"origin": "http://localhost:5173"})
-    assert dev.status_code == 200
+    # the Vite dev server on this PC: refused unless named with --dev-origin (T-009c)
+    dev = {"origin": "http://localhost:5173"}
+    assert c.post("/api/commands", json=body, headers=dev).status_code == 403
+    listed = make_client(engine, dev_origins=["http://localhost:5173"])
+    assert listed.post("/api/commands", json=body, headers=dev).status_code == 200
     assert len(engine.commands) == 2
 
 
