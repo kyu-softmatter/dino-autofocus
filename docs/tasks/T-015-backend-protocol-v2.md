@@ -73,3 +73,12 @@ is refused. Three groups, kept as data in one place next to the protocol:
 Any device or property not in groups 2 or 3 is refused with a clear error naming the allow-list.
 Light methods: `lamp_on(*, token)` and `aura_line_on(line, percent, *, token)` raise `UnguardedMotion`
 without a token; `lamp_off`, `aura_off`, `all_off` take none.
+
+## T-015b SAFETY (from 검토보조1, prerequisite of the T-036 lock lift)
+
+- `BackendInfo.bench` defaults to **True** (fail safe). mock, mm-demo, replay and FakeBackend set False explicitly;
+  mm-real keeps True.
+- One shared helper `is_bench(info) -> bool` in `backend.py` (True when the field is missing or True). Guards (T-027)
+  and the runner (T-011b) switch to it in a small follow-up each.
+- Test: a backend that does not set the field is treated as bench.
+- Owner AF 실행12 (backend.py, the backends' info()), review AF 검토보조2.
