@@ -75,8 +75,8 @@
 
 | 질문 | 지금 상태 | 확인 방법 |
 |---|---|---|
-| **설정 파일을 불러올 때 움직이는 장치를 건드리지 않는가** (T-036b, T-036c) | 설정을 불러오면 Micro-Manager 가 `System` 그룹의 `Startup` 프리셋과 `Property,Core,Initialize,1` 뒤의 `Property` 줄을 스스로 적용한다. 그 안에 ZDrive, XYStage, Nosepiece, PFS 값이 있으면 **열기만 해도 장비가 움직인다.** 9월 30일 기록에는 `LappMainBranch1 State 1` (광경로) 만 적혀 있고 전체는 확인 전이다. Micro-Manager 의 기본 데모 설정은 Startup 에서 대물렌즈를 돌려서 새 검사에 걸린다. 새 앱은 열기 전에 검사해 거부하지만, 기존 `scripts/*` 는 같은 파일을 검사 없이 연다 | 아래 두 명령. 움직이는 장치 이름이 하나라도 나오면 그 설정으로 아무것도 열지 말고 총괄 세션에 알린다 |
-| **설정의 종료 프리셋이 움직이는 장치를 건드리지 않는가** (T-036c) | 장치를 내릴 때 Core 가 `System/Shutdown` 프리셋을 적용하는지 확인 전이다. 적용한다면 그 안의 Z·재물대·대물렌즈 값은 끌 때 장비를 움직인다. 새 앱은 Shutdown 프리셋도 같은 규칙으로 거부한다 | 아래 명령의 Shutdown 줄을 본다. 끌 때 적용되는지는 벤치에서 Shutdown 프리셋에 눈에 보이는 무해한 값(광경로 등)이 있다면 끄면서 바뀌는지 본다 |
+| **설정 파일을 불러올 때 움직이는 장치를 건드리지 않는가** (T-036b) | 설정을 불러오면 Micro-Manager 가 `System` 그룹의 `Startup` 프리셋과 `Property,Core,Initialize,1` 뒤의 `Property` 줄을 스스로 적용한다. 그 안에 ZDrive, XYStage, Nosepiece, PFS 값이 있으면 **열기만 해도 장비가 움직인다.** 9월 30일 기록에는 `LappMainBranch1 State 1` (광경로) 만 적혀 있고 전체는 확인 전이다. Micro-Manager 의 기본 데모 설정은 Startup 에서 대물렌즈를 돌려서 새 검사에 걸린다. 새 앱은 열기 전에 검사해 거부하지만, 기존 `scripts/*` 는 같은 파일을 검사 없이 연다 | 아래 두 명령. 움직이는 장치 이름이 하나라도 나오면 그 설정으로 아무것도 열지 말고 총괄 세션에 알린다 |
+| **설정의 종료 프리셋이 움직이는 장치를 건드리지 않는가** (T-036b) | 장치를 내릴 때 Core 가 `System/Shutdown` 프리셋을 적용하는지 확인 전이다. 적용한다면 그 안의 Z·재물대·대물렌즈 값은 끌 때 장비를 움직인다. 새 앱은 Shutdown 프리셋도 같은 규칙으로 거부한다 | 아래 명령의 Shutdown 줄을 본다. 끌 때 적용되는지는 벤치에서 Shutdown 프리셋에 눈에 보이는 무해한 값(광경로 등)이 있다면 끄면서 바뀌는지 본다 |
 | 벤치 설정 파일 경로와 Micro-Manager 설치 폴더 | 기존 스크립트(`scripts/mm_grab.py`)는 `C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg` 를 쓴다. 설치 폴더는 pymmcore-plus 가 찾는다 | 파일이 있는지, `uv run python -c "from pymmcore_plus import find_micromanager; print(find_micromanager())"` |
 | Core 의 AutoFocus 장치가 PFS 인가 | 확인 전 | 설정을 불러온 뒤 Core 의 AutoFocus 역할 읽기 |
 | `enableContinuousFocus(False)` 뒤에 꺼짐으로 읽히는가 | 확인 전 | 끄고 `isContinuousFocusEnabled()` 읽기 |
