@@ -10,16 +10,15 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 
 ### In flight at the freeze (finishes on its own; check `git branch --no-merged main`)
 
-- Server: T-009g hardware wiring, T-009i real runner at start-up (mock default, separate mock records root,
-  records + committer wired), T-009j replay start-up + op records into the open session. Stacked g → i → j.
-- Web: T-010-9 (401 code, locked = stale, WsLock types, `--dev-origin`), schema regen 3, T-010-12 (0c1f3de, vitest
-  maxWorkers 2 + 15 s timeouts; committed before the freeze).
+- Merged since the freeze (31565db): T-009g, schema regen 3, T-015e, T-012-6 (gsd; run `uv sync`).
+- Server: T-009i real runner at start-up (mock default, separate mock records root, records + committer wired) and
+  T-009j replay start-up + op records into the open session (stack head a1753de, records-root fix in review).
+- Web: T-010-9 (401 code, locked = stale, WsLock types, `--dev-origin`; merge main after regen 3), T-010-12
+  (0c1f3de, vitest maxWorkers 2 + 15 s timeouts; committed before the freeze).
 - Assistant: T-013c (proposal reject needs confirm's permission).
-- Tests: T-015e (server helpers out of conftest + guard test).
-- Simulation: T-012-6 (`gsd` dependency).
-- Sample map: T-032 stage 2 (sample_map, goto_xy, map record ops, edge_trace writes sample events).
-- Screens: T-105 login, T-106 sessions, T-014c/d prompt box, T-103b / T-100c type follow-ups (only if already
-  committed).
+- Sample map: T-032 stage 2 (sample_map, goto_xy with PFS off before the retract, map record ops with one lock,
+  edge_trace writes sample events; head 60953e9).
+- Screens: T-105 login, T-106 sessions.
 
 ### Carded but not started (unassigned; pick up from the card)
 
