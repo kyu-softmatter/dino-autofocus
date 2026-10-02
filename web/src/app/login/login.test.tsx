@@ -219,3 +219,20 @@ describe("ApprovalList", () => {
     expect(api.users.find((u) => u.email === "pat@example.test")).toMatchObject({ status: "active", role: "operator" });
   });
 });
+
+describe("LoginGate on a remote PC", () => {
+  it("guesses remote from the page host and offers no first-run setup", async () => {
+    const original = window.location;
+    Object.defineProperty(window, "location", { configurable: true, value: { ...original, hostname: "lab-pc.example.test" } });
+    try {
+      render(
+        <LoginGate api={createFakeAuthApi({ setup: "needs_admin" })} pollMs={0}>
+          <App />
+        </LoginGate>,
+      );
+      expect((await screen.findByRole("status")).textContent).toContain("on the microscope PC");
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: original });
+    }
+  });
+});

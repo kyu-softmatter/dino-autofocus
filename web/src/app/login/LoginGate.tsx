@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
+import { isLoopbackHost } from "../client";
 import { type AuthApi, httpAuthApi, type Me, type SetupState } from "./api";
 import { isNotice, LoginForm, Notice, SetupForm, SignupForm } from "./forms";
 import { LockScreen } from "./LockScreen";
@@ -37,14 +38,14 @@ export function LoginGate({
   api = httpAuthApi,
   abort,
   pollMs = 30_000,
-  local = true,
+  local = isLoopbackHost(window.location.hostname),
   children,
 }: {
   api?: AuthApi;
   abort?: ReactNode;
   /** how often /me is re-read so an idle lock shows without user input */
   pollMs?: number;
-  /** before login the server has not said; the shell passes its own loopback guess */
+  /** before login the server has not said; guessed from the page host (a remote viewer uses a non-loopback name) */
   local?: boolean;
   children: ReactNode;
 }) {
