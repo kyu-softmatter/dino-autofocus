@@ -422,3 +422,54 @@ def test_system_prompt_and_tools_are_byte_stable():
     one, two = sent_bytes(), sent_bytes()
     assert len(set(one + two)) == 1  # same bytes across calls and across instances
     assert "datetime" not in SYSTEM_PROMPT and "{" not in SYSTEM_PROMPT
+
+
+def test_any_source_failure_still_answers_every_tool_use():
+    class BrokenStore:
+        def list_inbox(self):
+            raise RuntimeError("share offline")
+
+    def broken_gates(op, args):
+        raise TypeError("bad profile")
+
+    provider = FakeProvider(
+        [
+            [
+                tool_use("get_hardware_state"),
+                tool_use("list_inbox"),
+                tool_use("propose_lights_off", reason="r"),
+            ],
+            [text("done")],
+            [text("still fine")],
+        ]
+    )
+    a = Assistant(
+        provider=provider,
+        records=RecordLog(),
+        sources=Sources(store=BrokenStore(), gates=broken_gates),
+    )
+    ans = a.ask("q")
+    results = provider.requests[1].messages[-1]["content"]
+    assert [b.get("is_error", False) for b in results] == [False, True, False]
+    assert "share offline" in results[1]["content"]
+    assert ans.proposals[0]["expected_gate"]["checked"] is False
+    assert "gate check failed" in ans.proposals[0]["expected_gate"]["reasons"][0]
+    a.ask("next", conversation_id=ans.conversation_id)  # the history is still valid
+    roles = [m["role"] for m in provider.requests[2].messages]
+    assert roles == ["user", "assistant", "user", "assistant", "user"]
+
+
+def test_thinking_block_is_resent_byte_identical():
+    thinking = {"type": "thinking", "thinking": "", "signature": "EqQBCkYIBxgCKkB=="}
+    a, provider, _ = make([[thinking, tool_use("get_hardware_state")], [text("ok")]])
+    a.ask("q")
+    sent = provider.requests[1].messages[1]["content"][0]
+    assert json.dumps(sent, sort_keys=False).encode() == json.dumps(thinking).encode()
+
+
+def test_tool_definitions_are_byte_stable_across_toolsets():
+    from dino_autofocus.assistant.tools import ToolSet
+
+    one = json.dumps(ToolSet().definitions()).encode()
+    two = json.dumps(ToolSet(Sources(snapshot=lambda: {})).definitions()).encode()
+    assert one == two

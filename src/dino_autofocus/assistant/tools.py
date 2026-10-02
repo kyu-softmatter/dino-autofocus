@@ -581,7 +581,10 @@ class ToolSet:
             return ToolOutcome(name, "error", "invalid input: " + "; ".join(errors), is_error=True)
         try:
             result = spec.handler(self.sources, dict(tool_input))
-        except (KeyError, LookupError, ValueError) as e:  # NotFoundError is a KeyError
+        except Exception as e:
+            # any failure of a source (NotFoundError is a KeyError, but a broken store may
+            # raise anything) becomes an is_error result: a tool_use left without its
+            # tool_result would make every later request in the conversation fail
             return ToolOutcome(name, "error", f"{type(e).__name__}: {e}", is_error=True)
         if spec.kind == "action":
             return ToolOutcome(name, "action", "", draft=result)
@@ -598,7 +601,14 @@ class ToolSet:
         if gates is None:
             return {"checked": False, "enabled": None, "reasons": ["gates not connected"]}
         op = command.get("op") or command["kind"]
-        enabled, reasons = gates(op, dict(command.get("args", {})))
+        try:
+            enabled, reasons = gates(op, dict(command.get("args", {})))
+        except Exception as e:  # the card still appears; the engine checks again anyway
+            return {
+                "checked": False,
+                "enabled": None,
+                "reasons": [f"gate check failed: {type(e).__name__}: {e}"],
+            }
         return {"checked": True, "enabled": bool(enabled), "reasons": list(reasons)}
 
 

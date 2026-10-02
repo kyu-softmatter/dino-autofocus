@@ -165,3 +165,26 @@ def test_thinking_blocks_go_back_unchanged_and_prefix_bytes_stay_put():
     assert second["messages"][: len(first["messages"])] == first["messages"]
     for key in ("system", "tools", "tool_choice", "output_config"):
         assert json.dumps(first[key]).encode() == json.dumps(second[key]).encode()
+
+
+def test_request_kwargs_bytes_do_not_depend_on_question_or_context():
+    import json
+
+    from dino_autofocus.assistant.tools import ToolSet
+
+    p = AnthropicProvider(client=object())
+    a = p.request_kwargs(
+        request(
+            tools=ToolSet().definitions(), messages=[{"role": "user", "content": "where is z?"}]
+        )
+    )
+    b = p.request_kwargs(
+        request(
+            tools=ToolSet().definitions(),
+            messages=[
+                {"role": "user", "content": [{"type": "text", "text": "<screen_context>{}"}]}
+            ],
+        )
+    )
+    for key in ("system", "tools"):
+        assert json.dumps(a[key]).encode() == json.dumps(b[key]).encode()
