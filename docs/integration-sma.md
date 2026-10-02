@@ -103,6 +103,16 @@ Q5 설명: 판정기는 확신이 낮으면 `step_up` / `step_down` 대신 `unsu
 
 ## 9. 폴더 구조 (Q2, 초안 2026-10-02)
 
+추가 결정 (사용자, 2026-10-02, 이 절의 초안을 본 뒤):
+- **동작은 plan 으로만.** 합친 뒤 화면은 plan 초안을 만들고, 사람이 승인하면 그쪽 operator/orchestrator 가 실행한다.
+  화면이 직접 장비를 움직이지 않는다. S5 의 `hw_port` 는 이 모양 (plan 제출, run 읽기) 을 목표로 한다.
+- **화면 (server, web, launcher) 은 이 저장소에 남는다.** 그쪽으로 옮기는 것은 `microscope_agent/` 쪽 (초점·맵 핵심) 뿐이다.
+  아래의 `console/` 은 이 저장소 안의 위치이고, 그쪽에 새 최상위 폴더를 만들지 않는다 (ALLOWED_PATHS 승인 불필요).
+- **기록은 모두 그쪽 `runs/` 로.** 그쪽 `runs/` 는 공개되므로, 넘기기 전에 이메일·이름 같은 개인 정보를 빼야 한다
+  (사용자 id 를 불투명한 값으로 바꾸는 설계가 필요, 새 과제). 관리자 이메일은 지금처럼 git 밖에 둔다.
+- **scipy 는 numpy 로 바꾼다** (`separated_peaks`). 초점 핵심은 numpy 만 쓴다.
+
+
 그쪽 규칙에서 나오는 제약 (soft-matter-agents `baf6f1e`, `contracts/validate.py`):
 - check 13: 에이전트 `src/` 는 평평한 파일 또는 `src/devices/<file>` 만. `tests/` 는 평평한 `*.py` 만 (fixture 폴더 없음).
 - 그쪽 모듈은 패키지 import 가 아니라 **경로로 형제 파일을 불러온다** (`spec_from_file_location`, 예 `axis_a1_snr.py:44`).
