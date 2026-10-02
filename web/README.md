@@ -91,9 +91,12 @@ file up the same way as an area screen, with a placeholder until it exists.
 
 ## Shared components
 
-- `FocusVerdict` (`src/app/Verdict.tsx`): a model verdict, only the five words
-  `in_focus | step_up | step_down | no_sample_here | unsure`, tagged "model". Anything else is
-  shown as "Unsure" and marked invalid. A model never gives a Z (PLAN 6, rule 3).
+- `FocusVerdict` (`src/app/Verdict.tsx`): `<FocusVerdict verdict={v} source="computed" | "model" />`.
+  Only the five words `in_focus | step_up | step_down | no_sample_here | unsure`, tagged with
+  `source` in the grade vocabulary (measured / computed / model). `source` is required. A
+  classical result from code, such as the 100x focus sweep, is "computed"; a DINO head or Claude
+  is "model". Any other word is shown as "Unsure" and marked invalid, and an unknown source shows
+  as "model". A model never gives a Z (PLAN 6, rule 3).
 - `EncoderZ`: Z from the ZDrive encoder read-back, in µm. The only way a screen shows Z.
 
 ## Talking to the server
