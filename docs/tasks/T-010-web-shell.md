@@ -60,3 +60,45 @@
   를 항상 보이게 한다. 값은 T-013 의 `GET /api/assistant/status`. 아직 없으면 "assistant: unavailable".
 - v0.5 (047048c): 시뮬레이션 화면 (T-012) 이 3D 궤적 뷰어에 Three.js 를 쓴다. `web/package.json` 은 이
   과제 소유이므로, T-012 가 요청하면 매니저를 거쳐 `three` 를 이 과제에서 추가한다 (BACKLOG 참조).
+
+## First-screen notice (ui-spec 5.2, accepted)
+
+- On the first screen, show the last shutdown's light readback from `GET /api/state` → `last_shutdown_lights`
+  (T-011 fills it). Warn clearly if any light did not read back off. Second-stage commit; show nothing when
+  the field is absent.
+
+## From the screen contracts
+
+- A cross-area link helper (URL scheme), for example console run -> `#/simulation?run_id=...`, so areas link
+  without importing each other.
+
+## From the login screen contract (T-105 stage A, db0a4d1)
+
+- Route guard: call `GET /api/auth/me`. On 401 or locked, render `app/login`'s `LoginGate`; any later 401
+  returns to it. No `#/login` route.
+- Status bar: user name and role, a "remote · read only" badge, the control holder with Take / Release, and a
+  user menu (Log out, Lock, Approve accounts for admins).
+- Activity hook for the idle lock: `POST /api/auth/activity` on input, throttled to once per 30 s.
+
+## Verdict source (from T-104)
+
+- `FocusVerdict` gets a `source` prop: "model" | "computed". The 100x focus result is "computed", not "model".
+  The shell owns the label words; use "computed" everywhere (matches the grade vocabulary
+  measured / computed / model).
+
+## Stale readings after a disconnect (safety, from the stage 2 merge review)
+
+- When the event socket drops, the status bar must not keep showing the last lights and XY/Z readings as current.
+  Mark them stale/unknown (greyed, "last known at <time>"), especially an old "lights off". Restore on reconnect
+  from `GET /api/state`. Test with a fake socket drop.
+
+## vitest under load (from T-100)
+
+- Set vitest `pool: "threads"` and a small `maxWorkers` (e.g. 2) in the web test config; forks workers time out when
+  the machine is loaded by other seats.
+
+## Area POST helper (from the screen manager)
+
+- Add `useClient().post(path, body)` with the same error handling as `command`: 403 → read-only rule,
+  401/423 → refresh auth. Areas use it for their own routes (console submit, D16 map writes, sessions
+  open/close/continue, sample "Open folder", auth). Engine commands still go through `command` (POST /api/commands).

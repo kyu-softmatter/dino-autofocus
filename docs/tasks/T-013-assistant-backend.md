@@ -93,3 +93,12 @@ D6 은 권고안으로 진행, D7 은 텍스트만, D8 은 우선 제한 없음�
 8. Keep the system prompt and tool list byte-stable so prompt caching works (test: identical bytes across calls).
 
 The review assistant checks each condition against the branch before passing it to the reviewer.
+
+## From the screen contracts (D16)
+
+- The proposal-confirm path checks `WRITE_MAP_FLAG` for `map_flag`, `map_flag_retire`, `candidate_confirm` and
+  `candidate_reject`, the same as the map routes. Claude proposals must not bypass D16.
+
+## Status names (from T-010)
+
+- `GET /api/assistant/status` returns exactly `{provider, connected, data_stage}`; the web shell reads these names.

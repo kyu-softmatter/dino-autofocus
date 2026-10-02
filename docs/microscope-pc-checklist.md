@@ -20,6 +20,10 @@
 - 실행 중인 시뮬레이션이 진행 상태(현재 step, 전체 step)를 파일로 남기는가. 남긴다면 어디에.
 - 궤적(GSD)과 로그 파일의 실제 경로. 서버는 `\\wsl$\<배포판>\...` 로 읽기만 한다.
 
+### 방향 기준
+
+방향은 2026-09-30 실행 기록을 기준으로 한다 (PLAN 5절 Guards). F5 Y 이탈은 +Y 로 먼저 설정했다 (Q12 에서 확인).
+
 ### 작업 명세의 질문 Q1–Q21
 
 질문 원문과 이유는 [operations-spec.md 10절](operations-spec.md) 에 있다. 대부분
@@ -47,9 +51,35 @@
 
 | 값 | 임시 | 측정할 것 |
 |---|---|---|
-| 큰 XY 이동 문턱 | min(렌즈 시야, 1 mm) | Q20 |
+| 큰 XY 이동 문턱 | 대물렌즈별 표 (가드 안). 4x 는 타일 이동 허용, 100x Oil 은 min(시야, 1 mm), 모르는 렌즈는 가장 엄격 | Q20, 렌즈별 표의 값 전부 |
 | `z_safe` | 0 µm (완전 후퇴) | Q20 |
-| F5 이탈 거리 | 기본값 없음, 지정하지 않으면 거부 | Q12 |
+| `approach_step_um` (F5 단계 접근 걸음) | 렌즈별 표에 둔다. 100x Oil 10 µm (작동 거리 130 µm 의 약 1/13), 다른 렌즈도 우선 10 µm. 접근은 기존 절차대로 0 → 2800 µm 를 한 번에 간 뒤 2800 부터 걸음으로 올라간다 | Q13. M4 의 실제 벤치 사용 전에 확인 |
+| F5 이탈 방향과 거리 | **+Y, 15 mm** (사용자가 +Y 로 먼저 설정, 거리는 15–20 mm 중 짧은 쪽). 재물대 Y 한계를 넘으면 거부 | Q12. M4 전에 확인 |
+
+### 장치 속성 이름 (T-015)
+
+| 질문 | 지금 상태 | 확인 방법 |
+|---|---|---|
+| Kinetix_red 의 판독 모드 속성 이름과 값 목록 | 카메라 쓰기 허용 목록에 아직 없다. 9월 30일 기록에는 `ReadoutRate = 100MHz 12bit` 로 적혀 있어 이름은 `ReadoutRate` 로 보이지만 확인 전이다 | Micro-Manager 에서 Kinetix_red 속성 목록과 허용 값 읽기 |
+| Aura 의 GREEN 외 라인 이름 (VIOLET, CYAN, RED 등) 과 `<LINE>_Intensity` 속성 | GREEN 만 9월 30일에 썼다. 나머지는 `unmeasured provisional` | Aura 장치 속성 목록 읽기 |
+
+### 실제 장비 백엔드 (T-033)
+
+| 질문 | 지금 상태 | 확인 방법 |
+|---|---|---|
+| 벤치 설정 파일 경로와 Micro-Manager 설치 폴더 | 기존 스크립트(`scripts/mm_grab.py`)는 `C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg` 를 쓴다. 설치 폴더는 pymmcore-plus 가 찾는다 | 파일이 있는지, `uv run python -c "from pymmcore_plus import find_micromanager; print(find_micromanager())"` |
+| Core 의 AutoFocus 장치가 PFS 인가 | 확인 전 | 설정을 불러온 뒤 Core 의 AutoFocus 역할 읽기 |
+| `enableContinuousFocus(False)` 뒤에 꺼짐으로 읽히는가 | 확인 전 | 끄고 `isContinuousFocusEnabled()` 읽기 |
+| XY 이동 대기 시간 30 s 가 가장 긴 이동에 충분한가 | `DEFAULT_XY_TIMEOUT_S = 30` 임시값 | 가장 먼 두 점 사이 이동 시간 재기 |
+| 재물대 이동 한계 (X, Y) | 실제 장비 백엔드는 지금 "모름" 을 돌려준다. 그래서 **실제 장비에서는 F5 Y 이탈이 거부된다** | 재물대 한계 값 읽기 또는 측정 (Q12 와 함께) |
+
+### 설치 상태 (T-020)
+
+| 질문 | 왜 필요한가 | 확인 명령 |
+|---|---|---|
+| git 이 설치되어 있는가 | DINO 백본은 dinov2 클론의 커밋을 `git rev-parse` 로 확인하고, 없으면 실행을 거부한다. 기록 저장소(PLAN D10)도 로컬 git 이다 | `git --version` |
+| torch 가중치 폴더는 어디인가 | 그 폴더 아래 `checkpoints` 에 가중치 파일을 둔다 (오프라인 복사) | `uv run python -c "import torch; print(torch.hub.get_dir())"` |
+| 원격 보기를 켤 때 Windows 방화벽 창 (T-009) | `--remote-view` 로 서버를 켜면 모든 주소(0.0.0.0)에 바인딩해서, 처음 한 번 방화벽이 허용 여부를 묻는다. **원격 보기가 필요할 때만, "개인 네트워크"만 허용한다.** 공용 네트워크는 허용하지 않는다. 원격 보기를 쓰지 않으면 이 창은 나오지 않는다 | 서버를 `--remote-view` 로 처음 켤 때 |
 
 ### 그 밖에 측정할 것 (9월 30일 기록에서)
 
