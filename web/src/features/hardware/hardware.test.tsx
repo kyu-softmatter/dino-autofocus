@@ -249,15 +249,15 @@ describe("hardware screen", () => {
   });
 
   it("shows a non-remote 403 (a viewer's scan) as that action's reason", async () => {
-    setup({ commands: () => ({ status: 403, body: { detail: "Needs the operator role" } }) });
+    setup({ commands: () => ({ status: 403, body: { detail: { code: "role", message: "Needs the operator role" } } }) });
     await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
     fireEvent.click(button("Scan hardware"));
     const scan = within(screen.getByRole("region", { name: "Scan" }));
     expect(await scan.findByText("refused: Needs the operator role")).toBeTruthy();
   });
 
-  // Enable when T-010 stage 4 is on main: only a 403 marked remote_view (T-009b) sets read-only.
-  it.skip("leaves the rest of the screen writable after a non-remote 403 (T-010 stage 4)", async () => {
+  // T-010 stage 4: only a 403 marked remote_view (T-009b) sets read-only.
+  it("leaves the rest of the screen writable after a non-remote 403 (T-010 stage 4)", async () => {
     setup({ commands: () => ({ status: 403, body: { detail: { code: "not_operator", message: "Needs the operator role" } } }) });
     await waitFor(() => expect(isDisabled(button("Scan hardware"))).toBe(false));
     fireEvent.click(button("Scan hardware"));

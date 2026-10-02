@@ -55,10 +55,12 @@ export function Reason({ text }: { text: string | null }) {
 
 export function SummaryPanel({ out }: { out: HardwareProfileOut }) {
   const p = out.profile;
+  const error = out.error ? <p className="hw-warn">Engine could not read the hardware state: {out.error}</p> : null;
   if (!p) {
     return (
       <section aria-label="Detection summary">
         <h3>Detection summary</h3>
+        {error}
         <p className="muted">Not scanned yet. Use "Scan hardware".</p>
       </section>
     );
@@ -72,6 +74,7 @@ export function SummaryPanel({ out }: { out: HardwareProfileOut }) {
   return (
     <section aria-label="Detection summary">
       <h3>Detection summary</h3>
+      {error}
       <dl className="hw-dl">
         <dt>Detected</dt><dd>{p.detected_at}</dd>
         <dt>Backend</dt><dd>{p.backend}</dd>

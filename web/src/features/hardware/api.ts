@@ -57,6 +57,8 @@ export interface HardwareProfileOut {
   profile: HardwareProfile | null;
   path: string | null;
   sha256: string | null;
+  /** the engine could not read its hardware state */
+  error?: string | null;
 }
 
 export interface GateRow {

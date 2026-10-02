@@ -16,7 +16,7 @@ they read the last profile and gate verdict that the engine already holds.
 
 | Path | Response model | Body |
 |---|---|---|
-| `/api/hardware/profile` | `HardwareProfileOut` | `{"profile": <hardware_profile.json> \| null, "path": str \| null, "sha256": str \| null}`. `null` = never scanned; the screen shows `"Not scanned yet"` |
+| `/api/hardware/profile` | `HardwareProfileOut` | `{"profile": <normalised profile> \| null, "path": str \| null, "sha256": str \| null, "error": str \| null}`. `null` = never scanned; the screen shows `"Not scanned yet"`. `sha256` is taken over the canonical JSON the engine reports. `error` is set when the engine could not read its hardware state |
 | `/api/hardware/gates` | `list[GateRow]` | One row per gated operation, off rows first, then by `op` |
 | `/api/hardware/gates/{op}` | `GateRow` | 404 `ApiError` for an unknown `op` |
 | `/api/hardware/status` | `StatusResultOut` | Last `finished(status)`: `{"op_id", "t", "user_id", "summary"}` or `null` if `status` has not run since the server started |

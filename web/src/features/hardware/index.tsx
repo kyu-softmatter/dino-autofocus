@@ -162,7 +162,7 @@ export default function HardwareScreen() {
   const lightBlocked = blocked("light_set");
   const offBlocked = blockedBy(readOnly, permissions, "lights_off");
   const start = (op: string, args: Record<string, unknown> = {}): CommandIn =>
-    ({ kind: "start", op, op_id: "", args, origin: "human" });
+    ({ kind: "start", op, op_id: "", args });
 
   return (
     <div className="hw-screen">
@@ -195,7 +195,7 @@ export default function HardwareScreen() {
                      setBlocked={lightBlocked} offBlocked={offBlocked} running={runningOp}
                      onBrightfield={() => send("lights", start("light_set", { mode: "brightfield" }))}
                      onAura={(line, percent) => send("lights", start("light_set", { mode: "aura", line, percent }))}
-                     onOff={() => send("lights", { kind: "lights_off", op: "", op_id: "", origin: "human" })} />
+                     onOff={() => send("lights", { kind: "lights_off", op: "", op_id: "" })} />
         <CameraPiezoPanel out={profile} />
       </div>
       <Reason text={notices.status ?? notices.lights ?? null} />
