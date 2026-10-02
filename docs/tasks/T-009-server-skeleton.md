@@ -127,3 +127,57 @@
 
 - A pydantic `Snapshot` model for `GET /api/state` (lights, positions, running op, sample, hardware,
   last_shutdown_lights, unclean_shutdown), so the web side gets generated types instead of an untyped dict.
+- T-009b test (director): a request from another loopback origin without a session cookie gets nothing beyond the
+  login routes (no state, no events, no commands except loopback abort and lights_off; PLAN rule 12 and D13 as of
+  85440a5/5be7028: remote abort needs a login, remote lights_off stays refused).
+
+## Mark remote refusals (T-009b, from the screen manager)
+
+- The remote middleware's 403 carries `detail.code = "remote_view"` (and a header `X-DinoAF-Refusal: remote_view`).
+  Every other 403 (D16, session owner, role) uses its own code. Test both.
+
+## Sample seat wiring (T-009b, from T-027 9e192b0)
+
+- At app start: `import dino_autofocus.engine.operations.sample_ops` (registers the ops) and
+  `install_sample_seat(runner, SampleSeat(store, samples_root, session_for))`, where `session_for(session_id)` returns the
+  server's open ExperimentSession object, so every writer shares one seq counter.
+- The sessions router (T-106) calls `ensure_sample_created(session, store)` on session open.
+
+## From the T-009 merge (9901bbc)
+
+- T-009b: parametrize the 422 test over SERVER_STAMPED so any future server-stamped field is covered.
+- Until T-009b lands, user_id and control_grant are always None, so a real Runner refuses every non-stop command;
+  T-009b fixes that by stamping them from the login cookie and the control object.
+
+## T-009b contract for T-105 / T-106 (실행7, accepted by the manager; read on resume)
+
+- Cookie `dinoaf_session` (SESSION_COOKIE in server/api/__init__.py) holds the T-018 login token; T-105's login route
+  sets it HttpOnly, SameSite=Strict, Path=/.
+- `app.state.auth = AuthSeat(accounts, logins, control, audit)`; control routes call `seat.acquire(token, local=...)`
+  and `seat.release(token)`, never `control.*`; the browser sees only `has_control`.
+- Without a login: GET /api/health, the six POST /api/auth/* routes, POST /api/shutdown (loopback), and on
+  /api/commands: `abort` and `lights_off` from loopback. A remote `abort` needs a logged-in viewer (D13). Everything
+  else: 401 `login_required`; a locked login: 423 `locked` except stops and auth routes. GET /api/auth/me without a
+  cookie is 401. T-105 asks 실행7 if it needs another open GET.
+- Refusal shape: `detail = {code, message}` plus header `X-DinoAF-Refusal`. Codes: remote_view, foreign_origin,
+  map_route, role, local_only (403), login_required (401), locked (423).
+- Stamping: user_id from the login, control_grant from the seat; session_id stays None (the runner uses the session the
+  server set); T-106 calls `runner.set_experiment_session`. Role from `engine.runner.permission(op)`.
+- `/api/permissions`: engine check() plus login, lock, remote, role; session_open/close/continue = local operator,
+  logged in, unlocked; submit_question = allows(role, SUBMIT_QUESTION, local).
+- D14: loopback /ws/events connections reported through `engine.set_local_viewers(count)`.
+- Sample seat wiring waits for T-027 (a single wiring function as the seam).
+
+## T-009c (AF 실행7, after T-009b merges; review AF 검토보조1)
+
+- (a) WebSocket handshake runs the same `origin_refusal` as HTTP (a cross-site page can open a WebSocket to
+  127.0.0.1). Test a foreign Origin refused on `/ws/events` and `/ws/frames`.
+- (b) Waits for the director (D14/X3): whether a locked loopback login keeps a viewer socket that counts for D14.
+  Options under decision: a count-only socket (lock state only) or the full read-only streams for the same login.
+  Do not implement until the decision is recorded here.
+- (c) SAFETY (실행7, corrected): SameSite ignores ports, so a page served on another loopback port of the same host
+  carries the `dinoaf_session` cookie and passes today's loopback origin check. If the operator holds control, it
+  can send commands stamped with that grant (hardware moves). Fix: on REST and the WS handshake accept only the
+  server's own origin (Origin netloc == Host) plus dev origins named explicitly (`--dev-origin`, default none; the
+  T-010 Vite proxy sets it). Tests for a foreign port, localhost vs 127.0.0.1, and a listed dev origin.
+- Status: the whole card is held until the director replies (D14 question pending); (a) and (c) do not depend on it.
