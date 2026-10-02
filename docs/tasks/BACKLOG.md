@@ -80,7 +80,8 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - WP-C: `light_set{mode, line, percent}` op. WP-C/WP-I: `scan_4x` writes `mosaic.npy` and `mosaic.json`
   (orientation "stage", `M_px_per_um`, objective, `n_tiles`); `goto_xy` event payloads; `scan_box_um`
   and `allowed_box_um` in `summary.json`.
-- Lens table owner (NA, mag, WD) is still open: checklist Q8.
+- Lens table: engine data inside guards (fa2bdcd). Q8 only asks where FocusAxis keeps its WD values, so the
+  provisional rows can cite their source. Moves to the person-owned envelope at integration.
 
 ## 현미경 PC 확인 항목 (총괄에 넘김)
 

@@ -142,4 +142,5 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
   `candidate_confirm`, `candidate_reject`. `lights_off` and `abort` are command kinds, not `start(...)`.
 - Correction: under D13 a remote client may send `abort` only. Remote `lights_off` is refused for now
   (abort's exit path turns the lights off). Locally anyone logged in may send `abort` and `lights_off`.
-  Pending director confirmation.
+  Confirmed by the director. Tests: a remote abort ends with lights off (readback recorded); a remote
+  `lights_off` is refused with a clear reason.
