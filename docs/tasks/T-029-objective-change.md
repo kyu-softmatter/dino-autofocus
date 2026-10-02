@@ -34,3 +34,9 @@
 - `approach(clearance=None)` runs without a clearance check. `objective_change` always passes a real clearance
   callback, and on bench backends (mm-real) the op refuses in preflight without one. Mock/demo may pass a stub.
 - Progress key for the step-7 approach: `step_index` (the approach step number; `step` is the F5 step).
+
+## plan() shape for the screen (from T-104, 7ae3bdc)
+
+- `plan(cmd)` for `objective_change` returns `escape = {allowed, reason, sign, dy_um, mark, default}`: `mark` is
+  "unmeasured provisional"; `default` is true for an immersion target and false for dry-to-dry (ui-spec 7.5);
+  `allowed`/`reason` come from `step_out_target` (stage Y limit). The screen reads the refusal from the plan.

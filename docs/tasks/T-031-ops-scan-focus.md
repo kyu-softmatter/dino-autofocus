@@ -34,3 +34,9 @@
 - `DemoDevices.set_and_read` is public and writes any property with no allow-list. Make it private again
   (`_set_and_read`) or run `check_set_property` inside it, so no later caller can bypass the guards. Small fix,
   allowed in this task (owned path addition: `engine/backends/mm_demo_core.py`, this change only).
+
+## scan_4x preflight: closed loop required (from T-030 review)
+
+- `edge_trace` writes `hole.fitted_at` even after an aborted or partial trace (tagged `hole.trace_stop`, with
+  `arc_deg`). The scan_4x "fitted this session" preflight also requires a closed loop (trace_stop says complete,
+  or arc_deg ≥ the full-loop threshold); a partial arc refuses with a clear reason.

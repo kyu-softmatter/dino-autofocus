@@ -85,3 +85,9 @@
 - `FocusVerdict` gets a `source` prop: "model" | "computed". The 100x focus result is "computed", not "model".
   The shell owns the label words; use "computed" everywhere (matches the grade vocabulary
   measured / computed / model).
+
+## Stale readings after a disconnect (safety, from the stage 2 merge review)
+
+- When the event socket drops, the status bar must not keep showing the last lights and XY/Z readings as current.
+  Mark them stale/unknown (greyed, "last known at <time>"), especially an old "lights off". Restore on reconnect
+  from `GET /api/state`. Test with a fake socket drop.
