@@ -32,8 +32,9 @@ Stage A, contract (short, English):
   `started`, `progress(step=…)`, `position`, `objective`, `light_changed`, `confirm_required`, `finished`,
   `preflight_failed`.
 - Gaps become requests to AF 업무분배보조, who forwards them to the manager.
-- Rules: the Y step-out sign and distance are still open with the user (PLAN 10절), so `escape` stays off
-  with `"escape distance not set"` until a value exists. The 40x WI has no working distance and stays
+- Rules: the Y step-out is +Y, 15 mm, "unmeasured provisional" (PLAN v1.3, fbc1e08). The screen shows the
+  sign and distance read-only from the engine with that mark and never offers free entry; if the engine
+  refuses `escape`, show its reason. The 40x WI has no working distance and stays
   disabled. `"Loading done"` is local only, always, whatever the remote setting. Rotate, return, re-load and
   100x focus need the local operator with control and an open experiment session.
 
@@ -52,7 +53,8 @@ Stage B, implementation (mock first):
   plan, 100x defaults, remote/role refusals; `"Loading done"` refused from a remote origin even when other
   remote commands are allowed.
 - vitest: a scripted event sequence drives the seven steps, the interrupted state shows the return action,
-  escape disabled with its reason, read-only mode.
+  the step-out shown read-only with its provisional mark, escape refused with the engine's reason,
+  read-only mode.
 - Tests never open browser or desktop windows, and stop any server they start. No hardware scripts.
 
 ## Done when
