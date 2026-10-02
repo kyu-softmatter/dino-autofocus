@@ -20,7 +20,7 @@ All paths are under `/api/sessions`. **Who may act is not decided here.** Role, 
 experiment-session and remote rules come from the one shared check: `GET /api/permissions?ops=a,b` returns
 `{op: {allowed, reason}}` (T-009b over T-011 `check()`, the single permission table plus engine state). The
 screen shows those reasons and the router asks the same check before a write; neither works the rules out
-itself. Proposed op names: `session_open`, `session_close`, `session_continue`. The "Who" column below is
+itself. Op names (fixed): `session_open`, `session_close`, `session_continue`, answered from the T-018 named permissions plus loopback. The "Who" column below is
 what the permission table is expected to say. Only this area's own checks (one open session, the current
 sample, a session's owner, closed sessions) stay in the router.
 

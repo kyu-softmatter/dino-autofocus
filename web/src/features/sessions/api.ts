@@ -47,7 +47,7 @@ export interface SessionFilter {
   status?: SessionStatus;
 }
 
-/** Op names this area asks the shared permission check about (names proposed in sessions.md). */
+/** Op names this area asks the shared permission check about (fixed, sessions.md section 2). */
 export const SESSION_OPS = ["session_open", "session_close", "session_continue"] as const;
 export type SessionOp = (typeof SESSION_OPS)[number];
 
