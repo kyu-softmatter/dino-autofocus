@@ -155,3 +155,6 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   at ebfff88; no other seat makes the edit.
 - Integration (M6, director 2026-10-02): the soft-matter-agents librarian must skip sessions whose session.json has
   `bench: false` (T-106b), as a second guard behind the separate mock records root (T-009i).
+- Seats archived (2026-10-02, user via director): 실행1 (guards, sample.py), 15 (runner), 16, 17 (gates, hardware_scan).
+  Their files keep their cards; new work in those paths goes to an active seat: guards/sample.py and gates → 실행12
+  (bench and lock context), runner.py → 실행7 (server wiring context). 실행3 and 11 next once idle.
