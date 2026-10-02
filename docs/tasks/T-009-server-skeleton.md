@@ -181,3 +181,43 @@
   server's own origin (Origin netloc == Host) plus dev origins named explicitly (`--dev-origin`, default none; the
   T-010 Vite proxy sets it). Tests for a foreign port, localhost vs 127.0.0.1, and a listed dev origin.
 - Status: the whole card is held until the director replies (D14 question pending); (a) and (c) do not depend on it.
+
+## T-009d (AF 실행7, from T-105; review AF 검토보조3; T-105 waits for it)
+
+1. First-run setup must be reachable without a login: add `/api/auth/setup` to OPEN_READS and `setup/admin` to
+   AUTH_OPEN_PATHS. The handler (T-105) stays loopback-only (403 `remote_view` from a remote PC) and returns 409
+   once an admin exists.
+   SAFETY: this is the only write that works with no login, so the middleware also requires the request's
+   Origin to be the server's own on this path, independent of T-009c: scheme, host and port compared exactly
+   with the server's own origin. "Is loopback" is not enough (`origin_refusal` accepts any loopback port). No dev
+   exception until T-009c adds explicit `--dev-origin` values; first-run setup in dev goes to the server's port.
+   Tests: no Origin, a foreign loopback port, localhost vs 127.0.0.1, http vs https, and the own origin.
+2. `tests/server/test_server_login.py`: replace `post("/api/auth/login", json={}) == 404  # T-105` with a check
+   that does not break when T-105's router exists (e.g. `!= 401`, the path is open).
+3. `GET /api/auth/me` answers a locked login (`locked_ok=True` in `_http_refusal`), so the lock screen knows whose
+   password to ask for and can tell locked from logged out. No login still gives 401. Every other read stays 423
+   while locked.
+4. (from the screen manager; blocks all seven screen routers) Replace
+   `test_server_rest.py::test_no_area_routers_yet` (`include_area_routers(FastAPI()) == []`) with a test that does
+   not name areas: every module under `server/api/` not starting with "_" exposes a module-level `router` and is
+   mounted at `/api/<name>`; a module without `router` raises TypeError (use a temporary test package).
+
+## T-009e (AF 실행7, after T-009d; review AF 검토보조3) — records store and server lifespan (from T-106, G10/G11)
+
+- G10: `create_app` puts the records store on `app.state.records` as well as `engine.sample_seat`, so the sessions
+  router does not reach into the engine.
+- G11, a `create_app` lifespan:
+  - Shutdown: flush and stop the AutoCommitter (after the engine shutdown, before exit).
+  - Start-up (manager decision, safe default): any experiment session still `open` (left by a crash) is closed
+    with `close(note="interrupted: server restart")` and is not handed to the runner. The operator continues it
+    with `continue_from` (T-106 "Continue"), so a restarted server never resumes motion context on its own. The
+    sample record (awaiting_return etc.) is read as usual when the operator continues.
+  - Tests: an open session at start-up becomes closed with that note; the AutoCommitter is flushed and stopped at
+    shutdown; the server-side Sessions holder is empty after start-up.
+
+## T-009f (AF 실행7, urgent, before T-009e; review AF 검토보조3) — area-mount test that sees real areas
+
+- T-009d's `test_every_area_module_is_mounted_under_its_name` reads `{r.path for r in app.routes}`. With FastAPI
+  0.142.2 / starlette 1.7.0, `include_router` adds one `_IncludedRouter` (path None), so area paths never appear and
+  the test fails for the first real area (실행8, T-013b on 336ec69). Check `app.openapi()["paths"]` (or request each
+  route) instead, with a temporary package holding a real router and one route. tests/server only.
