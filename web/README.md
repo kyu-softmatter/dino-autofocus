@@ -7,7 +7,7 @@ there is no system install: always go through `uv run`.
 ```
 uv sync                                  # once: installs Node 22 into the repo env
 uv run npm --prefix web ci               # install the locked packages
-uv run npm --prefix web run dev          # dev server; /api and /ws go to 127.0.0.1:8000
+uv run npm --prefix web run dev          # dev server; /api and /ws go to 127.0.0.1:8765
 uv run npm --prefix web test             # vitest (jsdom, no browser window)
 uv run npm --prefix web run typecheck    # tsc --noEmit
 uv run npm --prefix web run build        # typecheck + vite build -> web/dist (not committed)
@@ -91,9 +91,36 @@ file up the same way as an area screen, with a placeholder until it exists.
 
 ## Shared components
 
-- `FocusVerdict` (`src/app/Verdict.tsx`): a model verdict, only the five words
-  `in_focus | step_up | step_down | no_sample_here | unsure`, tagged "model". Anything else is
-  shown as "Unsure" and marked invalid. A model never gives a Z (PLAN 6, rule 3).
+- `FocusVerdict` (`src/app/Verdict.tsx`): `<FocusVerdict verdict={v} source="computed" | "model" />`.
+  Only the five words `in_focus | step_up | step_down | no_sample_here | unsure`, tagged with
+  `source` in the grade vocabulary (measured / computed / model). `source` is required. A
+  classical result from code, such as the 100x focus sweep, is "computed"; a DINO head or Claude
+  is "model". Any other word is shown as "Unsure" and marked invalid, and an unknown source shows
+  as "model". A model never gives a Z (PLAN 6, rule 3).
 - `EncoderZ`: Z from the ZDrive encoder read-back, in µm. The only way a screen shows Z.
+
+## Talking to the server
+
+`src/app/client.tsx` holds the one client the app shares. Screens use hooks and never open
+their own sockets:
+
+| Hook | What |
+|---|---|
+| `useClient().get(path)` | `GET` JSON from the server |
+| `useClient().command(cmd)` | `POST /api/commands` (types from `src/api/schema.ts`), returns the `op_id` |
+| `useEngineEvents(handler, kinds?)` | engine events from the shared `/ws/events` socket. Pass a stable `handler` (`useCallback`) |
+| `useEventsConnected()` | whether that socket is open. Re-read your state when it turns true again: events in a gap are lost |
+| `useReadOnly()` | `{readOnly, why}`. Disable command buttons when true |
+
+Read-only starts on when the page was opened from another PC (a non-loopback host), and turns on
+for good if the server answers a command with 403 (remote view, D13). The server decides; the flag
+only keeps people from pressing buttons that will be refused.
+
+The status bar (`src/app/StatusBar.tsx`) shows the server connection, the read-only badge, the
+lights, XY and the encoder Z, the running operation and the assistant's provider and data stage
+(PLAN D7; "assistant: unavailable" until `GET /api/assistant/status` answers). The first screen
+shows the last shutdown's light readback from `GET /api/state` when the engine reports one.
+
+Tests use `src/test/fakes.ts` (`fakeTransport`, `FakeSocket`): no network, no browser.
 
 UI text is English.
