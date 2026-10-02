@@ -71,6 +71,7 @@ from ..records import stamp
 from ..runner import Aborted, OpContext, Operation, register_operation
 from ..sample import SAMPLES_ROOT, Sample
 from .light_set import LightRequest, scope_for, switch
+from .sample_map import SampleRecorder
 
 NAME = "edge_trace"
 WATCHED = True  # D14: abort when every local viewer is gone
@@ -634,30 +635,80 @@ def preflight(backend: Backend, args: dict) -> list[dict]:
     return checks
 
 
-def _backup_and_clear(sample: Sample, when: str) -> list[str]:
-    """Back up map.json and sample.json, then clear the boundary only (visits stay)."""
+def _backup(sample: Sample, when: str) -> list[str]:
+    """Copy map.json and sample.json aside before a re-trace replaces the fit."""
     saved = []
     for src, name in ((sample.map_json, f"map_before_rescan_{when}.json"),
                       (sample.sample_json, f"sample_before_rescan_{when}.json")):
         if src.exists():
             shutil.copy2(src, sample.dir / name)
             saved.append(name)
-    m = sample.load_map()
-    m.boundary = []
-    sample.save_map(m)
     return saved
 
 
-class _MapPoints:
-    """Default `on_point`: append to map.json (T-027's boundary_mark replaces this)."""
+class LegacyWriter:
+    """Boundary and hole fit straight into map.json / sample.json: the T-002 lifecycle and an
+    engine with no records store (no sample seat)."""
 
     def __init__(self, sample: Sample):
         self.sample = sample
 
-    def __call__(self, x: float, y: float) -> None:
+    def has_fit(self) -> tuple[bool, str | None]:
+        hole = self.sample.load_info().hole
+        return bool(self.sample.load_map().boundary or hole), (hole or {}).get("fitted_at")
+
+    def clear(self) -> None:
+        m = self.sample.load_map()
+        m.boundary = []
+        self.sample.save_map(m)
+
+    def point(self, x: float, y: float) -> None:
         m = self.sample.load_map()
         m.boundary.append([round(x, 1), round(y, 1)])
         self.sample.save_map(m)
+
+    def boundary(self) -> list[list[float]]:
+        return [list(p) for p in self.sample.load_map().boundary]
+
+    def hole(self, fit: dict, limits: dict) -> None:
+        info = self.sample.load_info()
+        info.hole, info.boundary_limits_um = fit, limits
+        self.sample.save_info(info)
+
+    def calibration(self, cal: dict) -> None:
+        info = self.sample.load_info()
+        info.stage_camera_calibration = cal
+        self.sample.save_info(info)
+
+
+class EventWriter(LegacyWriter):
+    """Boundary and hole fit as sample events through the open session (T-027 fold kinds
+    `boundary_clear`, `boundary_point`, `hole_fit`); map.json / sample.json are regenerated from
+    the view (`write_derived_views`) and `map_changed` goes out. The calibration has no event
+    kind: it stays a sample.json key, which the derived views keep."""
+
+    def __init__(self, sample: Sample, recorder: Any):
+        super().__init__(sample)
+        self.rec = recorder
+
+    def has_fit(self) -> tuple[bool, str | None]:
+        view = self.rec.view()
+        return bool(view.boundary or view.hole), (view.hole or {}).get("fitted_at")
+
+    def clear(self) -> None:
+        self.rec.event("boundary_clear")
+        self.rec.changed("boundary", n_points=0)
+
+    def point(self, x: float, y: float) -> None:
+        self.rec.event("boundary_point", x_um=round(x, 1), y_um=round(y, 1))
+        self.rec.changed("boundary", n_points=len(self.rec.view().boundary))
+
+    def boundary(self) -> list[list[float]]:
+        return [[float(p["x_um"]), float(p["y_um"])] for p in self.rec.view().boundary]
+
+    def hole(self, fit: dict, limits: dict) -> None:
+        self.rec.event("hole_fit", **fit)
+        self.rec.changed("hole", fitted_at=fit.get("fitted_at"))
 
 
 def _default_grab(backend: Backend) -> Callable[[float], np.ndarray]:
@@ -676,18 +727,21 @@ def _default_grab(backend: Backend) -> Callable[[float], np.ndarray]:
     return grab
 
 
-def prepare(sample: Sample, a: EdgeTraceArgs, confirm: Callable[[str, str], bool]) -> list[str]:
+def prepare(sample: Sample, a: EdgeTraceArgs, confirm: Callable[[str, str], bool],
+            writer: LegacyWriter | None = None) -> list[str]:
     """The two confirmations before anything moves; returns the backups made.
 
     A sample with a hole fit or boundary asks `replace_hole_fit` (yes: back up and clear the
     boundary only), then `start_trace`. A no raises OperationAborted."""
-    info = sample.load_info()
+    writer = writer or LegacyWriter(sample)
     backups: list[str] = []
-    if sample.load_map().boundary or info.hole:
-        when = (info.hole or {}).get("fitted_at") or "an earlier trace"
+    has, fitted = writer.has_fit()
+    if has:
+        when = fitted or "an earlier trace"
         if not confirm("replace_hole_fit", f"replace the hole fit from {when}? (backed up)"):
             raise OperationAborted("the operator kept the previous hole fit")
-        backups = _backup_and_clear(sample, stamp())
+        backups = _backup(sample, stamp())
+        writer.clear()
     if not confirm("start_trace", f"trace the edge: XY moves only, within "
                                   f"{a.max_radius_um / 1000:g} mm of here"):
         raise OperationAborted("the operator did not start the trace")
@@ -706,9 +760,12 @@ def trace(backend: Backend, sample: Sample, a: EdgeTraceArgs, scope: OpScope, *,
           grab: Callable[[float], np.ndarray] | None = None,
           move_rel: Callable[[np.ndarray], Any] | None = None,
           on_point: Callable[[float, float], None] | None = None,
-          on_tracer: Callable[[EdgeTracer], None] | None = None) -> dict:
+          on_tracer: Callable[[EdgeTracer], None] | None = None,
+          writer: LegacyWriter | None = None) -> dict:
     """The trace itself, inside a scope the caller owns (the record and the exit-path lights
-    are the caller's: `operation()` or the runner). Returns the result dict."""
+    are the caller's: `operation()` or the runner). Returns the result dict. `writer` stores
+    the boundary and the fit (default LegacyWriter: the sample's files)."""
+    writer = writer or LegacyWriter(sample)
     def log(d: dict) -> None:
         ev = dict(d)
         name = ev.pop("event")
@@ -733,7 +790,7 @@ def trace(backend: Backend, sample: Sample, a: EdgeTraceArgs, scope: OpScope, *,
         move_rel=move_rel or (lambda d: axis.goto_rel(float(d[0]), float(d[1]))),
         xy=lambda: np.array(_xy(backend)), pixel_um=binfo.pixel_um,
         exposure_ms=binfo.exposure_ms, args=a, log=log,
-        on_point=on_point or _MapPoints(sample),
+        on_point=on_point or writer.point,
         reference=reference_calibration(sample.load_info().stage_camera_calibration, objective),
         check=check, sleep=sleep, clock=clock, wall=wall)
     if on_tracer:
@@ -748,7 +805,7 @@ def trace(backend: Backend, sample: Sample, a: EdgeTraceArgs, scope: OpScope, *,
                     "why": "aborted" if _is_abort(exc) else f"error: {exc}"})
         raise
     finally:
-        result.update(_finish(sample, tracer, objective, a, warnings))
+        result.update(_finish(writer, tracer, objective, a, warnings))
     return result
 
 
@@ -784,36 +841,31 @@ def _xy(backend: Backend) -> tuple[float, float]:
     return p.x_um, p.y_um
 
 
-def _finish(sample: Sample, tracer: EdgeTracer, objective: str, a: EdgeTraceArgs,
+def _finish(writer: LegacyWriter, tracer: EdgeTracer, objective: str, a: EdgeTraceArgs,
             warnings: list[str]) -> dict:
-    """Write the hole fit and calibration to sample.json; also on abort and error."""
+    """Store the calibration and the hole fit (over every boundary point); also on abort and
+    error, where `trace_stop` and `closed_loop` say the arc is partial."""
     out: dict[str, Any] = {"path_um": round(tracer.path_um, 1), "n_moves": tracer.n_moves,
                            "n_points": len(tracer.points), "calibration": None, "hole": None}
-    info = sample.load_info()
-    changed = False
     if tracer.calibration is not None:
-        info.stage_camera_calibration = {**tracer.calibration, "objective": objective,
-                                         "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
-        out["calibration"] = info.stage_camera_calibration
-        changed = True
-    pts = np.asarray(sample.load_map().boundary, float)
+        cal = {**tracer.calibration, "objective": objective,
+               "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        writer.calibration(cal)
+        out["calibration"] = cal
+    pts = np.asarray(writer.boundary(), float)
     hole = hole_fit(pts) if len(pts) else None
     if hole is not None:
         hole["fitted_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         hole["trace_stop"] = tracer.why or "aborted or failed"  # a partial arc says so
         hole["closed_loop"] = tracer.why == FULL_LOOP  # stable flag for sample.hole_loop()
-        info.hole = hole
-        info.boundary_limits_um = {"x": [float(pts[:, 0].min()), float(pts[:, 0].max())],
-                                   "y": [float(pts[:, 1].min()), float(pts[:, 1].max())]}
+        writer.hole(hole, {"x": [float(pts[:, 0].min()), float(pts[:, 0].max())],
+                           "y": [float(pts[:, 1].min()), float(pts[:, 1].max())]})
         out["hole"] = hole
-        changed = True
         if a.hole_diameter_mm:
             off = abs(hole["diameter_mm"] - a.hole_diameter_mm) / a.hole_diameter_mm
             if off > DIAMETER_WARN_FRACTION:
                 warnings.append(f"fitted diameter {hole['diameter_mm']:.3f} mm is "
                                 f"{100 * off:.0f} % off the expected {a.hole_diameter_mm:g} mm")
-    if changed:
-        sample.save_info(info)
     out["warnings"] = warnings
     return out
 
@@ -869,6 +921,13 @@ class EdgeTraceOp(Operation):
         except (TypeError, ValueError) as exc:  # preflight reports it as a failed check
             return {"op": NAME, "text": f"invalid arguments: {exc}"}
 
+    def _writer(self, sample: Sample) -> LegacyWriter:
+        """Sample events when the server installed the records store; the legacy files when
+        the engine runs without one (development, tests)."""
+        if getattr(self.ctx.runner, "sample_seat", None) is None:
+            return LegacyWriter(sample)
+        return EventWriter(sample, SampleRecorder.of(self.ctx, sample.id))
+
     def preflight(self) -> list[dict]:
         sid = self._sample_id()
         folder = None if not sid else self._root() / sid
@@ -876,6 +935,11 @@ class EdgeTraceOp(Operation):
         self._checks = [{"name": "sample", "ok": ok, "want": "an open sample folder",
                          "read": None if folder is None else str(folder),
                          "why": "" if ok else "open a sample first (sample_open)"}]
+        if getattr(self.ctx.runner, "sample_seat", None) is not None:
+            why = SampleRecorder.why_not(self.ctx, sid)
+            self._checks.append({"name": "sample_record", "ok": why is None,
+                                 "want": "the open session of this sample", "read": sid,
+                                 "why": why or ""})
         self._checks += preflight(self.ctx.backend, self._trace_args())
         return self._checks
 
@@ -883,14 +947,16 @@ class EdgeTraceOp(Operation):
         ctx = self.ctx
         sample = Sample(self._sample_id(), self._root())
         a = EdgeTraceArgs.from_dict(self._trace_args())
+        writer = self._writer(sample)
         try:
-            backups = prepare(sample, a, lambda key, text: bool(ctx.confirm(key, text)["ok"]))
+            backups = prepare(sample, a, lambda key, text: bool(ctx.confirm(key, text)["ok"]),
+                              writer)
         except OperationAborted as exc:
             raise Aborted(str(exc)) from None
         result = trace(ctx.backend, sample, a, scope_for(ctx),
                        warnings=[c["warning"] for c in self._checks if c.get("warning")],
                        check=ctx.check, sleep=ctx.sleep, grab=_runner_grab(ctx),
-                       on_tracer=self._set_tracer)
+                       on_tracer=self._set_tracer, writer=writer)
         result["backups"] = backups
         return result
 
