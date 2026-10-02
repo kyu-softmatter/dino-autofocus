@@ -86,13 +86,16 @@ def refusal_code(r) -> str | None:
 
 
 def test_login_routes_open_to_remote_viewers(engine, make_client):
-    """Exactly the six login routes skip the loopback rule: a remote viewer is never refused
-    there with remote_view. What the route then answers is T-105's (404 before its router,
-    422 for an empty body, 401 for lock/activity without a login), so it is not asserted.
-    Any other write under /api/auth stays local only, and foreign pages are still refused."""
+    """Exactly the six login routes skip the loopback rule: a logged-in remote viewer posting
+    from this server's own page is not refused there at all (no 401 / 403, no refusal mark).
+    What the route then answers is T-105's (404 before its router, 422 for an empty body), so
+    it is not asserted. Any other write under /api/auth stays local only, and foreign pages
+    are still refused."""
     c = make_client(engine, remote=True, remote_view=True)
+    own = {"origin": f"http://{c.base_url.netloc.decode()}"}
     for name in ("login", "logout", "lock", "unlock", "activity", "signup"):
-        assert refusal_code(c.post(f"/api/auth/{name}", json={})) != "remote_view", name
+        r = c.post(f"/api/auth/{name}", json={}, headers=own)
+        assert r.status_code not in (401, 403) and refusal_code(r) is None, (name, r.status_code)
     for path in ("/api/auth/users", "/api/auth/login/extra"):
         r = c.post(path, json={})
         assert (r.status_code, refusal_code(r)) == (403, "remote_view"), path
