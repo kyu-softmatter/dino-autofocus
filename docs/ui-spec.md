@@ -225,7 +225,7 @@ PLAN v0.2 의 새 화면 (F1–F5) 은 1.5 에 목록만 두고 7절에서 명�
 | `--head` | 없음 | DINO 헤드 경로 (torch, uv 환경) | 엔진 초점 설정 (WP-E). 없으면 판정 패널이 `"no head loaded"` |
 | `--tiles` | 4 | 프레임당 DINO 타일 수 | 엔진 초점 설정 |
 | `--score-offset` | 없음 | tare 를 덮어쓰는 DoF offset | **없앤다.** tare 는 `score_tare` 명령과 샘플 기록으로만 |
-| `--hole-diameter` | 없음 | 예상 구멍 지름 mm (짧은 호에서 원을 안정시킴) | `edge_trace.expect_diameter_mm`. 기본값은 샘플 지오메트리 (F3) 에서 |
+| `--hole-diameter` | 없음 | 예상 구멍 지름 mm (짧은 호에서 원을 안정시킴) | `edge_trace.hole_diameter_mm` (operations-spec 8절). 기본값은 샘플 지오메트리 (F3) 에서 |
 | `--track-speed` | 100 µm/s | 추적 시작 속도 (최대 1000) | `edge_trace.speed_um_s` |
 
 런처 인자는 `--screenshot` (1.5 s 뒤 저장하고 종료) 하나뿐이다.
@@ -241,7 +241,7 @@ PLAN v0.2 의 새 화면 (F1–F5) 은 1.5 에 목록만 두고 7절에서 명�
 | `"Start live view"` (Aura) | 같은 앞부분 + `--set DiaLamp State 0 --aura LINE PCT` | 숫자 검사 | `start("light_set", {"mode": "aura", "line": LINE, "percent": PCT})` 다음 `start("live", …)` |
 | `"Start 4x scan"` | `scan_4x.py --sample ID [--exposure E] [--dry-run]` | `sample.json` 필수, 숫자 검사, dry run 이 아니면 확인 대화상자 | `start("scan_4x", {"sample_id", "exposure_ms": E 또는 null, "dry_run"})` |
 | `"Show scan result (mosaic + z map)"` | uv 환경으로 `plot_scan.py <최신 scan4x_*>` | `sample.json` 필수, 끝난 스캔 필요 | 엔진 명령 아님. UI 가 기록을 읽어 그림 (4.1) |
-| `"Lights off (Aura + DiaLamp)"` | `lights_off.py` | 하드웨어 점유 검사 | `start("lights_off")` |
+| `"Lights off (Aura + DiaLamp)"` | `lights_off.py` | 하드웨어 점유 검사 | `lights_off` 명령 (events.py 의 명령 종류, `start` 가 아님) |
 | `"Try the demo (no hardware)"` | `live_focus.py --demo` | — | 백엔드 `mock` 으로 엔진을 열고 `start("live")` |
 
 런처의 오류·확인 문구 (3절에서 대화상자 지점으로 정리한다):
@@ -323,7 +323,7 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 
 | 종류 | 전송 | 경로 | 원격 |
 |---|---|---|---|
-| 명령 `start` / `abort` / `confirm` / `update` | REST `POST`, 응답은 접수 결과 (`op_id` 또는 거부 사유). 결과는 이벤트로 온다 | `POST /api/commands` (T-009) | **거부** (403). `abort` 만 예외로 허용할지는 4.4 의 5 |
+| 명령 `start` / `abort` / `confirm` / `lights_off` / `update` | REST `POST`, 응답은 접수 결과 (`op_id` 또는 거부 사유). 결과는 이벤트로 온다 | `POST /api/commands` (T-009) | **거부** (403). `abort` 만 예외로 허용할지는 4.4 의 5 |
 | 이벤트 (아래 표 전부) | WebSocket, JSON 한 줄씩 | `/ws/events` (T-009) | 허용 (구독만) |
 | 라이브 영상 | WebSocket, 바이너리 JPEG (약 800 px, 서버에서 비닝, 목표 10 fps) + 그 프레임의 `frame_id` | `/ws/frames` (T-009) | 허용 |
 | 현재 상태 한 번에 읽기 (접속 직후, 재접속 후) | REST `GET`, 엔진 `snapshot()` | `/api/state` (T-009) | 허용 |
@@ -340,9 +340,10 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 
 | 명령 | 인자 | 쓰임 |
 |---|---|---|
-| `start` | `op` (작업 이름), `args` (dict) | 모든 작업 시작. 하드웨어를 움직이지 않는 기록 작업 (경계점, tare, 샘플 열기) 도 같은 경로로 보내 기록을 남긴다 (PLAN 6절 4항). `start("lights_off")` 는 **선점**: 실행 중 작업을 abort 하고 소등한다 (T-002 부록 3) |
+| `start` | `op` (작업 이름), `args` (dict) | 모든 작업 시작. 하드웨어를 움직이지 않는 기록 작업 (경계점, tare, 샘플 열기) 도 같은 경로로 보내 기록을 남긴다 (PLAN 6절 4항). 소등은 `start` 가 아니라 별도 명령 종류 `lights_off` 다 (아래 행) |
 | `abort` | `op_id` (없으면 실행 중인 전부), `why` | `Esc`, 중지 버튼 |
 | `confirm` | `op_id`, `key`, `answer` (`"yes"` / `"no"` 또는 선택값) | `confirm_required` 에 대한 사용자 응답. 종류 `manual_step` (F5 `"Loading done"`) 은 수동 단계 기록으로 남는다 (T-011) |
+| `lights_off` | 없음 | **선점**: 실행 중 작업을 abort 하고 전체 소등을 readback 으로 확인한다 (T-002 부록 3, `engine/events.py` 의 `COMMAND_KINDS`). 로컬에서는 로그인한 누구나 보낼 수 있다 (D13 설명, 7.0) |
 | `update` (T-011) | `op_id`, `args` (바꿀 인자 dict) | 실행 중 작업의 선언된 인자를 바꿈. 지금 쓰는 곳: 추적 속도 (`+`/`-`), 라이브 읽기 영역 (`o`), 라이브 노출. 선언 밖은 거부 이벤트 |
 
 `update` 가 필요한 이유: 추적 속도는 작업을 멈추지 않고 바꾼다. `abort` + `start` 로 흉내 내면
@@ -355,7 +356,7 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 | `status` | 읽기 | `change_objective.py --status` | operations-spec |
 | `live` | 카메라 연속 획득, 위치 읽기 | `live_focus.py` 의 획득 루프 | 이 문서 4.1, 4.4 |
 | `light_set` **(제안)** | 조명 (의미 단위: 명시야 / Aura 라인 / 끔) | 런처의 `--set`, `--aura` | 4.3 |
-| `lights_off` | 조명 끔 + readback | `lights_off.py` | operations-spec |
+| (`lights_off`) | 조명 끔 + readback | `lights_off.py` | operations-spec. 작업 이름이 아니라 명령 종류다 (위 명령 표) |
 | `edge_trace` | XY 상대 이동 | `edge_track.py::EdgeTracker` | operations-spec |
 | `scan_4x` | XY, Z, 조명 | `scan_4x.py` | operations-spec |
 | `objective_change` | Z 후퇴, 렌즈 회전, (F5) XY 이탈/복귀 | `change_objective.py` | operations-spec, 7절 F5 |
@@ -423,7 +424,7 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 | `u` | `map` | `start("boundary_undo")` | — | `map_changed` |
 | 재추적 (새, 5절) | `map` | `start("boundary_reset")` | — | `map.json`·`sample.json` 백업 (`*_before_rescan_<stamp>.json`) 후 경계만 비움, `map_changed` |
 | `"Start live view"` | `hardware` → `live` | `start("light_set")` → `start("live")` | 4.0, 2.3 | `light_changed`, `started`, `frame_ready` … |
-| `t` | `map` | `start("edge_trace")` / `abort` | `speed_um_s`, `expect_diameter_mm` (2.3) | `started`, `calibration`, `progress`, `map_changed` (가장자리 점마다), `finished` / `aborted` |
+| `t` | `map` | `start("edge_trace")` / `abort` | `speed_um_s`, `hole_diameter_mm` (2.3) | `started`, `calibration`, `progress`, `map_changed` (가장자리 점마다), `finished` / `aborted` |
 | `+` / `-` | `map` | `update(edge_trace, {"speed_um_s": v})` | 엔진이 10..1000 으로 자른다. 걸음은 속도 × 0.5 s, 20..200 µm | `progress` (속도·걸음 표시) |
 | `Esc` | 어느 영역이든 | `abort` | `op_id` 없음 = 실행 중 전부 (라이브 획득은 제외: 4.4 의 2) | `aborted` 들 |
 | `f` / `w` / `W` | `live` | `start("piezo_servo" / "piezo_autofocus" / "piezo_zsweep")` / `abort` | 4.0 | `progress`, `reading`, `finished` / `aborted` |
@@ -432,7 +433,7 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 | `"Save frame"` (새) | `live` | `start("frame_save")` | — | `finished.summary.path` |
 | `"Show objective / Z / PFS"` | `hardware` | `start("status")` | — | `finished.summary` (렌즈, Z, PFS) |
 | `"Start 4x scan"` | `map` | `start("scan_4x")` | 2.4 | `planned`, `preflight_*`, `confirm_required` (3절), `progress`, `frame_ready`, `finished` |
-| `"Lights off"` | `hardware` (공통 상태 줄에도) | `start("lights_off")` | — | `light_changed`, `finished.end_state` |
+| `"Lights off"` | `hardware` (공통 상태 줄에도) | `lights_off` 명령 (events.py 의 명령 종류, `start` 가 아님) | — | `light_changed`, `finished.end_state` |
 | 브라우저 탭 닫기 / 서버 종료 | — | 탭 닫기는 명령을 보내지 않는다. 서버 종료가 `abort` (전부) → `lights_off` → 백엔드 닫기 | — | `aborted` …, `light_changed`, 닫기 결과 (5절) |
 
 웹에서는 "창 닫기" 가 엔진 종료가 아니다. 탭을 닫아도 서버의 작업은 계속된다. 그래서 소등을 탭 닫기에
@@ -474,8 +475,8 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 | 2 | 라이브와 "작업 하나" 규칙 | **채택**: 연속 획득은 엔진 소유 획득 스트림이고 단일 소유에 세지 않는다. `scan_4x`, `focus_100x` 는 시작 때 스트림을 멈추고 끝나면 되돌린다 |
 | 3 | 기록 작업 | **채택**: 하드웨어를 움직이지 않는 기록 작업 (`b`, `u`, `z`, 샘플 열기) 은 단일 소유에서 뺀다 |
 | 4 | 실행 중 인자 변경 | T-011 의 `update` 명령 |
-| 5 | 원격 `abort` | 사용자 결정 대기. 그때까지 설정값, 기본 **허용** |
-| 6 | 로컬 탭이 모두 끊긴 채 도는 작업 | 사용자 결정 대기. 설정값, 기본 **끔** (권고 10 s 는 함께 올라감) |
+| 5 | 원격 `abort` | **결정 (D13)**: 원격은 `abort` 만 보낼 수 있다. 그 밖의 원격 명령은 거부 |
+| 6 | 로컬 탭이 모두 끊긴 채 도는 작업 | **결정 (D14)**: 연결이 모두 끊기면 10 s 뒤 자동 정지 (PLAN 7절) |
 
 아래는 초안에 쓴 질문 원문이다.
 
@@ -532,8 +533,8 @@ API 로 직접 와도 엔진이 막아야 한다.
   (`"unknown"` 또는 `verified=false`). 모름은 경고색이고 `"Lights not confirmed: DiaLamp read 1, wanted 0"`
   처럼 readback 원문을 보여 준다.
 - **`"Lights off"` 버튼은 모든 화면의 상태 줄에 있다.** `lights_off` 는 선점이라 실행 중인 작업이 있어도
-  누를 수 있다. 누르면 그 작업이 멈춘다는 것을 버튼 옆 한 줄로 적는다 (`"stops <op>"`). 원격과 viewer 에서는
-  꺼진다 (7.0).
+  누를 수 있다. 누르면 그 작업이 멈춘다는 것을 버튼 옆 한 줄로 적는다 (`"stops <op>"`). 로컬에서는 viewer 를 포함해 로그인한 누구나 누를 수 있고,
+  원격에서는 꺼진다 (D13: 원격은 정지만, 7.0).
 - **작업이 끝날 때마다** 결과 패널에 `end_state` 의 조명 readback 을 한 줄로 붙인다.
 - **서버 종료.** 웹 탭을 닫는 것은 종료가 아니다 (4.2 끝). 데스크톱 런처 (T-016) 가 서버를 끌 때 마지막
   소등 readback 을 런처 창과 앱 로그에 남긴다. 다음에 서버가 뜨면 첫 화면에 `"Last shutdown: lights off
@@ -644,8 +645,8 @@ F7 (실험 세션) 은 T-019, 로그인은 T-018, 프롬프트 칸은 T-014 가 
 
 | 이유 | 문구 | 판정하는 곳 | 영향 |
 |---|---|---|---|
-| 원격 접속 | `"Read-only: remote view"` | 서버 (요청 출처, 명령 403) | 모든 명령. `abort` 는 설정에 따름 (4.4 의 5, 기본 허용) |
-| 역할 | `"Needs the operator role"` | 서버 (T-018) | viewer 는 모든 명령. admin/operator 만 장비 명령 |
+| 원격 접속 | `"Read-only: remote view"` | 서버 (요청 출처, 명령 403) | `abort` 를 뺀 모든 명령 (D13) |
+| 역할 | `"Needs the operator role"` | 서버 (T-018) | viewer 는 `abort`, `lights_off` 를 뺀 모든 명령. admin/operator 만 장비 명령 |
 | 장비 제어권 | `"<name> has control of the microscope"` | 서버 (PLAN "장비 제어권") | 다른 사람이 제어 중이면 장비 명령 |
 | 실험 세션 | `"Open an experiment session first"` | 엔진 (PLAN 6절 12항) | 장비를 움직이는 명령 |
 | 게이트 | `"<feature> is off: <reason>"` (예: `"no XYStage readback"`) | 엔진 게이트 (F2.2) | 그 기능 전체 |
@@ -654,7 +655,7 @@ F7 (실험 세션) 은 T-019, 로그인은 T-018, 프롬프트 칸은 T-014 가 
 | preflight | `preflight_failed` 의 `why` 원문 | 엔진 | 그 작업 |
 
 **정지**: 공통 상태 줄의 `"Abort"` 는 잠김 상태, viewer, 제어권 없는 사용자에게도 켜져 있다 (PLAN "정지는 누구나").
-원격에서는 4.4 의 5 설정을 따른다.
+원격에서도 켜져 있다 (D13). 소등 버튼은 로컬에서 누구나 누를 수 있고 원격에서는 꺼진다.
 
 **원격 화면 요약** (영역별 세부는 각 절)
 
@@ -726,9 +727,9 @@ UI 는 카드를 고치지 않는다 (PLAN 6절 9항). 아래 필드 이름은 s
 | 사람 확인 항목 저장 | `start("hardware_confirm", {...})` **(제안, WP-G)** | 구성 파일에 기록. 게이트가 다시 판정된다 |
 | `"Show objective / Z / PFS"` | `start("status")` | |
 | `"Brightfield on"` / `"Aura <line> <pct> % on"` | `start("light_set", {...})` | 4.0 |
-| `"Lights off"` | `start("lights_off")` | 선점 |
+| `"Lights off"` | `lights_off` 명령 (events.py 의 명령 종류, `start` 가 아님) | 선점 |
 
-**원격과 역할**: 원격과 viewer 는 읽기만. 조명은 장비 명령이므로 operator 와 제어권이 필요하다.
+**원격과 역할**: 원격과 viewer 는 읽기만. 조명 켜기는 장비 명령이므로 operator 와 제어권이 필요하다. 소등 (`lights_off`) 만은 로컬에서 로그인한 누구나 보낼 수 있다.
 
 **프롬프트 문맥**: 고른 장치 이름, 고른 게이트 이름과 그 이유 목록.
 
@@ -811,7 +812,7 @@ Z 는 다시 올리지 않는다 (operations-spec 6.3 의 4번). 화면은 다�
 
 | 입력 | 명령 |
 |---|---|
-| `"Start tracing"` / `t` | `start("edge_trace", {"speed_um_s", "expect_diameter_mm"})` (C4, C5) |
+| `"Start tracing"` / `t` | `start("edge_trace", {"speed_um_s", "hole_diameter_mm"})` (C4, C5) |
 | `+` / `-` | `update(op_id, {"speed_um_s": v})` |
 | `b` / `u` | `start("boundary_mark")` / `start("boundary_undo")` |
 | `"Re-trace"` | `start("edge_trace")` 의 C4 (백업 후 비움). 따로 비우는 버튼은 `start("boundary_reset")` |
@@ -836,7 +837,7 @@ Z 는 다시 올리지 않는다 (operations-spec 6.3 의 4번). 화면은 다�
 |---|---|
 | 현재 | 렌즈 라벨, 픽셀 크기, Z (엔코더), PFS |
 | 고르기 | 렌즈 표의 렌즈. 같은 렌즈, 렌즈 표에 없는 렌즈, 작동 거리가 없는 렌즈 (40x WI) 는 꺼짐과 이유 (`"already on that objective"`, `"no working distance value"`) |
-| 선택 | Y 이탈 (`escape`) 켬/끔과 거리. 이탈의 **거리와 부호 (+Y / −Y) 둘 다** 아직 사용자 확인 전이다 (PLAN 5절 방향 기준 v1.2, 10절). 정해지기 전에는 켬이 꺼져 있고 `"escape distance and direction not set"`. 화면은 부호를 기본값으로 고르지 않는다. 건조 렌즈끼리면 끔이 기본 |
+| 선택 | Y 이탈 (`escape`) 켬/끔과 거리. 이탈의 **거리와 부호 (+Y / −Y) 둘 다** 아직 사용자 확인 전이다 (PLAN 5절 방향 기준 v1.2, 10절). 정해지기 전에는 켬이 꺼져 있고 이유는 엔진 문구 그대로 `"escape distance not set"` 이다 (operations-spec 4.2, 3.0 의 원칙). 문구가 거리만 말하지만 부호도 미정이며, 화면은 부호를 기본값으로 고르지 않는다. 건조 렌즈끼리면 끔이 기본 |
 | 계획 | 7단계와 각 단계의 목표값 (`planned`) |
 | 시작 | `"Rotate"` → C6 |
 
