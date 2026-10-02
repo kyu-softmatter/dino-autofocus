@@ -69,3 +69,19 @@
   that fails part-way still leaves `awaiting_return` set after a restart. `objective_stepped_back` stays after the
   return, written only once the readback confirms the stage is back. Test: a backend that fails mid step-out leaves
   `read_sample().awaiting_return` True.
+
+## T-029d (AF 실행1, guards owner; review AF 검토보조1; SAFETY, lock-lift prerequisite) — no bench approach until measured
+
+- Director decision (ee1eeeb). `ObjectiveChange.clearance()` is a software bounds check (Z window and cap, lens
+  readback, abort), not a contact or oil sensor, and because the op supplies it, the runner's bench clearance rule
+  never fires. After the T-036 unlock, objective_change with `escape: false` would climb 0 → 2800 on the stand.
+- Central refusal in `engine/guards.py`: a new `BENCH_APPROACH = "UNMEASURED"` with the same fail-safe reader as
+  `BENCH_MOTION` (anything but the exact unlocked value is locked). In `FocusAxis.approach()` and every guards path
+  that raises Z: when `is_bench(info)` and `BENCH_APPROACH` is locked, refuse any approach above `RETURN_Z_UM` and any
+  approach on a lens other than 4x, whoever the caller is. The reason names Q13, Q20 and the stage limits.
+- Second layer: preflight refusals with the same reason in `objective_change` (escape true and false) and
+  `focus_100x`, so the user sees why before anything moves. This task may edit those preflight lines.
+- Tests: bench + locked refuses objective_change both ways, focus_100x and scan_4x's non-4x paths; 4x ≤ 2800 still
+  allowed; mock/demo unaffected; env vars and config cannot change `BENCH_APPROACH`; refusal comes before any move.
+- Flipping `BENCH_APPROACH` is its own reviewed commit, after the user's bench measurements and the director's
+  confirmation. Do T-029d before T-039.
