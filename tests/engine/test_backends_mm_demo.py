@@ -1,8 +1,9 @@
 """mm-demo backend: the Backend protocol on Micro-Manager's demo devices (T-023).
 
-The contract checks of tests/engine/test_contract.py run here against both the in-memory
-FakeBackend and mm-demo. The mm-demo cases skip without the demo adapters. Each test opens
-its own core and closes it, and no test opens a window.
+`TestMmDemoContract` runs T-015's `BackendContract` on mm-demo. The T-002 checks of
+tests/engine/test_contract.py run here on both FakeBackend and mm-demo. mm-demo cases skip
+without the demo adapters. Each test opens its own core and closes it; no test opens a
+window.
 """
 
 import json
@@ -11,41 +12,50 @@ import sys
 
 import numpy as np
 import pytest
+from test_contract_backend_v2 import BackendContract
 
-from dino_autofocus.engine.backend import GUARD_TOKEN, Backend, UnguardedMotion
-from dino_autofocus.engine.backends.mm_demo import (
-    CAMERA_PROPERTIES,
-    LIGHT_PROPERTIES,
-    MOTION_DEVICES,
-    MmDemoBackend,
+from dino_autofocus.engine.backend import (
+    GUARD_TOKEN,
+    PROVISIONAL,
+    Backend,
     PropertyNotAllowed,
+    UnguardedMotion,
 )
+from dino_autofocus.engine.backends.mm_demo import MmDemoBackend
 from dino_autofocus.engine.backends.mm_demo_core import DemoUnavailable, DemoZRangeError
 
 T = GUARD_TOKEN  # tests stand in for engine.guards
 
 
-@pytest.fixture
-def demo():
-    b = MmDemoBackend(roi=256)
+def open_demo(**kw) -> MmDemoBackend:
+    b = MmDemoBackend(**kw)
     try:
         b.open()
     except DemoUnavailable as e:
         pytest.skip(f"Micro-Manager demo adapters not available: {e}")
+    return b
+
+
+@pytest.fixture
+def demo():
+    b = open_demo(roi=256)
     try:
         yield b
     finally:
         b.close()
 
 
+class TestMmDemoContract(BackendContract):
+    light_write = ("White Light Shutter", "State", 0)
+
+    @pytest.fixture
+    def backend(self, demo):
+        return demo
+
+
 @pytest.fixture(params=["fake", "mm-demo"])
 def backend(request):
     return request.getfixturevalue("fake" if request.param == "fake" else "demo")
-
-
-def light_kw(b) -> dict:
-    """D15 token for light-on calls. FakeBackend gets it with T-015; until then it takes none."""
-    return {"token": T} if isinstance(b, MmDemoBackend) else {}
 
 
 # -- the T-002 contract, parametrised
@@ -67,7 +77,7 @@ def test_refuses_unguarded_motion(backend):
 
 
 def test_light_read_back_and_off(backend):
-    assert all(r.verified for r in backend.aura_line_on("GREEN", 1, **light_kw(backend)))
+    assert all(r.verified for r in backend.aura_line_on("GREEN", 1, token=T))
     assert backend.light_state()["Aura"] == "1"
     assert all(r.verified for r in backend.all_off())
     assert backend.light_state()["Aura"] == "0" and backend.light_state()["DiaLamp"] == "0"
@@ -99,9 +109,9 @@ def test_info(demo):
     assert len(by_state) == 6
     assert by_state[0].label == "1-Plan Apo LmbdD20 4x" and by_state[0].magnification == 4
     assert by_state[5].free_wd_um == 130.0 and by_state[5].pixel_um == 0.065
-    notes = json.loads(demo.read_property("mm-demo", "notes"))
-    assert "simulated" in notes["z_below_range"] and "simulated" in notes["pfs"]
-    assert "unmeasured provisional" in notes["aura_lines"]
+    assert "simulated" in info.notes["z_below_range"] and "simulated" in info.notes["pfs"]
+    assert info.notes["aura.CYAN"] == PROVISIONAL and "aura.GREEN" not in info.notes
+    assert json.loads(demo.read_property("mm-demo", "notes")) == info.notes
 
 
 def test_retract_zone_parks_at_demo_floor_and_reads_commanded(demo):
@@ -137,71 +147,63 @@ def test_z_outside_demo_refused_without_moving(demo, bad):
     assert demo.positions().z_um == pytest.approx(3010.0)
 
 
+def test_no_demo_z_number_leaves_the_backend(demo):
+    demo.move_z(2950.0, token=T)
+    assert float(demo.read_property("Z", "Position")) == pytest.approx(2950.0)
+    z = next(d for d in demo.describe_devices() if d.label == "Z")
+    assert float(z.properties["Position"].value) == pytest.approx(2950.0)
+    assert "bench um" in z.description
+
+
 def test_nosepiece_turn_from_retract(demo):
     demo.move_z(0.0, token=T)
     assert demo.pfs().out_of_range and demo.pfs_off(token=T).verified
     rb = demo.set_nosepiece(5, token=T)
     assert rb.verified and demo.nosepiece() == "6-Plan Apo LmbdD0.13 100x Oil"
     assert demo.info().pixel_um == 0.065
+    labels = {n.state: n for n in demo.nosepiece_labels()}
+    assert labels[0].label == "1-Plan Apo LmbdD20 4x" and labels[0].pixel_um == 1.625
 
 
-def test_set_property_refuses_motion_devices(demo):
-    for dev in sorted(MOTION_DEVICES):
-        with pytest.raises(UnguardedMotion):
-            demo.set_property(dev, "State", 0, token=T)  # even with the token
-
-
-def test_light_on_needs_token_off_does_not(demo):
-    with pytest.raises(UnguardedMotion):
-        demo.lamp_on()
-    with pytest.raises(UnguardedMotion):
-        demo.aura_line_on("GREEN", 1.0)
-    for dev, prop in sorted(LIGHT_PROPERTIES):
-        with pytest.raises(UnguardedMotion):
-            demo.set_property(dev, prop, 1)
-    assert demo.light_state() == {"DiaLamp": "0", "Aura": "0", "AuraLine": ""}
-    assert all(r.verified for r in demo.lamp_on(token=T))
-    assert all(r.verified for r in demo.lamp_off())
-    assert all(r.verified for r in demo.aura_line_on("GREEN", 1.0, token=T))
-    assert all(r.verified for r in demo.aura_off())
+def test_light_through_demo_names_only(demo):
     assert demo.set_property("LED", "Label", "470nm", token=T).verified
-
-
-def test_camera_property_needs_no_token(demo):
-    assert ("Camera", "Exposure") in CAMERA_PROPERTIES
-    rb = demo.set_property("Camera", "Binning", 2)
-    assert rb.verified and rb.device == "Camera"
+    for dev, prop in (("Aura", "State"), ("DiaLamp", "State")):  # bench names: not devices here
+        with pytest.raises(PropertyNotAllowed, match="not a device on mm-demo"):
+            demo.set_property(dev, prop, 0, token=T)
 
 
 @pytest.mark.parametrize("dev, prop", [("Camera", "SimulateCrash"), ("Camera", "Gain"),
-                                       ("Aura", "State"), ("DiaLamp", "State"),
                                        ("LED Shutter", "State Device"), ("Dichroic", "State")])
 def test_set_property_outside_allow_list_refused(demo, dev, prop):
-    with pytest.raises(PropertyNotAllowed, match="allowed:"):
+    with pytest.raises(PropertyNotAllowed, match="allow-list"):
         demo.set_property(dev, prop, 1, token=T)
 
 
-def test_provisional_aura_line_is_logged_not_named(demo):
+def test_provisional_aura_line_in_notes_not_names(demo):
     recs = demo.aura_line_on("CYAN", 2.0, token=T)
     assert all(r.verified for r in recs)
     assert all("provisional" not in r.device + r.prop for r in recs)
-    sub = demo.substitutions[-1]
-    assert sub == {**sub, "kind": "aura_line", "line": "CYAN", "demo_label": "470nm",
-                   "status": "unmeasured provisional"}
+    label = next(r for r in recs if r.prop == "Label")
+    assert label.notes == {"line": PROVISIONAL, "bench_line": "CYAN"}
+    assert demo.substitutions[-1]["kind"] == "aura_line"
     n = len(demo.substitutions)
-    demo.aura_line_on("GREEN", 1.0, token=T)
+    assert all(not r.notes for r in demo.aura_line_on("GREEN", 1.0, token=T))
     assert len(demo.substitutions) == n  # GREEN is bench-confirmed
 
 
+def test_config_record(demo):
+    cfg = demo.config_record()
+    assert cfg.path.endswith("MMConfig_demo.cfg") and len(cfg.sha256) == 64
+    assert cfg.changed_during_load is False
+    assert cfg.autoshutter.verified and cfg.startup_preset == "System/Startup"
+
+
 def test_close_is_idempotent_and_dark():
-    b = MmDemoBackend(roi=64)
-    try:
-        b.open()
-    except DemoUnavailable as e:
-        pytest.skip(f"Micro-Manager demo adapters not available: {e}")
+    b = open_demo(roi=64)
     try:
         b.lamp_on(token=T)
+        b.start_stream()
     finally:
         b.close()
     b.close()
-    assert b.dev is None
+    assert b.dev is None and not b.streaming()

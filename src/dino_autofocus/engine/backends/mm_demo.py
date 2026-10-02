@@ -1,88 +1,79 @@
 """mm-demo backend: the engine's Backend protocol on Micro-Manager's demo devices (T-023).
 
 Built on `mm_demo_core.DemoDevices`, which owns the core and the bench <-> demo Z offset.
-Everything here is in bench coordinates (PLAN.md 5절). Demo-only rules:
+Everything here is in bench coordinates (PLAN.md 5절). Demo-only rules, each stated in
+`info().notes`:
 
 * **Below-range zone.** The demo Z reaches bench 2700-3300 only (offset 3000), but the bench
   retracts to 0 and `FocusAxis.approach` climbs back in steps. A bench z in [0, 2700) parks
   the demo stage at bench 2700 and reads back the commanded z: that readback is
   **simulated**, so the guard's retract and step checks pass without proving anything about
   a real ZDrive. Each such move is logged in `substitutions` as a `demo_retract`
-  {commanded_um, physical_bench_um, physical_demo_um}. z < 0 or > 3300 is refused.
+  {commanded_um, physical_bench_um, physical_demo_um}; `read_property("mm-demo",
+  "demo_retract")` gives the one in force. z < 0 or > 3300 is refused.
 * **PFS.** The demo has none. `pfs()` is simulated: never enabled, "Out of Range" while z is
   in the below-range zone, "In Range" otherwise, so `rotate_nosepiece` can be exercised.
 * **Aura lines.** Only GREEN is bench-confirmed; the others map to the nearest demo LED
-  wavelength and are "unmeasured provisional".
-* **Control token** (PLAN.md D15). Switching light on (`lamp_on`, `aura_line_on`) takes the
-  guards' token like motion does; switching off (`lamp_off`, `aura_off`, `all_off`) takes
-  none. `set_property` is an allow-list: motion devices (demo and bench names) are always
-  refused and light properties need the token, both with `UnguardedMotion`; a few camera
-  properties need no token; anything else raises `PropertyNotAllowed`. Light is written
-  under the demo names; the bench names (Aura, DiaLamp) are not devices here.
-
-Until `Readback` and `BackendInfo` get a `notes` field (T-015), these markings are read
-through `notes()`, `substitutions`, `read_property("mm-demo", "notes")` and
-`read_property("mm-demo", "demo_retract")`, never through device or property names.
+  wavelength and their readbacks carry `notes["line"] = PROVISIONAL`.
+* **Control token** (PLAN.md D15). Motion and switching light on take the guards' token;
+  switching off takes none. `set_property` goes through `check_set_property` with the demo
+  camera label; light is written under the demo names (White Light Shutter, LED).
+* **Discovery** shows the demo `Z` position in bench um, so no demo number leaves the
+  backend. There is no piezo.
 
 pymmcore-plus is imported only when the backend opens.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
 import time
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from ..backend import (
+    AURA_LINES,
+    PROVISIONAL,
     BackendInfo,
+    ConfigRecord,
+    DeviceInfo,
     Frame,
+    NosepieceLabel,
     ObjectiveInfo,
     PfsState,
+    PiezoReading,
     Positions,
+    PropertyInfo,
+    PropertyNotAllowed,
     Readback,
     StageLimits,
-    UnguardedMotion,
+    StreamActive,
+    check_set_property,
     require_token,
 )
 from .mm_demo_core import (
-    AURA_LINES,
-    DEMO_LAMP,
+    AURA_LINES as DEMO_AURA_LABELS,
+)
+from .mm_demo_core import (
     DEMO_LED,
-    DEMO_NOSEPIECE,
-    DEMO_XY,
     DEMO_Z,
     DemoDevices,
     DemoReadback,
     DemoZRangeError,
     ObjectiveRead,
     ZMap,
+    find_demo_config,
 )
 
-__all__ = ["CAMERA_PROPERTIES", "LIGHT_PROPERTIES", "MOTION_DEVICES", "PSEUDO_DEVICE",
-           "MmDemoBackend", "PropertyNotAllowed"]
+__all__ = ["PSEUDO_DEVICE", "MmDemoBackend"]
 
-PROVISIONAL = "unmeasured provisional"
-PSEUDO_DEVICE = "mm-demo"  # read_property(PSEUDO_DEVICE, ...) answers the interim notes
+PSEUDO_DEVICE = "mm-demo"  # read_property(PSEUDO_DEVICE, ...) answers the demo notes
 BENCH_RETRACT_UM = 0.0  # lowest bench z accepted: the full retract
 MEASURED_AURA_LINES = ("GREEN",)  # 2026-09-30 bench run
-#: set_property refuses these: the demo's motion devices, the bench names, and Core (whose
-#: Focus / XYStage properties would re-route motion)
-MOTION_DEVICES = frozenset({DEMO_Z, DEMO_XY, DEMO_NOSEPIECE, "Autofocus", "Core",
-                            "ZDrive", "XYStage", "Nosepiece", "PFS", "PFSOffset"})
-#: set_property allow-list (T-015). Light, token required (D15): the demo equivalents of
-#: DiaLamp State and the Aura line selector. LED Shutter has no writable property: it is the
-#: Aura master, switched by the light methods. The demo LED has no intensity property.
-LIGHT_PROPERTIES = frozenset({(DEMO_LAMP, "State"), (DEMO_LED, "Label"), (DEMO_LED, "State")})
-#: Camera, no token: exposure, binning, pixel type, and the sensor size open() sets
-CAMERA_PROPERTIES = frozenset({("Camera", p) for p in (
-    "Exposure", "Binning", "PixelType", "OnCameraCCDXSize", "OnCameraCCDYSize")})
-
-
-class PropertyNotAllowed(ValueError):
-    """set_property on a device/property outside the allow-list."""
 #: bench lens facts by nosepiece State, from docs/runs/2026-09-30_substrate-scan.yaml
 BENCH_PIXEL_UM = {0: 1.625, 5: 0.065}
 BENCH_FREE_WD_UM = {0: 20000.0, 5: 130.0}
@@ -97,6 +88,13 @@ def _magnification(label: str) -> float:
     return float(m.group(1)) if m else 0.0  # 0 = not in the label (demo "Objective-2")
 
 
+def _sha256(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 class MmDemoBackend:
     kind = "mm-demo"
 
@@ -107,17 +105,29 @@ class MmDemoBackend:
         self.dev: DemoDevices | None = None
         self.substitutions: list[dict[str, Any]] = []
         self._below_z: float | None = None  # commanded z while in the below-range zone
+        self._config: ConfigRecord | None = None
+        self._streaming = False
 
     # -- life
 
     def open(self) -> BackendInfo:
         if self.dev is None:
+            cfg = find_demo_config()
+            before = _sha256(cfg)
             self.dev = DemoDevices.open(exposure_ms=self._exposure_ms, roi=self._roi,
                                         zmap=self.zmap)
+            after = _sha256(cfg)
+            core = self.dev.core
+            self._config = ConfigRecord(
+                str(cfg), after, None if before is None or after is None else before != after,
+                Readback.of("Core", "AutoShutter", 0, int(core.getAutoShutter())),
+                "System/Startup" if "Startup" in core.getAvailableConfigs("System") else None,
+                time.time(), {"config": "Micro-Manager demo devices, no hardware"})
         return self.info()
 
     def close(self) -> None:
         if self.dev is not None:
+            self.stop_stream()
             dev, self.dev = self.dev, None
             dev.close()
 
@@ -135,33 +145,32 @@ class MmDemoBackend:
 
     def info(self) -> BackendInfo:
         d = self._d()
-        core = d.core
+        core, cam = d.core, d.core.getCameraDevice()
         now = d.objective()
-        hi = self.zmap.bench_range_um[1]
         return BackendInfo(
-            kind=self.kind, config=str(d.config), camera=core.getCameraDevice(),
-            sensor=(int(core.getProperty(core.getCameraDevice(), "OnCameraCCDXSize")),
-                    int(core.getProperty(core.getCameraDevice(), "OnCameraCCDYSize"))),
+            kind=self.kind, config=str(d.config), camera=cam,
+            sensor=(int(core.getProperty(cam, "OnCameraCCDXSize")),
+                    int(core.getProperty(cam, "OnCameraCCDYSize"))),
             roi=tuple(core.getROI()), exposure_ms=float(core.getExposure()),
             pixel_um=BENCH_PIXEL_UM.get(now.state, float(core.getPixelSizeUm())),
             objective=self._label(now), intermediate_mag=None,
-            bit_depth=int(core.getProperty(core.getCameraDevice(), "BitDepth")),
+            bit_depth=int(core.getProperty(cam, "BitDepth")),
             objectives=[self._objective_info(o) for o in d.objectives()],
-            stage_limits=StageLimits(None, None, (BENCH_RETRACT_UM, hi)),
+            stage_limits=StageLimits(None, None, (BENCH_RETRACT_UM, self.zmap.bench_range_um[1])),
+            notes=self.notes(),
         )
 
     def notes(self) -> dict[str, str]:
-        """Markings that belong in `BackendInfo.notes` once T-015 adds it."""
         lo, hi = self.zmap.bench_range_um
-        others = [k for k in AURA_LINES if k not in MEASURED_AURA_LINES]
         return {
             "z_offset_um": f"{self.zmap.offset_um:g} (demo z = bench z - offset)",
             "z_below_range": (f"bench z {BENCH_RETRACT_UM:g}-{lo:g} um parks the demo stage at "
                               f"{lo:g}; readback in that zone is simulated (demo_retract)"),
             "z_reachable_um": f"{lo:g}-{hi:g}",
             "pfs": "simulated: the demo has no PFS",
-            "aura_lines": (f"{', '.join(MEASURED_AURA_LINES)} bench-confirmed; "
-                           f"{', '.join(others)} {PROVISIONAL}"),
+            "piezo": "none on the demo",
+            **{f"aura.{line}": PROVISIONAL for line in AURA_LINES
+               if line not in MEASURED_AURA_LINES},
             "objectives": (f"Ti2 labels known for states {sorted(BENCH_PIXEL_UM)}; "
                            "other positions show the demo label"),
         }
@@ -169,16 +178,46 @@ class MmDemoBackend:
     # -- camera
 
     def snap(self) -> Frame:
+        if self._streaming:
+            raise StreamActive("stop the stream before snap()")
         d = self._d()
-        img = d.snap()
-        p = self.positions()
-        return Frame(img, time.time(), float(d.core.getExposure()), p.x_um, p.y_um, p.z_um)
+        return self._frame(d.snap(), float(d.core.getExposure()))
 
     def set_exposure(self, ms: float) -> float:
         return self._d().set_exposure(ms)
 
     def set_roi(self, size: int) -> tuple[int, int, int, int]:
         return self._d().set_roi(size)
+
+    # -- stream
+
+    def start_stream(self, interval_ms: float | None = None) -> None:
+        core = self._d().core
+        if self._streaming:
+            return
+        core.startContinuousSequenceAcquisition(float(interval_ms or 0.0))
+        self._streaming = True
+
+    def next_frame(self, timeout_s: float = 1.0) -> Frame | None:
+        if not self._streaming:
+            return None
+        core = self._d().core
+        deadline = time.monotonic() + timeout_s
+        while core.getRemainingImageCount() == 0:
+            if time.monotonic() > deadline:
+                return None
+            time.sleep(0.002)
+        img = core.getLastImage()  # the newest; older ones are dropped
+        core.clearCircularBuffer()
+        return self._frame(img, float(core.getExposure()))
+
+    def stop_stream(self) -> None:
+        if self._streaming and self.dev is not None:
+            self.dev.core.stopSequenceAcquisition()
+        self._streaming = False
+
+    def streaming(self) -> bool:
+        return self._streaming
 
     # -- reads
 
@@ -203,6 +242,8 @@ class MmDemoBackend:
                              if s["kind"] == "demo_retract"), None)
                 return json.dumps(last) if self._below_z is not None and last else ""
             raise KeyError(f"{PSEUDO_DEVICE} has no property {prop!r}")
+        if device == DEMO_Z and prop == "Position":
+            return f"{self._z_read():.4f}"  # bench um: no demo number leaves the backend
         return str(self._d().core.getProperty(device, prop))
 
     def nosepiece(self) -> str:
@@ -214,18 +255,47 @@ class MmDemoBackend:
     def light_state(self) -> dict[str, str]:
         return self._d().light_state()
 
+    # -- discovery: reads only
+
+    def describe_devices(self, include_properties: bool = True) -> list[DeviceInfo]:
+        core = self._d().core
+        out = []
+        for label in core.getLoadedDevices():
+            dtype = core.getDeviceType(label)
+            desc = str(core.getDeviceDescription(label))
+            if label == DEMO_Z:
+                desc += f" (Position in bench um: demo + {self.zmap.offset_um:g})"
+            props = {}
+            if include_properties:
+                for name in core.getDevicePropertyNames(label):
+                    props[name] = self._property_info(label, name)
+            out.append(DeviceInfo(label, getattr(dtype, "name", str(dtype)),
+                                  str(core.getDeviceLibrary(label)), desc, True,
+                                  properties=props))
+        return out
+
+    def nosepiece_labels(self) -> list[NosepieceLabel]:
+        return [NosepieceLabel(o.state, self._label(o), BENCH_PIXEL_UM.get(o.state))
+                for o in self._d().objectives()]
+
+    def piezo_read(self, port: str) -> PiezoReading:
+        return PiezoReading(port, False, error=f"no piezo on mm-demo ({port})" if port else None)
+
+    def config_record(self) -> ConfigRecord:
+        self._d()
+        if self._config is None:  # open() always sets it
+            raise RuntimeError("mm-demo backend has no config record")
+        return self._config
+
     # -- writes
 
     def set_property(self, device: str, prop: str, value: Any, *,
                      token: object = None) -> Readback:
-        if device in MOTION_DEVICES:
-            raise UnguardedMotion(f"{device!r} moves hardware; use the guarded methods")
-        if (device, prop) in LIGHT_PROPERTIES:
-            require_token(token)
-        elif (device, prop) not in CAMERA_PROPERTIES:
-            allowed = ", ".join(f"{d}.{p}" for d, p in sorted(LIGHT_PROPERTIES | CAMERA_PROPERTIES))
-            raise PropertyNotAllowed(f"set_property {device}.{prop} is not allowed on mm-demo; "
-                                     f"allowed: {allowed} (light ones need the token)")
+        core = self._d().core
+        check_set_property(device, prop, token, camera=core.getCameraDevice())
+        if device not in core.getLoadedDevices():  # e.g. the bench names Aura, DiaLamp
+            raise PropertyNotAllowed(f"{device!r} is not a device on mm-demo; light is written "
+                                     "as White Light Shutter.State or LED.Label/State")
         return Readback(**asdict(self._d().set_and_read(device, prop, value)))
 
     def lamp_on(self, *, token: object = None) -> list[Readback]:
@@ -238,10 +308,14 @@ class MmDemoBackend:
     def aura_line_on(self, line: str, percent: float, *,
                      token: object = None) -> list[Readback]:
         require_token(token)
+        line = line.upper()
         recs = _readbacks(self._d().aura_line_on(line, percent))
-        if line.upper() not in MEASURED_AURA_LINES:
-            self.substitutions.append({"kind": "aura_line", "line": line.upper(),
-                                       "demo_label": AURA_LINES[line.upper()],
+        if line not in MEASURED_AURA_LINES:
+            for r in recs:
+                if r.device == DEMO_LED and r.prop == "Label":
+                    r.notes.update(line=PROVISIONAL, bench_line=line)
+            self.substitutions.append({"kind": "aura_line", "line": line,
+                                       "demo_label": DEMO_AURA_LABELS[line],
                                        "status": PROVISIONAL, "t": time.time()})
         return recs
 
@@ -280,19 +354,45 @@ class MmDemoBackend:
         require_token(token)
         return self._d().move_xy(x_um, y_um, timeout_s=timeout_s)
 
+    def move_xy_rel(self, dx_um: float, dy_um: float, *, token: object,
+                    timeout_s: float | None = None) -> tuple[float, float]:
+        require_token(token)
+        x, y = self._d().xy_um()
+        return self._d().move_xy(x + float(dx_um), y + float(dy_um), timeout_s=timeout_s)
+
     def set_nosepiece(self, state: int, *, token: object) -> Readback:
         require_token(token)
         return Readback(**asdict(self._d().set_objective(state)))
 
     def pfs_off(self, *, token: object) -> Readback:
         require_token(token)
-        return Readback.of("PFS", "FocusMaintenance", "Off", "Off")  # simulated, never on
+        return Readback.of("PFS", "FocusMaintenance", "Off", "Off",
+                           notes={"pfs": "simulated: the demo has no PFS"})
 
     # -- helpers
+
+    def _frame(self, img, exposure_ms: float) -> Frame:
+        p = self.positions()
+        return Frame(img, time.time(), exposure_ms, p.x_um, p.y_um, p.z_um)
 
     def _z_read(self) -> float:
         z = self._d().z_um()
         return self._below_z if self._below_z is not None else z
+
+    def _property_info(self, label: str, name: str) -> PropertyInfo:
+        core = self._d().core
+        try:
+            value = str(core.getProperty(label, name))
+            if label == DEMO_Z and name == "Position":
+                value = f"{self._z_read():.4f}"
+            limits = ((float(core.getPropertyLowerLimit(label, name)),
+                       float(core.getPropertyUpperLimit(label, name)))
+                      if core.hasPropertyLimits(label, name) else None)
+            return PropertyInfo(value, bool(core.isPropertyReadOnly(label, name)),
+                                [str(v) for v in core.getAllowedPropertyValues(label, name)],
+                                limits)
+        except Exception as e:  # a failed read is a field
+            return PropertyInfo(None, read_ok=False, error=f"{type(e).__name__}: {e}")
 
     @staticmethod
     def _label(o: ObjectiveRead) -> str:
