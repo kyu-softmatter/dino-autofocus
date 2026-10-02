@@ -74,11 +74,13 @@ RETRACTED_MAX_Z_UM = Z_SAFE_UM + 1.0  # "Z retracted" for nosepiece turns and lo
 # F5 immersion-loading step-out: +Y by 15 mm (user, PLAN v1.3). Stage-level, not per lens.
 ESCAPE_DY_UM: float = +15000.0
 
-# SAFETY (T-029d, director): no Z approach on the real stand until it is measured. Anything
-# but the exact value "MEASURED" is locked; flipping it is its own reviewed commit after the
-# user's bench measurements and the director's confirmation. Read only by
+# SAFETY (T-029d): anything but the exact value "MEASURED" locks Z approach on the real
+# stand. Unlocked by the user on 2026-10-02 ("2800 제한 해제") before Q13/Q20 and the stage
+# limits were measured. Partial unlock: on the bench every upward move (sweeps included)
+# stays under approach_ceiling_um, so only the 4x, 10x and 20x go above 2800 um
+# (bench_ascent_refusal). mm-real's bench motion lock is separate. Read only by
 # bench_approach_state(); no argument, environment variable or setting reaches it.
-BENCH_APPROACH = "UNMEASURED"
+BENCH_APPROACH = "MEASURED"
 BENCH_APPROACH_REASON = (
     "bench Z approach is locked until it is measured on the stand: checklist Q13 (a safe "
     "approach step from 0 to 2800 um), Q20 (how far Z must retract before XY moves) and the "
@@ -92,10 +94,21 @@ def bench_approach_state() -> str:
 
 def bench_ascent_refusal(info: Any, lens_key: str | None, target_um: float) -> str | None:
     """Why an upward Z move to `target_um` with `lens_key` in place is refused, or None.
-    Only on the bench (`is_bench(info)`) while BENCH_APPROACH is locked: refused above
+    Only on the bench (`is_bench(info)`). While BENCH_APPROACH is locked: refused above
     RETURN_Z_UM (2800) on every lens, and at any height on a lens other than the 4x.
-    Callers apply it to upward moves only; downward moves and retract() are never refused."""
-    if not is_bench(info) or bench_approach_state() == "MEASURED":
+    Unlocked (partial unlock, user 2026-10-02): refused above the lens's approach_ceiling_um,
+    so a lens whose free WD does not cover the window (40x-WI, 60x-Oil, 100x-Oil, unknown)
+    stays at or below 2800 for every upward move, sweeps and move_to included, not only
+    approach(). Callers apply it to upward moves only; downward moves and retract() are never
+    refused."""
+    if not is_bench(info):
+        return None
+    if bench_approach_state() == "MEASURED":
+        top = approach_ceiling_um(lens_key)
+        if target_um > top:
+            return (f"upward Z move to {target_um:.2f} um refused on the bench: above {top:.0f} um "
+                    f"for {lens_key or 'an unreadable lens'}, whose free working distance does not "
+                    f"cover the sample window (partial unlock, user 2026-10-02)")
         return None
     if target_um > RETURN_Z_UM:
         return (f"upward Z move to {target_um:.2f} um refused: above {RETURN_Z_UM:.0f} um on "
@@ -308,8 +321,11 @@ class FocusAxis:
     def _check_bench_ascent(self, z: float) -> None:
         """T-029d: every Z move goes through _send, so this covers approach, move_to, the
         sweeps and any other caller. The lens is read back, not taken from the caller."""
-        if z <= self.position_um() + self.tol:
-            return  # down or flat: always allowed
+        here = self.position_um()
+        if z <= here or (z <= here + self.tol and z <= RETURN_Z_UM):
+            return  # down, or flat within the readback tolerance at or below 2800: allowed
+        # above 2800 every upward step is checked, however small: steps under the tolerance
+        # would otherwise add up past the ceiling (e.g. a 0.2 um fine sweep on the 100x)
         try:
             info = self.b.info()
         except Exception:  # noqa: BLE001 - unreadable info: is_bench counts it as the bench
