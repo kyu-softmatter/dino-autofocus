@@ -119,7 +119,10 @@ Where each gap went (manager, main 176b4c3):
 - `hardware.py`: the four `GET` routes above with pydantic models, using a fake engine whose snapshot has
   the G6 shape. No command routes.
 - `web/src/features/hardware/index.tsx`, registered per the T-010 rule. Types come from `web/src/api/` only.
-  UI text in English.
+  UI text in English. The screen is a default export with no props (T-010 a5fb986 `web/README.md`). It does
+  not edit `src/app/` and does not import from other areas. Z is drawn with the shell's `EncoderZ`.
+- Screen context (ui-spec 7.2): `useScreenContext({device, gate, gate_reasons})` holds the selected
+  device label, the selected gate `op` and that gate's reasons. Short text only (D7).
 - Tests: section 1 routes, unknown gate 404, remote GET allowed, and remote/viewer refusals as T-009 and
   G7 define them (pytest `TestClient`). vitest covers: off gates show their reasons, problem devices sort
   first, the confirm form is read only for remote/viewer, and the lights panel shows readback. No browser
