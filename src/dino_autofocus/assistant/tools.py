@@ -667,13 +667,21 @@ def required_permission(command: dict) -> str:
     return PERM_OPERATE
 
 
+class ConfirmRefused(RuntimeError):
+    """The engine refused a confirmed proposal (busy, no control, no open session...). The
+    card stays proposed with the reason in `note`, so the person can try again."""
+
+
 @dataclass
 class Proposal:
     """A command Claude asked for. Nothing runs until a person confirms it.
 
-    `status` is the assistant's side of the engine's `proposed -> confirmed | rejected`
-    (T-011). After confirmation `op_id` names the engine operation, whose own events carry
-    it through running and finished.
+    With an engine connected (`propose`), the engine holds the proposal too: an unconfirmed
+    assistant `start` waits in its `proposed` state (T-011) under `engine_op_id`, every screen
+    sees it in the snapshot, and the decision goes to the engine as `approve` / `reject`.
+    Stops (lights_off) are never held: confirming one sends the person's own stop.
+    `status` here: proposed -> confirmed | rejected, or failed when the engine refused to hold
+    it. After confirmation `op_id` names the engine operation.
     """
 
     proposal_id: str
@@ -692,18 +700,27 @@ class Proposal:
     decided_t: float | None = None
     note: str = ""
     op_id: str | None = None
+    engine_op_id: str | None = None
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
 
 
+Submit = Callable[[dict], str]
+
+
 class ProposalBook:
     """Proposals in memory, and the only path from a proposal to the engine.
 
-    `submit` receives the confirmed command as a dict (kind, op, args plus origin,
-    proposal_id, conversation_id, confirmed_by, user_id, session_id) and returns the op_id.
-    The server wires it to `EngineAPI.submit`; until T-011 adds those fields to `Command`
-    the adapter there decides what to keep.
+    Both hooks get plain dicts; the server turns them into engine `Command`s and adds what it
+    knows about the request (remote, control grant):
+    - `propose(cmd)` at creation, for every non-stop proposal: kind "start", op, args,
+      origin "assistant", proposal_id, conversation_id, user_id, session_id, no confirmed_by.
+      Returns the engine op_id that holds it. If it raises, the card is `failed`.
+    - `submit(cmd)` at a decision: `approve` / `reject` with `op_id` for a held proposal, a
+      `lights_off` for a stop card, or (no engine hold) the start itself with `confirmed_by`.
+      Decisions carry origin "human" except that last case. A route passes its own `submit`
+      per call, built from that request's login and control grant.
 
     Before anything is submitted, `allows(role, required_permission(command), local=...)`
     must say yes (D16, T-018). Without an `allows` only stops can be confirmed: a missing
@@ -711,15 +728,36 @@ class ProposalBook:
     """
 
     def __init__(
-        self, submit: Callable[[dict], str] | None = None, *, allows: Allows | None = None
+        self,
+        submit: Submit | None = None,
+        *,
+        allows: Allows | None = None,
+        propose: Submit | None = None,
     ):
         self._submit = submit
         self._allows = allows
+        self._propose = propose
         self._items: dict[str, Proposal] = {}
         self._lock = threading.Lock()
 
     def add(self, **fields: Any) -> Proposal:
         p = Proposal(proposal_id="prop-" + uuid.uuid4().hex[:12], **fields)
+        if self._propose is not None and p.command.get("kind") not in STOP_KINDS:
+            try:
+                p.engine_op_id = self._propose(
+                    {
+                        "kind": "start",
+                        "op": p.command.get("op", ""),
+                        "args": dict(p.command.get("args", {})),
+                        "origin": "assistant",
+                        "proposal_id": p.proposal_id,
+                        "conversation_id": p.conversation_id,
+                        "user_id": p.user_id,
+                        "session_id": p.session_id,
+                    }
+                )
+            except Exception as e:  # unknown operation, engine not running...
+                p.status, p.note = "failed", f"the engine refused the proposal: {e}"
         with self._lock:
             self._items[p.proposal_id] = p
         return p
@@ -765,6 +803,27 @@ class ProposalBook:
             raise PermissionError(f"role {role!r} may not confirm {perm} {where}")
         return perm
 
+    def _decision(self, p: Proposal, kind: str, by: str, session_id: str | None) -> dict:
+        ids = {
+            "proposal_id": p.proposal_id,
+            "conversation_id": p.conversation_id,
+            "user_id": by,
+            "session_id": session_id or p.session_id,
+        }
+        if kind == "reject":
+            return {"kind": "reject", "op_id": p.engine_op_id, "origin": "human", **ids}
+        if p.engine_op_id:
+            return {
+                "kind": "approve",
+                "op_id": p.engine_op_id,
+                "origin": "human",
+                "confirmed_by": by,
+                **ids,
+            }
+        if p.command.get("kind") in STOP_KINDS:
+            return {**p.command, "origin": "human", **ids}
+        return {**p.command, "origin": p.origin, "confirmed_by": by, **ids}
+
     def confirm(
         self,
         proposal_id: str,
@@ -773,29 +832,34 @@ class ProposalBook:
         role: str | None = None,
         local: bool = False,
         session_id: str | None = None,
+        submit: Submit | None = None,
     ) -> Proposal:
         if not by:
             raise ValueError("a confirmation needs the person who confirmed")
-        if self._submit is None:
+        send = submit or self._submit
+        if send is None:
             raise RuntimeError("no engine connected: a proposal cannot be confirmed")
         self.check_permission(proposal_id, role=role, local=local)
         p = self._decide(proposal_id, "confirmed", by, "")
-        cmd = {
-            **p.command,
-            "origin": p.origin,
-            "proposal_id": p.proposal_id,
-            "conversation_id": p.conversation_id,
-            "confirmed_by": by,
-            "user_id": by,
-            "session_id": session_id or p.session_id,
-        }
         try:
-            p.op_id = self._submit(cmd)
-        except Exception as e:  # the engine refused: keep the card, say why
-            p.status, p.note = "failed", f"{type(e).__name__}: {e}"
+            p.op_id = send(self._decision(p, "confirm", by, session_id))
+        except Exception as e:
+            with self._lock:  # the engine said no: the card stays and can be confirmed again
+                p.status, p.decided_by, p.decided_t = "proposed", None, None
+                p.note = f"{type(e).__name__}: {e}"
+            raise ConfirmRefused(p.note) from e
         return p
 
-    def reject(self, proposal_id: str, *, by: str, note: str = "") -> Proposal:
+    def reject(
+        self, proposal_id: str, *, by: str, note: str = "", submit: Submit | None = None
+    ) -> Proposal:
         if not by:
             raise ValueError("a rejection needs the person who rejected")
-        return self._decide(proposal_id, "rejected", by, note)
+        p = self._decide(proposal_id, "rejected", by, note)
+        send = submit or self._submit
+        if p.engine_op_id and send is not None:
+            try:
+                send(self._decision(p, "reject", by, None))
+            except Exception as e:  # rejected here regardless; the engine copy may linger
+                p.note = (note + " " if note else "") + f"[engine: {type(e).__name__}: {e}]"
+        return p
