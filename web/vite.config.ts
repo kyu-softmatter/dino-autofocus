@@ -8,6 +8,10 @@ const SERVER = process.env.DINO_AF_SERVER ?? "http://127.0.0.1:8765";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // the 3D trajectory viewer (T-022) is a lazy chunk with three.js, about 563 kB
+    chunkSizeWarningLimit: 700,
+  },
   server: {
     proxy: {
       "/api": SERVER,
