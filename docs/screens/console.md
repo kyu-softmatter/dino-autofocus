@@ -2,11 +2,12 @@
 
 Area `console` (PLAN.md 2절 F1, 9절 WP-F). This is the contract between the screen, the server router
 `server/api/console.py` and the AgentStore. The panels themselves are in `docs/ui-spec.md` 7.1, which is
-not repeated here (branch `exec5/T-004-ui-spec`, 6fcd8a8, until it merges).
+not repeated here (on main since T-004 merged).
 
 Sources read: AgentStore `agents/store.py` (T-008, `exec6/T-008-agent-store` 28eaec8), server skeleton
 `server/app.py` and `server/api/__init__.py` (T-009, `exec7/T-009-server-skeleton` a4e3671), roles and
-control `auth/roles.py`, `auth/control.py` (T-018, in progress in exec13).
+control `auth/roles.py`, `auth/control.py` (T-018, in progress in exec13), web shell `web/README.md`
+and `src/app/route.ts` (T-010 a5fb986, in review).
 
 ## Endpoints
 
@@ -66,7 +67,8 @@ The screen shows the ui-spec text below, not the server's `detail` (T-009's midd
 
 ## Prompt context (X1)
 
-The area registers with the shared prompt box (T-014): selected `qid`, `version`, selected card `kind`
+The screen calls the shell's `useScreenContext(details)` (`src/app/screenContext`, T-010 `web/README.md`);
+the prompt box (T-014) only reads it. Details: selected `qid`, `version`, selected card `kind`
 (`goal`, `axis`, `plan`, `synthesis`, `refusal`, ...), selected `run_id` and its `agent`. Short ids only;
 no card bodies and no images (D7).
 
@@ -93,7 +95,7 @@ no card bodies and no images (D7).
    submit to AgentStore uses the same permission (T-100 card). Please widen the docstring, or name a
    separate action if the two should differ.
 5. **T-019 / sample**: the "이 저장소의 실험" list has no read API yet; stage B links out only.
-6. **T-010 / T-012, web**: the route form for linking to another area with an id (e.g. a simulation
-   `run_id`) is not fixed yet. Request the shell's link helper or URL scheme.
-7. **T-014, web**: the prompt-context registration call is not on main yet; stage B calls a no-op context
-   hook until it lands.
+6. **T-010 / T-012, web**: the shell routes by hash (`#/<area>`, `route.ts`) and ignores anything after
+   the area, so `#/simulation/runs/<run_id>` opens the simulation area. Request T-012 to read that suffix
+   (or name another form); until then the link opens the area without selecting the run.
+7. ~~T-014~~: resolved by the shell's `useScreenContext` (T-010); nothing waits on T-014.
