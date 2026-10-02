@@ -29,6 +29,10 @@ Error mapping: `NotFoundError` → 404, bad `agent` / `purpose` / empty text (`V
 `ReadOnlyStoreError` → 409 with `"Submitting to soft-matter-agents is not connected yet (read-only)"`,
 other `StoreError` → 500 with its message. Bodies are T-009's `ApiError {detail}`.
 
+Versions: the picker lists every entry of `summary.versions` as the store returns it (1 for unprefixed
+files, N for any `vN_` prefix; v4_, v5_ exist). The screen assumes no upper bound and no fixed set, unlike
+the `r1`/`v2_`/`v3_` example in ui-spec 7.1.
+
 The status and date filters and the two-version diff (ui-spec 7.1) run in the browser over these
 responses: the list is small, and the diff fetches `?version=` twice. No server diff endpoint.
 
@@ -91,4 +95,5 @@ no card bodies and no images (D7).
 5. **T-019 / sample**: the "이 저장소의 실험" list has no read API yet; stage B links out only.
 6. **T-010 / T-012, web**: the route form for linking to another area with an id (e.g. a simulation
    `run_id`) is not fixed yet. Request the shell's link helper or URL scheme.
-7. **T-014, web**: the prompt-context registration call is not on main yet; stage B registers once it is.
+7. **T-014, web**: the prompt-context registration call is not on main yet; stage B calls a no-op context
+   hook until it lands.
