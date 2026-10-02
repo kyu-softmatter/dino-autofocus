@@ -323,7 +323,7 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 
 | 종류 | 전송 | 경로 | 원격 |
 |---|---|---|---|
-| 명령 `start` / `abort` / `confirm` / `lights_off` / `update` | REST `POST`, 응답은 접수 결과 (`op_id` 또는 거부 사유). 결과는 이벤트로 온다 | `POST /api/commands` (T-009) | **거부** (403). `abort` 만 예외로 허용할지는 4.4 의 5 |
+| 명령 `start` / `abort` / `confirm` / `lights_off` / `update` | REST `POST`, 응답은 접수 결과 (`op_id` 또는 거부 사유). 결과는 이벤트로 온다 | `POST /api/commands` (T-009) | **거부** (403). 예외 (D13): 이 PC (loopback) 에서는 `abort` 와 `lights_off` 를 로그인 없이 받는다. 원격에서는 로그인한 사용자의 `abort` 만 받고, 원격 `lights_off` 를 포함한 나머지는 거부 (PLAN 6절 12항) |
 | 이벤트 (아래 표 전부) | WebSocket, JSON 한 줄씩 | `/ws/events` (T-009) | 허용 (구독만) |
 | 라이브 영상 | WebSocket, 바이너리 JPEG (약 800 px, 서버에서 비닝, 목표 10 fps) + 그 프레임의 `frame_id` | `/ws/frames` (T-009) | 허용 |
 | 현재 상태 한 번에 읽기 (접속 직후, 재접속 후) | REST `GET`, 엔진 `snapshot()` | `/api/state` (T-009) | 허용 |
@@ -343,7 +343,7 @@ T-002 과제 파일의 명령/이벤트 목록을 그대로 쓰고, 화면에 �
 | `start` | `op` (작업 이름), `args` (dict) | 모든 작업 시작. 하드웨어를 움직이지 않는 기록 작업 (경계점, tare, 샘플 열기) 도 같은 경로로 보내 기록을 남긴다 (PLAN 6절 4항). 소등은 `start` 가 아니라 별도 명령 종류 `lights_off` 다 (아래 행) |
 | `abort` | `op_id` (없으면 실행 중인 전부), `why` | `Esc`, 중지 버튼 |
 | `confirm` | `op_id`, `key`, `answer` (`"yes"` / `"no"` 또는 선택값) | `confirm_required` 에 대한 사용자 응답. 종류 `manual_step` (F5 `"Loading done"`) 은 수동 단계 기록으로 남는다 (T-011) |
-| `lights_off` | 없음 | **선점**: 실행 중 작업을 abort 하고 전체 소등을 readback 으로 확인한다 (T-002 부록 3, `engine/events.py` 의 `COMMAND_KINDS`). 로컬에서는 로그인한 누구나 보낼 수 있다 (D13 설명, 7.0) |
+| `lights_off` | 없음 | **선점**: 실행 중 작업을 abort 하고 전체 소등을 readback 으로 확인한다 (T-002 부록 3, `engine/events.py` 의 `COMMAND_KINDS`). 이 PC 에서는 로그인 없이도 받는다. 원격에서는 거부 (D13, PLAN 6절 12항) |
 | `update` (T-011) | `op_id`, `args` (바꿀 인자 dict) | 실행 중 작업의 선언된 인자를 바꿈. 지금 쓰는 곳: 추적 속도 (`+`/`-`), 라이브 읽기 영역 (`o`), 라이브 노출. 선언 밖은 거부 이벤트 |
 
 `update` 가 필요한 이유: 추적 속도는 작업을 멈추지 않고 바꾼다. `abort` + `start` 로 흉내 내면
@@ -744,7 +744,7 @@ UI 는 카드를 고치지 않는다 (PLAN 6절 9항). 아래 필드 이름은 s
 | 샘플 목록 | 샘플 ID (`YYYYMMDD_HHMM_n`), 만든 시각, hole 피팅 시각 (`fitted_at`), 사용한 렌즈, 마지막 실험 세션, `awaiting_return` 표시 | `GET /api/sample/list` (제안). 샘플 루트 |
 | 열린 샘플 | ID, 폴더, hole 요약, 보정 (`um_per_px`, 렌즈), 스캔·지도·flag 수 | `sample_opened`, `map_changed` |
 | 지오메트리 양식 (F3.1) | 샘플 크기 (기본 24 × 50 mm), 챔버 형태와 구멍 지름 (9/30 시료 약 6 mm), 커버슬립 두께 (기본 170 µm), 샘플 두께, 방향 (정상 / 뒤집힘). 칸마다 값의 출처 (`"entered by <user> <t>"`, `"default"`, `"not set"`). **안전 한계에 들어가는 칸** (커버슬립 두께, 샘플 두께, 방향) 에는 표시를 붙인다 | 샘플 기록 (`GET`) |
-| 로딩 확인 | 3단계: (1) 지오메트리 입력 (2) 사람이 `"Sample is on the stage"` 확인 (3) 이미지 확인: 4x 명시야 한 장에서 구멍 가장자리가 보이는지 고전 판정. 셋이 다 되면 `"Loading confirmed (person + image)"`. PLAN F3: 선택값 읽기는 상태 확인이 아니다 | 엔진 기록 (제안) |
+| 로딩 확인 | 3단계: (1) 지오메트리 입력 (2) 사람이 `"Sample is on the stage"` 확인 (3) 이미지 확인: 4x 명시야 한 장에서 구멍 가장자리가 보이는지 판정 (grade `"computed"`: 측정값에서 계산, 모델 아님). 셋이 다 되면 `"Loading confirmed (person + image)"`. PLAN F3: 선택값 읽기는 상태 확인이 아니다 | 엔진 기록 (제안) |
 
 **입력**
 
@@ -755,7 +755,7 @@ UI 는 카드를 고치지 않는다 (PLAN 6절 9항). 아래 필드 이름은 s
 | `"Open folder"` | 서버 PC 에서 탐색기 열기 | 로컬 화면에서만. 원격이면 버튼이 없고 경로만 보여 준다 |
 | 지오메트리 저장 | `start("sample_geometry_set", {...})` **(제안, WP-H)** | U4. 기록 작업이라 단일 소유에서 빠진다 |
 | `"Sample is on the stage"` | `start("loading_confirm_person")` **(제안)** | 수동 단계 기록 |
-| `"Check with an image"` | `start("loading_check_image")` **(제안)** | 명시야를 켜고 한 장 찍고 끈다. 장비 명령이다 (게이트: 카메라, DiaLamp, 4x) |
+| `"Check with an image"` | `start("loading_check_image")` **(제안)** | 명시야를 켜고 한 장 찍고 끈다. 장비 명령이다 (게이트: 카메라, DiaLamp, 4x). 결과의 grade 는 `"computed"` (T-027) |
 
 **원격과 역할**: 원격과 viewer 는 읽기만. 이미지 확인은 장비 명령이므로 operator, 제어권, 실험 세션이 필요하다.
 
