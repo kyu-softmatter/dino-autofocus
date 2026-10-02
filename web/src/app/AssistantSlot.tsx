@@ -1,4 +1,4 @@
-import { type ComponentType, lazy, Suspense } from "react";
+import { type ComponentType, lazy, Suspense, useMemo } from "react";
 
 /**
  * Where the shared prompt box sits on every screen (PLAN X1). The component is
@@ -6,16 +6,20 @@ import { type ComponentType, lazy, Suspense } from "react";
  * the screen with useCurrentScreenContext). Until that file exists the slot
  * shows a placeholder.
  */
-const found = import.meta.glob<{ default: ComponentType }>("./assistant/index.tsx");
+type PromptModule = { default: ComponentType };
+type PromptLoader = () => Promise<PromptModule>;
 
-export function assistantLoaderFrom(modules: Record<string, () => Promise<{ default: ComponentType }>>) {
+const found = import.meta.glob<PromptModule>("./assistant/index.tsx");
+
+export function assistantLoaderFrom(modules: Record<string, PromptLoader>): PromptLoader | undefined {
   return Object.values(modules)[0];
 }
 
-const load = assistantLoaderFrom(found);
-const PromptBox = load ? lazy(load) : null;
+const defaultLoad = assistantLoaderFrom(found);
 
-export function AssistantSlot() {
+/** The slot with a given loader (tests pass `assistantLoaderFrom({})` for the placeholder). */
+export function AssistantSlotView({ load }: { load: PromptLoader | undefined }) {
+  const PromptBox = useMemo(() => (load ? lazy(load) : null), [load]);
   return (
     <section className="assistant-slot" aria-label="Prompt">
       {PromptBox ? (
@@ -27,4 +31,9 @@ export function AssistantSlot() {
       )}
     </section>
   );
+}
+
+/** The slot as the app uses it: T-014's prompt box once it is in the build. */
+export function AssistantSlot() {
+  return <AssistantSlotView load={defaultLoad} />;
 }

@@ -39,6 +39,8 @@ LABELS = ["1-Plan Apo LmbdD20 4x", "2-Plan Apo 10x", "3-Plan Apo 20x", "4-Plan A
 
 
 class FakeBackend:
+    kind = "fake"
+
     def __init__(self, z_um: float = 2900.0, x_um: float = 8026.0, y_um: float = 571.6,
                  z_readback_offset_um: float = 0.0, pfs_enabled: bool = False,
                  pfs_in_range: str = "Out of Range", all_off_raises: bool = False,
@@ -72,7 +74,7 @@ class FakeBackend:
         return BackendInfo("fake", "memory", "FakeCam", self.shape, (0, 0, *self.shape),
                            self.exposure, 1.625, LABELS[self.state], None, 12, objs,
                            StageLimits((-50000.0, 50000.0), (-35000.0, 35000.0),
-                                       (0.0, 10000.0)))
+                                       (0.0, 10000.0)), bench=False)
 
     def _frame(self) -> Frame:
         img = np.full(self.shape, 100, np.uint16)

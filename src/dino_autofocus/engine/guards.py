@@ -62,11 +62,15 @@ RETRACT_Z_UM, RETURN_Z_UM = 0.0, 2800.0  # change_objective.py
 WD_FRACTION = 0.4
 FREE_WD_UM = {"4x": 20000.0, "100x-Oil": 130.0}  # lens spec; add a lens only once known
 XY_BOX_MARGIN_UM = 1000.0
+# Backends with no real stage. Any other kind (mm-real, or one this file does not know) is
+# a bench: approach() there refuses to run without a clearance check.
+SIMULATED_KINDS = frozenset({"mock", "fake", "replay", "mm-demo"})
 
 # unmeasured provisional (checklist Q20 / Q12); every use is marked in the record
 Z_SAFE_UM = 0.0  # z_safe: full retract, for every lens
 RETRACTED_MAX_Z_UM = Z_SAFE_UM + 1.0  # "Z retracted" for nosepiece turns and long XY moves
-ESCAPE_DY_UM: float | None = None  # F5 immersion-loading move; None -> preflight refuses
+# F5 immersion-loading step-out: +Y by 15 mm (user, PLAN v1.3). Stage-level, not per lens.
+ESCAPE_DY_UM: float = +15000.0
 Z_TOL_UM = 0.25
 XY_TOL_UM = 5.0
 
@@ -96,6 +100,19 @@ OBJECTIVE_LIMITS: dict[str, ObjectiveLimits] = {
 }
 # objective unreadable or not in the table: retract before any XY move, smallest Z step
 STRICTEST = ObjectiveLimits(0.0, min(r.approach_step_um for r in OBJECTIVE_LIMITS.values()))
+
+
+UNKNOWN_OBJECTIVE = "unknown objective"  # FocusAxis key when the objective cannot be read
+
+
+def approach_ceiling_um(key: str | None, window: tuple[float, float] = SAMPLE_Z_WINDOW_UM
+                        ) -> float:
+    """Highest target FocusAxis.approach() may climb to. The approach climbs without an
+    image, so above RETURN_Z_UM only a lens whose known free working distance covers the
+    whole window above it may go (today the 4x). Every other lens, an unlisted key and an
+    unreadable objective stop at RETURN_Z_UM (2800). Refused, never clamped (T-027b)."""
+    wd = FREE_WD_UM.get(key) if key else None
+    return window[1] if wd is not None and wd >= window[1] - RETURN_Z_UM else RETURN_Z_UM
 
 
 def limits_for(label_or_key: str | None) -> tuple[ObjectiveLimits, str]:
@@ -133,8 +150,12 @@ def plain(v: Any, what: str) -> float:
 
 
 def registry_key(nosepiece_label: str) -> str:
-    """'1-Plan Apo LmbdD20 4x' -> '4x'; '6-Plan Apo LmbdD0.13 100x Oil' -> '100x-Oil'."""
-    m = re.search(r"(\d+)x\b", nosepiece_label)
+    """'1-Plan Apo LmbdD20 4x' -> '4x'; '6-Plan Apo LmbdD0.13 100x Oil' -> '100x-Oil';
+    '4-Apo LmbdS 40xC WI' -> '40x-WI'; 'Ti2 40x/1.25 water (...)' -> '40x-WI'.
+
+    The magnification is digits then "x", followed by a letter (the "C" of 40xC) or a word
+    boundary, and not part of a decimal such as LmbdD0.13."""
+    m = re.search(r"(?<![\d.])(\d+)x(?=[A-Za-z]|\b)", nosepiece_label)
     if not m:
         raise GuardError(f"no magnification in objective label {nosepiece_label!r}")
     low = nosepiece_label.lower()
@@ -204,11 +225,27 @@ class FocusAxis:
                  window: tuple[float, float] = SAMPLE_Z_WINDOW_UM, tol_um: float = Z_TOL_UM,
                  sleep: Callable[[float], None] = time.sleep):
         self.b, self.allow_motion, self.dry_run = backend, allow_motion, dry_run
-        self.key = objective if objective in FREE_WD_UM else registry_key(objective)
+        if objective is None:
+            self.key = UNKNOWN_OBJECTIVE  # strictest: no sweep plan, approach capped at 2800
+        elif objective in FREE_WD_UM or objective in OBJECTIVE_LIMITS:
+            self.key = objective
+        else:
+            self.key = registry_key(objective)
         self.emit, self.op_id, self.window = sink, op_id, window
         self.tol, self.sleep = tol_um, sleep
         self.motions: list[dict] = []
         self._z_dry: float | None = None
+
+    @classmethod
+    def from_backend(cls, backend: Backend, **kw: Any) -> FocusAxis:
+        """The axis for the objective read back now; a read error or an unreadable label
+        gives the unknown objective (strictest)."""
+        try:
+            label = backend.nosepiece()
+            key: str | None = registry_key(label) if label else None
+        except Exception:  # noqa: BLE001 - an unreadable objective is the strictest case
+            key = None
+        return cls(backend, key, **kw)
 
     def position_um(self) -> float:
         if self.dry_run and self._z_dry is not None:
@@ -306,6 +343,18 @@ class FocusAxis:
                            k is not None and 0 < k < len(pts) - 1,
                            k is not None and k == len(pts) - 1 and len(pts) > 1)
 
+    def _simulated(self) -> bool:
+        """BackendInfo.bench decides (T-033: True on mm-real). Before that field exists the
+        kind is checked instead, strictly: a kind not in SIMULATED_KINDS is a bench."""
+        try:
+            info = self.b.info()
+        except Exception:  # noqa: BLE001 - an unreadable backend counts as a bench
+            return False
+        bench = getattr(info, "bench", None)
+        if isinstance(bench, bool):
+            return not bench
+        return info.kind in SIMULATED_KINDS
+
     def _check_plan(self, plan: SweepPlan) -> None:
         """A plan is re-checked here, so a hand-built one cannot pass the ceiling."""
         z = [plain(v, "plan z") for v in plan.z_um]
@@ -330,10 +379,22 @@ class FocusAxis:
         then steps of at most the objective's `approach_step_um` (a smaller `step_um` may
         be asked for, never a larger one). After every move the readback must match and
         rise, and `clearance(z_read)` must return True, or the approach stops with
-        GuardError. Above the target it descends straight there."""
+        GuardError. On a bench backend (kind not in SIMULATED_KINDS) `clearance` is
+        required. Above the target it descends straight there."""
         z = plain(target_um, "approach target")
         if not self.window[0] <= z <= self.window[1]:
             raise GuardError(f"approach target {z:.2f} um is outside the window {self.window}")
+        top = approach_ceiling_um(self.key, self.window)
+        if z > top:
+            wd = FREE_WD_UM.get(self.key)
+            raise GuardError(
+                f"approach target {z:.2f} um is above {top:.0f} um for {self.key}: its free "
+                f"working distance ({'unknown' if wd is None else f'{wd:.0f} um'}) does not "
+                f"cover the {self.window[1] - RETURN_Z_UM:.0f} um above {RETURN_Z_UM:.0f}; "
+                f"approach to {RETURN_Z_UM:.0f} and find focus with a sweep")
+        if clearance is None and not self.dry_run and not self._simulated():
+            raise GuardError("approach on a bench backend needs a clearance check "
+                             "(clearance=callable(z_read) -> bool)")
         row, name = limits_for(self.key)
         step = row.approach_step_um
         if step_um is not None:
@@ -390,6 +451,28 @@ def rotate_nosepiece(backend: Backend, focus: FocusAxis, state: int) -> str:
     if not rb.verified:
         raise GuardError(f"Nosepiece reads {rb.read}, not {state}")
     return backend.nosepiece()
+
+
+def step_out_target(backend: Backend, x_um: float, y_um: float) -> tuple[float, float, dict]:
+    """(x, y, basis) of the F5 step-out from (x_um, y_um): +ESCAPE_DY_UM in Y. Refused when
+    the backend reports no Y travel or the target is outside it. The move itself still goes
+    through XYAxis.goto (box, Z retracted for a long move, readback)."""
+    x, y = plain(x_um, "x"), plain(y_um, "y")
+    target = y + ESCAPE_DY_UM
+    try:
+        limits = backend.info().stage_limits.y_um
+    except Exception as exc:  # noqa: BLE001 - no limits read means no step-out
+        raise GuardError(f"stage Y limit unreadable ({type(exc).__name__}: {exc}); "
+                         "refusing the step-out") from None
+    if limits is None:
+        raise GuardError("the backend reports no stage Y limit; refusing the step-out")
+    lo, hi = limits
+    if not lo <= target <= hi:
+        raise GuardError(f"step-out to y {target:.0f} um is outside the stage Y travel "
+                         f"{lo:.0f}..{hi:.0f} um")
+    basis = {"escape_dy_um": ESCAPE_DY_UM, "basis": {"escape_dy_um": PROVISIONAL},
+             "stage_y_um": [lo, hi]}
+    return x, target, basis
 
 
 # -- XY -----------------------------------------------------------------------------------
@@ -514,6 +597,35 @@ def snapshot(backend: Backend) -> dict:
     return out
 
 
+def check_lights(readbacks: list[Readback], emit: EventSink = null_sink,
+                 op_id: str = "") -> list[Readback]:
+    """Emit `light_changed` with the readbacks; raise GuardError if any does not verify or
+    there is none (an empty readback proves nothing)."""
+    emit(Event("light_changed", op_id, {"readbacks": [asdict(r) for r in readbacks]}))
+    bad = [f"{r.device}.{r.prop} wanted {r.wanted}, read {r.read}" for r in readbacks
+           if not r.verified]
+    if not readbacks:
+        bad = ["the backend returned no readback"]
+    if bad:
+        raise GuardError("light not verified: " + "; ".join(bad))
+    return readbacks
+
+
+def lamp_on(backend: Backend, emit: EventSink = null_sink, op_id: str = "") -> list[Readback]:
+    """Transmitted lamp on with the guard token (D15), read back and recorded. For
+    operations run by the runner, which owns the exit path that switches it off again."""
+    return check_lights(backend.lamp_on(token=GUARD_TOKEN), emit, op_id)
+
+
+def aura_line_on(backend: Backend, line: str, percent: float, emit: EventSink = null_sink,
+                 op_id: str = "") -> list[Readback]:
+    """One Aura line on at `percent` with the guard token, read back and recorded."""
+    pct = plain(percent, "Aura percent")
+    if not 0.0 < pct <= 100.0:
+        raise GuardError(f"Aura percent {pct} is outside (0, 100]")
+    return check_lights(backend.aura_line_on(str(line), pct, token=GUARD_TOKEN), emit, op_id)
+
+
 @dataclass
 class OpScope:
     """`answers` receives `confirm` Commands from whoever dispatches commands (the UI)."""
@@ -528,14 +640,11 @@ class OpScope:
     def lamp_on(self) -> list[Readback]:
         """Transmitted lamp on: the one legal way for an operation (D15). Off is the scope's
         exit path, or `backend.lamp_off()` / `all_off()`, which need no token."""
-        return self.lights(self._backend().lamp_on(token=GUARD_TOKEN))
+        return lamp_on(self._backend(), self.emit, self.op_id)
 
     def aura_line_on(self, line: str, percent: float) -> list[Readback]:
         """One Aura line on at `percent` (the backend converts to per-mille); lamp off first."""
-        pct = plain(percent, "Aura percent")
-        if not 0.0 < pct <= 100.0:
-            raise GuardError(f"Aura percent {pct} is outside (0, 100]")
-        return self.lights(self._backend().aura_line_on(str(line), pct, token=GUARD_TOKEN))
+        return aura_line_on(self._backend(), line, percent, self.emit, self.op_id)
 
     def _backend(self) -> Backend:
         if self.backend is None:
@@ -544,13 +653,7 @@ class OpScope:
 
     def lights(self, readbacks: list[Readback]) -> list[Readback]:
         """Record a light change; any readback that does not verify stops the operation."""
-        rbs = [asdict(r) for r in readbacks]
-        self.emit(Event("light_changed", self.op_id, {"readbacks": rbs}))
-        bad = [f"{r.device}.{r.prop} wanted {r.wanted}, read {r.read}" for r in readbacks
-               if not r.verified]
-        if bad:
-            raise GuardError("light not verified: " + "; ".join(bad))
-        return readbacks
+        return check_lights(readbacks, self.emit, self.op_id)
 
     def ask(self, key: str, text: str, timeout_s: float | None = None, **data: Any) -> bool:
         """A manual step: emit `confirm_required`, wait for the matching confirm, record it.
@@ -568,6 +671,18 @@ class OpScope:
                 self.emit(Event("confirmed", self.op_id, {"key": key, "ok": ok,
                                                           "origin": cmd.origin}))
                 return ok
+
+
+def _emit_safely(ev: Event, rec: OpRecord, sink: EventSink, error: str | None) -> str | None:
+    """Emit to the record and the external sink; a failure in either is noted in `error`
+    instead of replacing the operation's own exception."""
+    for name, target in (("record writer", rec.sink), ("event sink", sink)):
+        try:
+            target(ev)
+        except Exception as exc:  # noqa: BLE001 - the operation's own error comes first
+            note = f"{name} failed on {ev.kind}: {type(exc).__name__}: {exc}"
+            error = note if error is None else f"{error}; {note}"
+    return error
 
 
 @contextmanager
@@ -596,24 +711,17 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
         raise
     except BaseException as exc:
         status, error = "error", f"{type(exc).__name__}: {exc}"
-        ev = Event("error", rec.op_id, {"error": error})
-        rec.sink(ev)
-        try:
-            sink(ev)
-        except Exception as sink_exc:  # noqa: BLE001 - keep the operation's own error
-            error += f"; event sink failed on error: {type(sink_exc).__name__}: {sink_exc}"
+        error = _emit_safely(Event("error", rec.op_id, {"error": error}), rec, sink, error)
         raise
     finally:
         lights = lights_off(backend)
         end = snapshot(backend)
         closing = [Event("light_changed", rec.op_id, lights)]
         if status != "error":
-            closing.append(Event(status, rec.op_id, {"error": error}))
+            data = {"error": error}
+            if status == "finished":
+                data["summary"] = scope.result  # the screens read finished.data.summary
+            closing.append(Event(status, rec.op_id, data))
         for ev in closing:
-            rec.sink(ev)
-            try:
-                sink(ev)
-            except Exception as exc:  # noqa: BLE001 - the record must still be written
-                note = f"event sink failed on {ev.kind}: {type(exc).__name__}: {exc}"
-                error = note if error is None else f"{error}; {note}"
+            error = _emit_safely(ev, rec, sink, error)
         rec.finish(status, lights=lights, end_state=end, result=scope.result, error=error)

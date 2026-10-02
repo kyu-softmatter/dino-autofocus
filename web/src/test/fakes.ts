@@ -28,7 +28,11 @@ export class FakeSocket {
   }
 }
 
-export type Route = (init?: RequestInit) => { status: number; body?: unknown };
+export type Route = (init?: RequestInit) => {
+  status: number;
+  body?: unknown;
+  headers?: Record<string, string>;
+};
 
 /** A transport whose fetch answers from a table of paths and whose sockets are FakeSockets. */
 export function fakeTransport(routes: Record<string, Route>) {
@@ -38,10 +42,12 @@ export function fakeTransport(routes: Record<string, Route>) {
     fetch: async (path, init) => {
       calls.push({ path, init });
       const route = routes[path];
-      const { status, body } = route ? route(init) : { status: 404, body: { detail: "Not Found" } };
+      const { status, body, headers } = route
+        ? route(init)
+        : { status: 404, body: { detail: "Not Found" }, headers: undefined };
       return new Response(body === undefined ? null : JSON.stringify(body), {
         status,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...headers },
       });
     },
     openSocket: (path) => {
