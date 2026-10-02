@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AREAS, areaIdOfPath, buildRegistry, registry } from "./areas";
-import { areaFromHash, hashOfArea } from "./route";
+import { areaFromHash, areaHref, hashOfArea, parseHash } from "./route";
 
 const screen = () => Promise.resolve({ default: () => null });
 
@@ -30,9 +30,9 @@ describe("area registry", () => {
     expect(areaIdOfPath("../features/live/View.tsx")).toBeNull();
   });
 
-  it("has the six areas of T-010 and simulation (PLAN v0.4)", () => {
+  it("has the six areas of T-010, simulation (PLAN v0.4) and sessions (T-106)", () => {
     expect(registry.map((e) => e.id)).toEqual([
-      "console", "hardware", "sample", "map", "objective", "live", "simulation",
+      "console", "hardware", "sample", "map", "objective", "live", "simulation", "sessions",
     ]);
   });
 });
@@ -44,5 +44,25 @@ describe("hash routing", () => {
     expect(areaFromHash("")).toBe("console");
     expect(areaFromHash("#/nowhere")).toBe("console");
     expect(hashOfArea("live")).toBe("#/live");
+  });
+
+  it("passes everything after the area through as rest", () => {
+    expect(parseHash("#/simulation/runs/run-20260924-001")).toEqual({
+      area: "simulation",
+      rest: "runs/run-20260924-001",
+    });
+    expect(parseHash("#/map?sample_id=20260930_1849_1")).toEqual({
+      area: "map",
+      rest: "?sample_id=20260930_1849_1",
+    });
+    expect(parseHash("#/map")).toEqual({ area: "map", rest: "" });
+    expect(parseHash("#/nowhere/x")).toEqual({ area: "console", rest: "" });
+  });
+
+  it("builds hrefs that parse back to the same route", () => {
+    for (const [area, rest] of [["simulation", "runs/r1"], ["map", "?x=1"], ["live", ""]] as const) {
+      expect(parseHash(areaHref(area, rest))).toEqual({ area, rest });
+    }
+    expect(areaHref("console", "/questions/q1")).toBe("#/console/questions/q1");
   });
 });

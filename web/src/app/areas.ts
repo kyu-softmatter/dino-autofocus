@@ -13,6 +13,7 @@ export const AREAS = [
   { id: "objective", label: "Objective" },
   { id: "live", label: "Live" },
   { id: "simulation", label: "Simulation" },
+  { id: "sessions", label: "Sessions" },
 ] as const;
 
 export type AreaId = (typeof AREAS)[number]["id"];

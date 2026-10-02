@@ -30,7 +30,8 @@ Set `DINO_AF_SERVER` to point the dev server at another address.
 ## Adding an area screen
 
 The areas and their order are fixed in `src/app/areas.ts`: `console`, `hardware`, `sample`,
-`map`, `objective`, `live`, `simulation`. To give an area its screen:
+`map`, `objective`, `live`, `simulation`, `sessions`. Login (`src/app/login/`, T-105) is not an
+area and has no navigation entry. To give an area its screen:
 
 1. Create `src/features/<area>/index.tsx`.
 2. Default-export a React component that takes no props.
@@ -44,6 +45,29 @@ rest of the app keeps working.
 
 Inside `src/features/<area>/` the area owns its files and folders. Keep imports from other
 areas out; shared pieces belong in `src/app/` (ask for them).
+
+## Routes and links between areas
+
+Routes are hashes `#/<area>/<rest>`. The shell routes on `<area>` only and hands everything after
+it, query included, to the area untouched. The area decides what `<rest>` means:
+
+| Hash | Area | `rest` |
+|---|---|---|
+| `#/simulation/runs/run-20260924-001` | simulation | `runs/run-20260924-001` |
+| `#/map?sample_id=20260930_1849_1` | map | `?sample_id=20260930_1849_1` |
+| `#/console` | console | (empty) |
+
+An unknown area falls back to the console. Inside a screen:
+
+```tsx
+import { areaHref, useAreaPath } from "../../app/route";
+
+const [rest, setRest] = useAreaPath();        // read and change your own rest; no remount
+<a href={areaHref("simulation", `runs/${runId}`)}>open run</a>   // link to another area
+```
+
+Linking is a plain href, so areas never import each other. Each area documents the `rest` forms it
+accepts in its own `index.tsx`.
 
 ## Screen context for the prompt box
 

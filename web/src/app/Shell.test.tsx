@@ -1,10 +1,26 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { describe, expect, it } from "vitest";
 
-import { type AreaEntry, buildRegistry } from "./areas";
+import { AREAS, type AreaEntry, buildRegistry } from "./areas";
+import { useAreaPath } from "./route";
 import { useCurrentScreenContext, useScreenContext } from "./screenContext";
 import { Shell } from "./Shell";
+
+let simulationMounts = 0;
+
+function SimulationScreen() {
+  const [rest, setRest] = useAreaPath();
+  useEffect(() => {
+    simulationMounts += 1; // counted at commit: a remount would add one
+  }, []);
+  return (
+    <div>
+      <p data-testid="rest">{rest}</p>
+      <button onClick={() => setRest("runs/r2")}>open r2</button>
+    </div>
+  );
+}
 
 function MapScreen() {
   const details = useMemo(() => ({ sample_id: "20260930_1849_1" }), []);
@@ -32,7 +48,7 @@ describe("Shell", () => {
   it("shows every area in the navigation and a placeholder for one with no screen", () => {
     render(<Shell registry={buildRegistry({})} />);
     const nav = screen.getByRole("navigation", { name: "Areas" });
-    expect(nav.querySelectorAll("a")).toHaveLength(7);
+    expect(nav.querySelectorAll("a")).toHaveLength(AREAS.length);
     expect(screen.getByText("Console: not implemented yet")).toBeTruthy();
   });
 
@@ -97,5 +113,22 @@ describe("Shell", () => {
     expect(screen.getByRole("region", { name: "Prompt" })).toBeTruthy();
     expect(screen.getByText("Prompt box: not implemented yet")).toBeTruthy();
     expect(screen.getByText("status here")).toBeTruthy();
+  });
+
+  it("hands the rest of the hash to the area and keeps the screen mounted when it changes", async () => {
+    simulationMounts = 0;
+    window.location.hash = "#/simulation/runs/r1";
+    const reg = buildRegistry({}).map((e) =>
+      e.id === "simulation"
+        ? { ...e, load: () => Promise.resolve({ default: SimulationScreen }) }
+        : e,
+    );
+    render(<Shell registry={reg} />);
+    expect((await screen.findByTestId("rest")).textContent).toBe("runs/r1");
+    fireEvent.click(screen.getByRole("button", { name: "open r2" }));
+    await waitFor(() => expect(screen.getByTestId("rest").textContent).toBe("runs/r2"));
+    expect(window.location.hash).toBe("#/simulation/runs/r2");
+    expect(simulationMounts).toBe(1);
+    expect(screen.getByRole("link", { name: "Simulation" }).getAttribute("aria-current")).toBe("page");
   });
 });
