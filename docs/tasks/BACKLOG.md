@@ -153,3 +153,5 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   실행12's own permission check, so it is the user's: approve it in 실행12's window or make the one-line edit. Director
   recommends holding it until the user is at the microscope PC for runbook step 1. `exec12/T-036-unlock` is parked
   at ebfff88; no other seat makes the edit.
+- Integration (M6, director 2026-10-02): the soft-matter-agents librarian must skip sessions whose session.json has
+  `bench: false` (T-106b), as a second guard behind the separate mock records root (T-009i).

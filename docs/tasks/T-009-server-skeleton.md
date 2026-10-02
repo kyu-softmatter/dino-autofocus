@@ -257,3 +257,7 @@
 - Tests: `main(["--backend", "mock", ...])` builds a Runner whose registry lists every op; an unknown backend exits
   with the list; mm-real without Micro-Manager exits with a clear message. No window, no real port held after.
 - Tell AF 실행10 (launcher, T-026) the flag so the exe starts with `--backend mock` until the user chooses.
+- Addition (director): mock, mm-demo and replay never write into the real records git. Without `--records-root`,
+  non-bench backends (`is_bench(info)` False) default to a separate root (e.g. `D:\AutoFocus\records-mock`); only a
+  bench backend (mm-real) uses `D:\AutoFocus\records`. An explicit `--records-root` pointing at the real root with a
+  non-bench backend is refused with a clear message. Tests for both defaults and the refusal.
