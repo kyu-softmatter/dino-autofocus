@@ -121,7 +121,9 @@ def test_area_router_discovery(tmp_path, monkeypatch, engine, agent_store, seat,
 def assert_mounted(app: FastAPI, name: str, router: APIRouter) -> int:
     """Every HTTP route of `router` is served at /api/<name>/... Read from the app's OpenAPI
     paths, not `app.routes`: with FastAPI 0.142 / Starlette 1.7 an included router is one
-    `_IncludedRouter` entry without a path there. Returns how many routes were checked."""
+    `_IncludedRouter` entry without a path there. Returns how many routes were checked.
+    WebSocket routes are not in the OpenAPI paths: an area that adds one needs this check to
+    walk `_IncludedRouter.original_router` as well (none does today)."""
     paths = app.openapi()["paths"]
     checked = 0
     for route in router.routes:
