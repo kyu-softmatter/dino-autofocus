@@ -244,3 +244,10 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
   such as scan_4x may already have switched off in its own finally). Today summary.json then shows both off with
   `verified: None` and no readbacks (PLAN rules 4/5). Test: an op that switches off itself still gets a verified
   end state in summary.json.
+
+## T-011f (AF 실행15, after T-011e; review AF 검토보조2) — runner enforces hardware gates (from T-028)
+
+- `Runner._runner_checks` calls the hardware provider's `check(op, args)` (`hw.check` from T-028's
+  `register_hardware`) and fails preflight with the gate's reasons when it says no. No provider (tests, mock without a
+  profile) keeps today's behaviour; a provider that raises fails closed with the error as the reason. Tests: a gated
+  op refused with its reasons; a provider error refuses; no provider passes.
