@@ -96,7 +96,16 @@ export function Nav({
  * box slot and the status bar slot. The shell has no hardware logic; screens
  * talk to the server API only.
  */
-export function Shell({ registry = defaultRegistry, statusBar }: { registry?: AreaEntry[]; statusBar?: ReactNode }) {
+export function Shell({
+  registry = defaultRegistry,
+  statusBar,
+  notice,
+}: {
+  registry?: AreaEntry[];
+  statusBar?: ReactNode;
+  /** shown above the area screen, e.g. the last-shutdown light readback */
+  notice?: ReactNode;
+}) {
   const [area, go] = useArea();
   const entry = registry.find((e) => e.id === area) ?? registry[0];
   return (
@@ -107,6 +116,7 @@ export function Shell({ registry = defaultRegistry, statusBar }: { registry?: Ar
           <Nav entries={registry} current={entry.id} onSelect={go} />
         </header>
         <main className="main">
+          {notice}
           <AreaView key={entry.id} entry={entry} />
         </main>
         <aside className="side">

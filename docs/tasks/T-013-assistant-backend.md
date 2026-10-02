@@ -98,3 +98,7 @@ The review assistant checks each condition against the branch before passing it 
 
 - The proposal-confirm path checks `WRITE_MAP_FLAG` for `map_flag`, `map_flag_retire`, `candidate_confirm` and
   `candidate_reject`, the same as the map routes. Claude proposals must not bypass D16.
+
+## Status names (from T-010)
+
+- `GET /api/assistant/status` returns exactly `{provider, connected, data_stage}`; the web shell reads these names.
