@@ -26,26 +26,36 @@
 매니저 결정 반영 (T-002 부록 3, main `69e6ba5`): `scan4x_<stamp>/` 폴더 유지 + `scan.json` 병행,
 `lights_off` 는 선점 명령, 상태 표시는 `position` 이벤트, `hole.fitted_at`, 원본 빈틈 세 가지.
 
+T-024 (실행17): 0.1 과 각 절의 호출 이름을 병합된 T-002-1 프로토콜 (`backend.py`, `events.py`, main `7f62722`) 에 맞췄다.
+방향 기준은 PLAN v1.2 (5절, 9/30 기록): ZDrive 값이 커지면 시료 쪽이고 0 이 후퇴, 스윕은 상향, 영상은 재물대와 거울상,
+4x 타일은 serpentine. 이 문서의 서술은 이 기준과 맞는다.
+
 ## 0. 공통 약속
 
 ### 0.1 호출 이름표
 
-"run" 표의 **엔진 호출** 열은 아래 이름을 쓴다. 출처는 `docs/tasks/T-002-engine-contract.md`
-본문과 부록 1·2, 그리고 매니저의 범위 조정 (`approach`, Z 후퇴 조건 XY 가드) 이다. T-002 에서 이름이
-확정되면 그쪽을 따른다. "가칭" 은 T-002 본문에 기능만 있고 이름이 없는 것이다.
+"run" 표의 **엔진 호출** 열은 아래 이름을 쓴다. 백엔드 이름은 main 에 병합된 T-002-1 의
+`src/dino_autofocus/engine/backend.py` (Backend 프로토콜, `7f62722`) 를 따른다. 가드 이름은
+`docs/tasks/T-002-engine-contract.md` 부록 1 과 매니저의 범위 조정 (`approach`, Z 후퇴 조건 XY 가드) 에서 왔고,
+T-002-2 (`guards.py`) 가 병합되면 그쪽을 따른다. "**T-015**" 표시는 아직 프로토콜에 없고 T-015 (백엔드 프로토콜
+확장, `8ec8d0c` 검토 중) 가 넣는 이름이다. 병합 때 이름이 바뀌면 이 표를 고친다.
 
 | 구분 | 이름 | 스크립트 원본 |
 |---|---|---|
-| 백엔드 수명 | `open()`, `close()` | `mm_grab.open_core` (config 로드, AutoShutter 0, 노출, ROI) |
-| 백엔드 정보 | `info()` → config, camera, sensor, roi, exposure_ms, pixel_um, objective, intermediate_mag, bit_depth | `open_core` 의 `info`, `core.getImageBitDepth()` |
-| 프레임 | `snap()` → `Frame` | `core.snapImage(); core.getImage()` |
-| 설정 | `set_exposure(ms)`, `set_roi(size)` | `core.setExposure`, `core.setROI / clearROI` |
-| 위치 | `positions()` → x_um, y_um, z_um (+piezo). 실패는 예외가 아니라 필드 | `mm_grab.positions` |
-| 속성 | `read_property(dev, prop)`, `set_property(dev, prop, v)` → readback 기록 | `core.getProperty`, `mm_grab.set_and_read` |
-| 조명 | `lamp_on()`, `lamp_off()`, `aura_line_on(line, percent)`, `aura_off()`, `all_off()` | `set_and_read(DiaLamp, State, ·)`, `mm_grab.aura_on / aura_off` |
-| XY | `xy_move(x, y)` 가칭. 읽기는 `positions()` | `core.setXYPosition; waitForDevice` |
-| 렌즈 | `nosepiece_read()` 가칭 → state, label. `nosepiece_set(state)` 가칭 | `getProperty / setProperty("Nosepiece", ...)` |
-| PFS | `pfs_read()` 가칭 → enabled, locked, in_range | `isContinuousFocusEnabled / Locked`, `PFS in Range` |
+| 백엔드 수명 | `open()` → `BackendInfo`, `close()` | `mm_grab.open_core` (config 로드, AutoShutter 0, 노출, ROI) |
+| 백엔드 정보 | `info()` → `BackendInfo`: kind, config, camera, sensor, roi, exposure_ms, pixel_um, objective, intermediate_mag, bit_depth, `ceiling_adu` (= 2^bit_depth − 1), `objectives[]` (`ObjectiveInfo`: state, label, magnification, pixel_um, free_wd_um), `stage_limits` (`StageLimits`: x_um, y_um, z_um, 모르면 None) | `open_core` 의 `info`, `core.getImageBitDepth()` |
+| 프레임 | `snap()` → `Frame` (image uint16, t_read, exposure_ms, x_um, y_um, z_um) | `core.snapImage(); core.getImage()` |
+| 설정 | `set_exposure(ms)` → 읽은 노출, `set_roi(size)` → 읽은 ROI (0 = 전체 센서) | `core.setExposure`, `core.setROI / clearROI` |
+| 위치 | `positions()` → `Positions`: x_um, y_um, z_um, piezo_um{}. 실패는 예외가 아니라 None + `errors{}` | `mm_grab.positions` |
+| 속성 | `read_property(dev, prop)` → 문자열, `set_property(dev, prop, v)` → `Readback` (device, prop, wanted, read, verified, t) | `core.getProperty`, `mm_grab.set_and_read` |
+| 조명 | `lamp_on()`, `lamp_off()`, `aura_line_on(line, percent)` (DiaLamp 를 먼저 끔), `aura_off()`, `all_off()` → 각각 `list[Readback]`. 읽기는 `light_state()` → `{"DiaLamp": .., "Aura": ..}` | `set_and_read(DiaLamp, State, ·)`, `mm_grab.aura_on / aura_off` |
+| Z | `move_z(z_um, token=)` → 읽은 z. **가드만 부른다** | `core.setPosition("ZDrive", ·)` (FocusAxis 안) |
+| XY | `move_xy(x_um, y_um, token=, timeout_s=None)` → 읽은 (x, y). **가드만 부른다**. 읽기는 `positions()` | `core.setXYPosition; waitForDevice` |
+| 렌즈 | `nosepiece()` → label (예: `1-Plan Apo LmbdD20 4x`). State 는 `info().objectives` 에서 label 로 찾는다. `set_nosepiece(state, token=)` → `Readback`. **가드만 부른다** | `getProperty / setProperty("Nosepiece", ...)` |
+| PFS | `pfs()` → `PfsState` (enabled, locked, in_range 문자열, `.out_of_range`). `pfs_off(token=)` → `Readback`. **가드만 부른다** | `isContinuousFocusEnabled / Locked`, `PFS in Range` |
+| 탐지 (T-015) | `describe_devices(include_properties)`, `nosepiece_labels()`, `piezo_read(port)`, `config_record()` | 5절 |
+| XY 상대 이동 (T-015) | `move_xy_rel(dx_um, dy_um)`. 가드는 절대 이동과 같다 | `setRelativeXYPosition` (8절) |
+| 연속 취득 (T-015) | `start_stream(interval_ms)`, `next_frame(timeout_s)`, `stop_stream()`, `streaming()`. 프레임 메타는 `snap()` 과 같다. 스트림 중 `snap()` 은 `StreamActive` 예외 | `startContinuousSequenceAcquisition`, `popNextImageAndMD` (8절) |
 | 가드 Z 축 | `axis = <guard Z axis>(backend, key, allow_motion=, dry_run=)` | `FocusAxis(core, key, allow_motion=, dry_run=)` |
 | | `axis.plan(c, half, step)`, `.describe()` | 같음 |
 | | `axis.sweep(plan, grab, score=, settle_s=)` → `.points[i].{z_um, z_readback_um, score, diagnostics}`, `.argmax_index`, `.peak_z_um`, `.peak_interior` | 같음 |
@@ -59,11 +69,25 @@
 
 순수 함수(초점 지표, 포물선)는 `focus/` (WP-E, T-003) 소유로 보고, 작업은 import 만 한다.
 
+- **모션 메서드** (`move_z`, `move_xy`, `set_nosepiece`, `pfs_off`) 는 가드의 `MotionToken` 을 `token=` 으로 받고,
+  없으면 백엔드가 `UnguardedMotion` 으로 거부한다. 작업은 이 메서드를 직접 부르지 않고 가드 Z 축과 가드 XY 를
+  거친다. 아래 절의 표는 읽기 쉽게 `move_xy(x, y)` 처럼 `token=` 을 생략하지만, 실제 호출은 가드 안에서 일어난다.
+  `axis.require_pfs_quiet(disable=True)` 는 `pfs()` 로 읽고 `pfs_off()` 로 끄는 가드 메서드다.
+- 백엔드의 z 는 언제나 벤치 좌표 (ZDrive µm, 창 2800–3200) 다. 데모 Z 처럼 원점이 다른 장치는 백엔드 안에서 오프셋한다.
+- 조명 메서드와 쓰기는 모두 `Readback` (또는 그 목록) 을 돌려준다. "readback 확인" 은 `verified` 가 모두 참인지 본다.
+
 ### 0.2 이벤트와 기록
 
-- 이벤트 종류는 T-002 `events.py` 목록을 쓴다: `planned`, `preflight_ok / preflight_failed`,
+- 이벤트 종류는 T-002 `events.py` 의 `EVENT_KINDS` 를 쓴다: `planned`, `preflight_ok / preflight_failed`,
   `started`, `progress`, `frame_ready`, `reading`, `finished`, `aborted`, `error`, `position`,
-  `light_changed`, `property_set`, `confirm_required`, `log`.
+  `light_changed`, `property_set`, `motion`, `confirm_required`, `confirmed`, `log`.
+  모든 이벤트는 `kind`, `op_id`, `data` (JSON 기본형), `t` 를 가진다.
+- 명령 종류는 `COMMAND_KINDS`: `start` (`op`, `args`), `abort` (`op_id`), `confirm` (`op_id`,
+  `args = {"key": <confirm_required 의 data["key"]>, "ok": bool}`), `lights_off` (선점). 모든 명령에
+  `origin` (`human` / `assistant`), `user_id`, `session_id` 가 붙는다 (아직 없으면 None).
+  실행 중 인자 변경 `update` 와 `confirm_required` 의 `manual_step` 종류는 T-011 이 `events.py` 에 넣는다.
+- 아래 절의 `confirm_required("...")` 는 이벤트의 `data` 에 들어갈 질문 문구다. 답은 같은 `key` 의 `confirm` 명령으로
+  오고, 엔진은 그 답을 `confirmed` 이벤트로 기록한다.
 - 기록 폴더는 T-002 대로 `<sample_dir>/<op>_<stamp>/log.jsonl` + `summary.json`.
   샘플이 없는 작업(`status`, `lights_off`)은 T-002 의 기본 기록 위치를 따른다
   (런처의 `outputs/launcher_logs` 에 해당).
@@ -88,7 +112,7 @@
 **2) plan**: 계산할 것 없음. 보여 줄 문구: "Aura State → 0, DiaLamp State → 0. Nothing moves."
 
 **3) preflight**: 원본에는 없다. 엔진에서는 현재 조명 상태를 읽어 `reading` 으로 남긴다
-(`read_property(Aura, State)`, `read_property(DiaLamp, State)`). 읽기가 실패해도 막지 않는다. 소등은 항상 시도한다.
+(`light_state()`). 읽기가 실패해도 막지 않는다. 소등은 항상 시도한다.
 
 **4) run**
 
@@ -103,7 +127,7 @@
 
 **5) abort / finally**: 원본에 `finally` 없음. 엔진의 `lights_off` 는 그 자체가 종료 경로다.
 
-제안: `lights_off` 는 **다른 작업이 실행 중이어도 받는다.** 받으면 실행 중 작업에 `abort` 를 보내고,
+결정: `lights_off` 는 **다른 작업이 실행 중이어도 받는다** (`events.py` 의 `COMMAND_KINDS` 에서 선점 명령). 받으면 실행 중 작업에 `abort` 를 보내고,
 그 작업의 종료 경로가 끝난 뒤 `all_off()` 를 한 번 더 확인한다. 지금 런처는 하드웨어 작업이 돌고 있으면
 `lights_off` 도 거부한다. 그런데 불이 켜진 채 멈춘 작업이 있을 때가 이 버튼이 가장 필요한 순간이다.
 
@@ -111,7 +135,7 @@
 
 | 지금 | 엔진 |
 |---|---|
-| stdout: `set_and_read` 의 JSON 두 줄 (`device, property, wanted, read, verified`) + 요약 한 줄 | `property_set` 이벤트 두 개 (같은 필드), `light_changed`, `summary.json`: `{aura_state, dialamp_state, verified}` |
+| stdout: `set_and_read` 의 JSON 두 줄 (`device, property, wanted, read, verified`) + 요약 한 줄 | `property_set` 이벤트 (`all_off()` 의 `Readback` 마다: device, prop, wanted, read, verified), `light_changed`, `summary.json`: `{aura_state, dialamp_state, verified}` |
 
 **7) 확인 지점**: 없음 (안전한 방향).
 
@@ -134,12 +158,12 @@
 | # | 스크립트 호출 | 엔진 호출 | 읽는 값 |
 |---|---|---|---|
 | 1 | `open_core(30.0, 0)` → `info` 출력 | `info()`, `positions()` | config, camera, autoshutter, exposure_ms, sensor, roi, pixel_um, objective, intermediate_mag, position (x_um, y_um, z_um) |
-| 2 | `getProperty("Nosepiece", "State")`, `getProperty("Nosepiece", "Label")` | `nosepiece_read()` | `nosepiece_state`, `nosepiece_label` |
+| 2 | `getProperty("Nosepiece", "State")`, `getProperty("Nosepiece", "Label")` | `nosepiece()`, State 는 `info().objectives` 에서 label 로 | `nosepiece_state`, `nosepiece_label` |
 | 3 | `getPosition("ZDrive")` | `positions().z_um` | `z_um` (소수 3자리) |
-| 4 | `isContinuousFocusEnabled()`, `isContinuousFocusLocked()` | `pfs_read()` | `pfs_enabled`, `pfs_locked`. 실패하면 `"unreadable: <exc>"` 문자열 |
-| 5 | `getProperty("PFS", "PFS in Range")` | `pfs_read()` | `pfs_in_range` (`"In Range"` 또는 `"Out of Range"`). 실패하면 같은 문자열 |
-| 6 | (없음) | `read_property(Aura, State)`, `read_property(DiaLamp, State)` | **추가 제안**: 조명 상태. 종료 상태 확인과 상태 표시줄에 필요하다 |
-| 7 | (없음) | `info().bit_depth` | **추가 제안**: 카메라 천장. scan_4x 첫 시도의 실패 원인이었다 (3절 8항) |
+| 4 | `isContinuousFocusEnabled()`, `isContinuousFocusLocked()` | `pfs()` | `pfs_enabled`, `pfs_locked`. 원본은 실패하면 `"unreadable: <exc>"` 문자열, `PfsState` 는 None |
+| 5 | `getProperty("PFS", "PFS in Range")` | `pfs()` | `pfs_in_range` (`"In Range"` 또는 `"Out of Range"`). 실패하면 같은 문자열 |
+| 6 | (없음) | `light_state()` | **추가 제안**: 조명 상태. 종료 상태 확인과 상태 표시줄에 필요하다 |
+| 7 | (없음) | `info().bit_depth`, `info().ceiling_adu` | **추가 제안**: 카메라 천장. scan_4x 첫 시도의 실패 원인이었다 (3절 8항) |
 
 - Nosepiece 번호: `State` 는 0 부터, `Label` 앞 숫자는 1 부터다. 4x 는 State 0 / `1-Plan Apo LmbdD20 4x`,
   100x Oil 은 State 5 / `6-Plan Apo LmbdD0.13 100x Oil`. UI 는 Label 을 보여 주고 명령은 State 로 보낸다.
@@ -195,7 +219,7 @@ PFS off / "Out of Range". 실패 사례 없음. ZDrive 62.9 µm 는 Z 창(2800�
 | XY 이동 후 0.2 s 대기 | `goto_xy` | `xy_settle_s` |
 | XY 박스 여유 1000 µm | `box` | 가드 상수 |
 | 주차 상한 3200 µm | `axis.park_at(min(z_img, 3200.0))` | Z 창 상한 (가드) |
-| 렌즈 라벨 `1-Plan Apo LmbdD20 4x`, 레지스트리 키 `"4x"` | `OBJECTIVE_4X`, `FocusAxis(core, "4x", ...)` | 렌즈 표 (T-002 또는 F2 구성 파일) |
+| 렌즈 라벨 `1-Plan Apo LmbdD20 4x`, 레지스트리 키 `"4x"` | `OBJECTIVE_4X`, `FocusAxis(core, "4x", ...)` | 렌즈 표 (`info().objectives`, 레지스트리 키는 가드) |
 
 **2) plan** (모션 없이 계산 가능. `planned` 이벤트로 낸다)
 
@@ -228,14 +252,14 @@ PFS off / "Out of Range". 실패 사례 없음. ZDrive 62.9 µm 는 Z 창(2800�
 | # | 스크립트 호출 | 엔진 호출 | 비고 |
 |---|---|---|---|
 | 1 | `open_core(args.exposure or 30.0, 0)` | `set_exposure(exposure_ms or 30)`, `set_roi(0)`, `info()` | |
-| 2 | `getProperty("Nosepiece", "Label")` | `nosepiece_read()` | preflight 로 옮긴다 |
+| 2 | `getProperty("Nosepiece", "Label")` | `nosepiece()` | preflight 로 옮긴다 |
 | 3 | `FocusAxis(core, "4x", allow_motion=True, dry_run=)` | 가드 Z 축 생성. 원본은 `registry_key` 대신 `"4x"` 고정 | |
 | 4 | `axis.position_um()` | 같음 | `z_guess` 계산 |
 | 5 | dry-run 이면 `axis.plan(...).describe()` 출력 후 종료 | plan 단계에서 끝. `finished(dry_run=True)` | 기록 폴더를 만들지 않는다 |
-| 6 | `out.mkdir`, `getImageBitDepth()` | 기록 폴더 생성, `info().bit_depth` | |
+| 6 | `out.mkdir`, `getImageBitDepth()` | 기록 폴더 생성, `info().ceiling_adu` | |
 | 7 | `axis.require_pfs_quiet(disable=True)` | 같음 | **추론**: PFS 서보를 끄고 꺼졌는지 읽는다 |
-| 8 | `aura_on(core, line, pct)` = DiaLamp State 0 → `{LINE}_Intensity` (퍼밀) → `{LINE} 1` → Aura State 1, 각각 readback | `aura_line_on(line, percent)` | 원본은 `verified=False` 여도 계속한다. 엔진은 멈추는 것을 제안 |
-| 9 | `goto_xy(x0, y0)`: 박스 검사 → `setXYPosition` → `waitForDevice` → 0.2 s → `getXYPosition` | XY 박스 가드 → `xy_move(x, y)` → `positions()` | 원본은 XY readback 을 명령값과 비교하지 않는다 |
+| 8 | `aura_on(core, line, pct)` = DiaLamp State 0 → `{LINE}_Intensity` (퍼밀) → `{LINE} 1` → Aura State 1, 각각 readback | `aura_line_on(line, percent)` → `list[Readback]` | 원본은 `verified=False` 여도 계속한다. 엔진은 멈추는 것을 제안 |
+| 9 | `goto_xy(x0, y0)`: 박스 검사 → `setXYPosition` → `waitForDevice` → 0.2 s → `getXYPosition` | XY 박스 가드 → `move_xy(x, y)` (읽은 x, y 를 돌려준다) | 원본은 XY readback 을 명령값과 비교하지 않는다 |
 | 10 | 자동 노출이면 `axis.move_to(min(z_guess, 3200), allow_ascent_um=max(0, z_guess − z) + 0.5)` 후 최대 6 회 `snap` → p99.9 → `setExposure` | `axis.move_to(...)`, `snap()`, `set_exposure()` | 원본은 p99.9 를 출력만 한다 |
 | 11 | 타일마다 `goto_xy(x, y)` | 9번과 같음 | `progress(tile k/n)` |
 | 12 | `sweep_pair`: `axis.sweep(axis.plan(z_ref, hr, step), grab, score=, settle_s=0.1)`. `coarse.peak_interior` 이면 `axis.sweep(axis.plan(coarse.peak_z_um, 12, 2), grab, score=, settle_s=0.2)` | 같음 | `grab` = `snap()`. 원본은 미리보기용으로 `axis.position_um()`, `vollath4` 도 부른다. 엔진은 점마다 `frame_ready` + `progress` |
@@ -349,18 +373,18 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 
 | # | 스크립트 호출 | 엔진 호출 | 비고 |
 |---|---|---|---|
-| 1 | `state(core)` | `nosepiece_read()`, `positions()`, `pfs_read()` | 시작 상태 `s0` |
+| 1 | `state(core)` | `nosepiece()`, `positions()`, `pfs()` | 시작 상태 `s0` |
 | 2 | `s0.nosepiece_state == N` 이면 "already on that objective" 후 종료 | preflight | 아무것도 움직이지 않는다 |
 | 3 | `FocusAxis(core, registry_key(s0.label), allow_motion=True)` | 가드 Z 축 (현재 렌즈 키) | |
 | 4 | `axis.require_pfs_quiet(disable=True)` | 같음 | |
 | 5 | `axis.move_to(0.0)` | 같음 | 후퇴. 내려가는 이동이라 `allow_ascent_um` 이 없다 |
-| 6 | `state(core)` → `pfs_in_range` 가 `"in range"` 이면 거부하고 종료 | `pfs_read()` | Z 는 0 에 남는다 |
-| 7 | `setProperty("Nosepiece", "State", N)`, `waitForDevice("Nosepiece")` | `nosepiece_set(N)` | soft-matter-agents 에서는 거부되는 호출 (`NAMED_REFUSALS` 에 Nosepiece) |
-| 8 | `state(core)` → State 가 N 이 아니면 종료 ("ZDrive left retracted") | `nosepiece_read()` | |
+| 6 | `state(core)` → `pfs_in_range` 가 `"in range"` 이면 거부하고 종료 | `pfs()` | Z 는 0 에 남는다 |
+| 7 | `setProperty("Nosepiece", "State", N)`, `waitForDevice("Nosepiece")` | `set_nosepiece(N)` → `Readback` | soft-matter-agents 에서는 거부되는 호출 (`NAMED_REFUSALS` 에 Nosepiece) |
+| 8 | `state(core)` → State 가 N 이 아니면 종료 ("ZDrive left retracted") | `Readback.verified`, `nosepiece()` | |
 | 9 | `--park` 이면 종료 | | Z 는 0 |
 | 10 | `FocusAxis(core, registry_key(s2.label), allow_motion=True)` | 가드 Z 축 (새 렌즈 키) | |
 | 11 | `axis.move_to(2800.0, allow_ascent_um=2800.5)` | 같음 | **한 번에 2800 µm 상승.** F5 7단계는 이것을 단계 접근으로 바꾼다 |
-| 12 | `state(core)`, `getPixelSizeUm()` 출력 | `nosepiece_read()`, `info().pixel_um` | |
+| 12 | `state(core)`, `getPixelSizeUm()` 출력 | `nosepiece()`, `info().pixel_um` | |
 
 `--return-only`: `FocusAxis(현재 렌즈)` → `require_pfs_quiet(disable=True)` → Z 가 1.0 µm 넘으면 거부 →
 `axis.move_to(2800, allow_ascent_um=2800 − z + 0.5)` → `state`. 렌즈, PFS, 오일 확인을 다시 하지 않는다.
@@ -374,7 +398,7 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 | 엔진 인자 | 기본값 | 비고 |
 |---|---|---|
 | `target_state` | (필수) | Nosepiece State. UI 는 Label 로 고르고 State 로 보낸다 |
-| `escape_dy_um` | 없음 | Y 이탈 거리. PLAN 은 15–20 mm, 방향 미정 (PLAN 10절). **값이 정해지기 전에는 기본값을 두지 않는다.** mock 은 자체 값 |
+| `escape_dy_um` | 없음 | Y 이탈 거리, 부호 있는 값 (부호가 방향). PLAN 은 15–20 mm, 방향은 사용자 확인 뒤 (PLAN v1.2, 10절). **값이 정해지기 전에는 기본값을 두지 않는다.** mock 은 자체 값 |
 | `escape` | True | False 면 3·6 단계를 건너뛴다 (건조 렌즈끼리 바꿀 때) |
 | `approach_target_um` | 2800 | 7단계 단계 접근의 목표. 원본 `RETURN_Z_UM` |
 | `approach_step_um` | 미정 | 7단계 한 걸음. 10절 질문 |
@@ -392,9 +416,9 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 | 확인 | 결과 |
 |---|---|
 | `target_state` 가 현재 State 와 같다 | `preflight_failed("already on that objective")` (원본 2번) |
-| 목표 렌즈가 렌즈 표에 있다 (레지스트리 키, 작동 거리) | 없으면 `preflight_failed`. **40x WI 는 작동 거리 값이 없어 거부한다** (PLAN 10절, soft-matter-agents 과제 026 5절) |
+| 목표 렌즈가 렌즈 표에 있다 (`info().objectives` 의 state 와 `free_wd_um`, 레지스트리 키) | 없거나 `free_wd_um` 이 None 이면 `preflight_failed`. **40x WI 는 작동 거리 값이 없어 거부한다** (PLAN 10절, soft-matter-agents 과제 026 5절) |
 | `escape=True` 인데 `escape_dy_um` 이 없다 | `preflight_failed("escape distance not set")`. 정해질 때까지는 `escape=False` 로만 쓸 수 있다 |
-| 이탈 위치가 재물대 한계 안이다 | 한계는 F2 구성 파일에서. 아직 값이 없으면 `preflight_failed` |
+| 이탈 위치가 재물대 한계 안이다 | 한계는 `info().stage_limits.y_um` (F2 구성 파일에서 채움). None 이면 `preflight_failed` |
 | 실행 중인 다른 작업, 조명 | 다른 작업이 없어야 한다. 조명은 켜져 있으면 1단계에서 끈다 (`all_off()`) |
 | 이전 `objective_change` 가 "복귀 대기" 로 끝났다 | 4.2 의 5항 참고. 새 회전 대신 복귀(6·7)를 먼저 하라고 `preflight_failed` |
 
@@ -402,16 +426,16 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 
 | F5 단계 | 엔진 호출 | 가드 / 확인 | 원본 대응 |
 |---|---|---|---|
-| 1 현재 XY, Z, 렌즈 기록 | `positions()`, `nosepiece_read()`, `pfs_read()` | `started` 시작 상태에 `return_xy`, `z_before`, `objective_before` 저장 | 원본 1번 |
+| 1 현재 XY, Z, 렌즈 기록 | `positions()`, `nosepiece()`, `pfs()` | `started` 시작 상태에 `return_xy`, `z_before`, `objective_before` 저장 | 원본 1번 |
 | (1b) 소등 | `all_off()` | readback | 원본에 없음 |
-| 2 PFS off → Z 후퇴 → PFS Out of Range 확인 | `axis.require_pfs_quiet(disable=True)`, `axis.move_to(0.0)`, `positions()`, `pfs_read()` | Z readback 이 후퇴값 ± 허용 오차인지 확인. `pfs_in_range == "In Range"` 면 중단 (Z 는 0) | 원본 4–6번 |
-| 3 Y 이탈 | `xy_move(x, y + escape_dy_um)`, `positions()` | **큰 XY 이동 가드: Z 후퇴가 readback 으로 확인될 때만.** 이동 직전에 Z 를 다시 읽는다. XY readback 비교 | 원본에 없음 |
-| 4 렌즈 회전, 읽기 확인 | `nosepiece_set(target_state)`, `nosepiece_read()`, 새 렌즈 키로 가드 Z 축 다시 만들기, `info()` | State 가 다르면 중단. Z 는 0, XY 는 이탈 위치에 둔다 | 원본 7–8, 10번 |
-| 5 사용자: 액침액 로딩 → "로딩 완료" | `confirm_required(kind="manual_step", step="load_immersion", immersion=<oil\|water>)` 를 내고 기다린다 | 기다리는 동안 이 작업은 Z, XY, Nosepiece 에 명령을 보내지 않는다. 응답을 `manual_step` 기록으로 남긴다 | 원본 `--park` 후 사람이 오일 |
+| 2 PFS off → Z 후퇴 → PFS Out of Range 확인 | `axis.require_pfs_quiet(disable=True)`, `axis.move_to(0.0)`, `positions()`, `pfs()` | Z readback 이 후퇴값 ± 허용 오차인지 확인. `pfs().out_of_range` 가 아니면 (In Range 또는 읽기 실패) 중단 (Z 는 0) | 원본 4–6번 |
+| 3 Y 이탈 | `move_xy(x, y + escape_dy_um)` (읽은 x, y) | **큰 XY 이동 가드: Z 후퇴가 readback 으로 확인될 때만.** 이동 직전에 Z 를 다시 읽는다. XY readback 비교 | 원본에 없음 |
+| 4 렌즈 회전, 읽기 확인 | `set_nosepiece(target_state)` → `Readback`, `nosepiece()`, 새 렌즈 키로 가드 Z 축 다시 만들기, `info()` | `verified` 가 거짓이거나 label 이 목표 렌즈와 다르면 중단. Z 는 0, XY 는 이탈 위치에 둔다 | 원본 7–8, 10번 |
+| 5 사용자: 액침액 로딩 → "로딩 완료" | `confirm_required` (`data`: `key="load_immersion"`, `immersion=<oil\|water>`. 종류 `manual_step` 은 T-011) 를 내고 기다린다 | 기다리는 동안 이 작업은 Z, XY, Nosepiece 에 명령을 보내지 않는다. 응답을 `manual_step` 기록으로 남긴다 | 원본 `--park` 후 사람이 오일 |
 | (5b) `park_only` 면 여기서 `finished(state="awaiting_return")` | | | 원본 `--park` 종료 |
-| 6 XY 를 1 의 위치로 복귀 | `positions()` (Z 다시 읽기), `xy_move(*return_xy)`, `positions()` | 3단계와 같은 가드. XY readback 비교 | 원본에 없음 |
+| 6 XY 를 1 의 위치로 복귀 | `positions()` (Z 다시 읽기), `move_xy(*return_xy)` (읽은 x, y) | 3단계와 같은 가드. XY readback 비교 | 원본에 없음 |
 | 7 Z 단계 접근 | `axis.approach(approach_target_um, approach_step_um)` | 걸음마다 readback 과 새 렌즈의 상한 비교. 목표로 점프하지 않는다 | 원본 11번 (`move_to(2800)` 한 번) 을 대체 |
-| 끝 | `nosepiece_read()`, `positions()`, `info().pixel_um` | | 원본 12번 |
+| 끝 | `nosepiece()`, `positions()`, `info().pixel_um` | | 원본 12번 |
 
 - 7단계의 목표는 "목적지가 아니라 목표" 다 (soft-matter-agents 과제 026 2절 6번). 접근은 후퇴 위치에서 시작하고
   걸음마다 비교가 살아 있어야 한다. 무엇과 비교하는지는 지금은 Z 창 상한과 렌즈별 상한이다. F3 의 커버슬립 두께와
@@ -492,15 +516,15 @@ Nothing moves or turns on."
 
 | # | 읽는 것 | 엔진 호출 | 원본 근거 |
 |---|---|---|---|
-| 1 | config 경로, sha256, 로드 중 변경 여부, AutoShutter readback | `info()` + (가칭) `config_record()` | soft-matter-agents `load_configuration` 반환값 |
-| 2 | 로드된 장치 목록, 장치별 종류·라이브러리·설명 | (가칭) `describe_devices()` → `getLoadedDevices`, `getDeviceType`, `getDeviceLibrary`, `getDeviceDescription` | 없음. T-002 백엔드 목록에 추가 필요 |
+| 1 | config 경로, sha256, 로드 중 변경 여부, AutoShutter readback | `info()` + `config_record()` (T-015) | soft-matter-agents `load_configuration` 반환값 |
+| 2 | 로드된 장치 목록, 장치별 종류·라이브러리·설명 | `describe_devices(include_properties)` (T-015) → `getLoadedDevices`, `getDeviceType`, `getDeviceLibrary`, `getDeviceDescription` | 없음. T-015 가 백엔드에 추가 |
 | 3 | 장치별 속성: 값, 읽기 전용 여부, 허용 값, 한계, 읽기 성공 여부 | 같은 메서드 → `getDevicePropertyNames`, `getProperty`, `isPropertyReadOnly`, `getAllowedPropertyValues`, `getPropertyLowerLimit/UpperLimit` | 없음 |
-| 4 | 대물렌즈 목록: State, Label, 픽셀 크기 | `nosepiece_read()` + (가칭) `nosepiece_labels()` → `getStateLabels("Nosepiece")`, 픽셀 크기 표 | `change_objective.state`, `open_core` 의 `pixel_um` |
+| 4 | 대물렌즈 목록: State, Label, 픽셀 크기 | `nosepiece()`, `info().objectives` (state, label, pixel_um) + `nosepiece_labels()` (T-015) → `getStateLabels("Nosepiece")` | `change_objective.state`, `open_core` 의 `pixel_um` |
 | 5 | 카메라: 이름, 센서, ROI, 비트 깊이, 천장, PixelType | `info()` | `open_core`, `getImageBitDepth` |
 | 6 | 위치: XY, Z | `positions()` | `mm_grab.positions` |
-| 7 | PFS: enabled, locked, in range | `pfs_read()` | `change_objective.state` |
-| 8 | 조명 상태: Aura State 와 라인, DiaLamp State | `read_property(...)` | 없음 |
-| 9 | 피에조: 연결 여부, x/y/z µm | (가칭) `piezo_read()` → `PiezoReader(port).read()` 후 `close()` | `mm_grab.PiezoReader`. `read()` 는 쓰지 않는다. 보안 수준 변경은 `move_z` 에서만 일어나므로 탐지에서는 생기지 않는다 |
+| 7 | PFS: enabled, locked, in range | `pfs()` | `change_objective.state` |
+| 8 | 조명 상태: Aura State 와 라인, DiaLamp State | `light_state()`, 라인은 `read_property("Aura", ...)` | 없음 |
+| 9 | 피에조: 연결 여부, x/y/z µm | `piezo_read(port)` (T-015) → `PiezoReader(port).read()` 후 `close()` | `mm_grab.PiezoReader`. `read()` 는 쓰지 않는다. 보안 수준 변경은 `move_z` 에서만 일어나므로 탐지에서는 생기지 않는다 |
 | 10 | 렌즈 표와 대조: 레지스트리 키, 작동 거리, 액침 | 순수 함수 | 렌즈 표는 탐지가 아니라 사람이 넣은 값 (10절 Q8) |
 | 11 | 게이트 판정 | `gates.py` (WP-G) | PLAN F2.2 |
 
@@ -638,7 +662,7 @@ F4 는 작업 하나가 아니라 셋으로 나눈다. 스캔만 모션이 길�
 |---|---|---|
 | 1 | `positions()` | |
 | 2 | 큰 이동이면: Z 가 후퇴 상태가 아니면 `axis.move_to(z_safe)` 로 먼저 후퇴하고 `positions()` 로 확인 | **큰 XY 이동은 Z 후퇴가 readback 으로 확인될 때만** |
-| 3 | `xy_move(x, y)`, `positions()` | XY 박스, XY readback 비교 |
+| 3 | `move_xy(x, y)` (읽은 x, y) | XY 박스, XY readback 비교 |
 | 4 | Z 는 후퇴 상태로 둔다. 다시 올리는 것은 사용자가 고르는 다음 작업 (`scan_4x` 의 한 타일 스윕, `objective_change` 의 접근, `focus_100x`) | 목표로 점프하지 않는다 |
 
 결정이 필요한 값 (매니저/T-002):
@@ -701,9 +725,9 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 | # | 스크립트 호출 | 엔진 호출 | 비고 |
 |---|---|---|---|
 | 1 | `open_core(exposure, 0)` | `set_exposure()`, `info()` | |
-| 2 | `getProperty("Nosepiece", "Label")` | `nosepiece_read()` | preflight |
+| 2 | `getProperty("Nosepiece", "Label")` | `nosepiece()` | preflight |
 | 3 | `FocusAxis(core, "100x-Oil", allow_motion=True)` | 가드 Z 축 | |
-| 4 | `ceiling = 2 ** getImageBitDepth() − 1` | `info().bit_depth` | 포화 판정용 |
+| 4 | `ceiling = 2 ** getImageBitDepth() − 1` | `info().ceiling_adu` | 포화 판정용 |
 | 5 | `axis.require_pfs_quiet(disable=True)` | 같음 | |
 | 6 | `aura_on(core, line, pct)` | `aura_line_on()` | 가드 종료 컨텍스트 안에서 |
 | 7 | `axis.sweep(axis.plan(centre, half, step), grab, score=, settle_s=0.1)` | 같음 | `score`: `sharp` (peak 또는 vollath), `vollath`, `mean`, `max`, `sat` |
@@ -789,14 +813,14 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 | # | 원본 호출 | 엔진 호출 | 비고 |
 |---|---|---|---|
 | 1 | `set_and_read` 로 Aura State 0, DiaLamp State 1 | 종료 컨텍스트 진입 → `aura_off()`, `lamp_on()` | |
-| 2 | `startContinuousSequenceAcquisition`, 틱마다 `popNextImageAndMD` → `tracker.feed(img)` | (가칭) 프레임 스트림. T-002 의 `snap()` 만으로도 되지만 라이브 뷰와 같이 쓰려면 연속 취득이 필요하다 | `feed` 는 마지막 이동 후 settle 시간이 지난 프레임만 쓴다 |
-| 3 | 보정: `getXYPosition` → `setRelativeXYPosition(+200, 0)` → 프레임 → 위상 상관 → `(−200, 0)` → y 도 같게 | `positions()`, `xy_move` 의 상대 이동 (가칭 `xy_move_rel`) | 피크 선명도 < 8 이면 "too little structure" 로 멈춤. `um_per_px / pixel_um` 이 0.7–1.4 밖이면 멈춤 |
-| 4 | 추적 루프: `find_edge` → 원 피팅 (`robust_circle`, 지름 고정 `fixed_radius_centre`) → 한 걸음 `setRelativeXYPosition` → `waitForDevice` | 순수 함수 (`edge_track` 의 영상 함수들) + `xy_move_rel` + `positions()` | XY 만. Z 는 움직이지 않는다 |
+| 2 | `startContinuousSequenceAcquisition`, 틱마다 `popNextImageAndMD` → `tracker.feed(img)` | `start_stream(interval_ms)`, `next_frame(timeout_s)`, `stop_stream()` (T-015). 스트림 중에는 `snap()` 을 쓸 수 없다 (`StreamActive`). T-002 의 `snap()` 만으로도 되지만 라이브 뷰와 같이 쓰려면 연속 취득이 필요하다 | `feed` 는 마지막 이동 후 settle 시간이 지난 프레임만 쓴다 |
+| 3 | 보정: `getXYPosition` → `setRelativeXYPosition(+200, 0)` → 프레임 → 위상 상관 → `(−200, 0)` → y 도 같게 | `positions()`, `move_xy_rel(dx_um, dy_um)` (T-015) | 피크 선명도 < 8 이면 "too little structure" 로 멈춤. `um_per_px / pixel_um` 이 0.7–1.4 밖이면 멈춤 |
+| 4 | 추적 루프: `find_edge` → 원 피팅 (`robust_circle`, 지름 고정 `fixed_radius_centre`) → 한 걸음 `setRelativeXYPosition` → `waitForDevice` | 순수 함수 (`edge_track` 의 영상 함수들) + `move_xy_rel` (T-015) + `positions()` | XY 만. Z 는 움직이지 않는다 |
 | 5 | 멈춤 조건: 시작점에서 7 mm 넘음, 경로·시간 한도, 경계를 잃음 (원이 있으면 약 2 mm 까지 원을 따라 coast, 없으면 3 프레임), 한 바퀴 (경로 > 3 mm 이고 처음 본 점으로 돌아옴), 키 (`t`, `Esc`), 예외 | 같은 조건. 키는 `abort` 명령 | |
 | 6 | `edge_point` (250 µm 마다) → `map.mark_boundary(Ti2 + piezo)` | `progress(edge_point)` + 샘플 `boundary` 에 추가 | 좌표는 Ti2 + 피에조 합 |
 | 7 | `cal_result` → `sample.calibration = {um_per_px, angle_deg, M_px_per_um, objective}` | 샘플 `stage_camera_calibration` | `scan_4x` 와 `plot_scan` 이 읽는다 |
 | 8 | 라이브 뷰가 10 초마다 `Sample.save()` → `hole` 피팅 (`XYMap.circle`) | 끝날 때 `hole` 피팅을 `sample.json` 에 쓰고 `fitted_at` 을 넣는다 | 피팅은 추적기 내부 원이 아니라 경계점 전체의 원 |
-| 9 | 실행 중 속도 변경 `set_speed` | (가칭) 실행 중 인자 변경 명령. T-002 `Command` 에는 시작, 중단, 확인만 있다 | T-002 에 알릴 것 |
+| 9 | 실행 중 속도 변경 `set_speed` | 실행 중 인자 변경 명령 `update` (T-011 이 `events.py` 에 넣는다). T-002-1 의 `COMMAND_KINDS` 는 `start`, `abort`, `confirm`, `lights_off` 뿐이다 | T-011 에 넘김 |
 
 이동 한계: 한 걸음은 최대 200 µm, 보정은 200 µm. 이동 범위는 "시작점 7 mm 원" 이 지킨다. `goto_xy` 의 "큰 이동"
 문턱 (6.3) 보다 작아서 Z 후퇴 조건에 걸리지 않는다.
@@ -863,7 +887,7 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 판단: **M1–M3 범위 밖이다** (PLAN v0.2 마일스톤으로는 M5 "초점 판정" 의 후보).
 - DINO 점수가 모션 명령의 입력이 된다. PLAN 6절 2·3항 (모델은 판정이지 Z 가 아님) 과 맞추려면, 서보 대신 T-003 판정
   (`step_up` / `step_down`) 을 고전 지표가 확인한 뒤에만 한 걸음 가는 방식으로 다시 설계해야 한다.
-- 피에조 쓰기는 컨트롤러 보안 수준을 바꾼다. 백엔드 프로토콜 (T-002) 의 피에조 쓰기와 별도 게이트가 먼저 있어야 한다.
+- 피에조 쓰기는 컨트롤러 보안 수준을 바꾼다. T-002 프로토콜에는 피에조 쓰기가 없다 (읽기는 `positions().piezo_um`). 피에조 쓰기 메서드와 별도 게이트가 먼저 있어야 한다.
 - `AutoFocusZ` 의 Vollath 부분만 떼면 고전 미세 초점으로 쓸 수 있다. 이 부분은 `focus_100x` 의 고운 스윕과 겹친다.
 
 ### 9.3 이 문서에 없는 것
