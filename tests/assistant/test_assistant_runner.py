@@ -336,13 +336,14 @@ def test_config_from_env():
 
 def test_status_fake():
     s = connection_status(AssistantConfig())
-    assert s["provider"] == "fake" and s["state"] == "fake" and s["connected"] is False
-    assert s["data_policy"] == "text"
+    assert s == {"provider": "fake", "connected": False, "data_stage": "text"}
+    s = connection_status(AssistantConfig(data_policy="prompt_only"))
+    assert s["data_stage"] == "prompt_only"
 
 
 def test_status_without_credentials_is_not_connected(tmp_path):
     s = connection_status(AssistantConfig(provider="anthropic"), env={}, home=tmp_path)
-    assert s["state"] == "not_connected" and s["connected"] is False
+    assert s == {"provider": "anthropic", "connected": False, "data_stage": "text"}
     ok, why = credentials({}, home=tmp_path)
     assert not ok and "no API key" in why
 

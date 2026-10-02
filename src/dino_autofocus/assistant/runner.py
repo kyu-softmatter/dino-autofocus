@@ -32,7 +32,6 @@ from typing import Any
 from .providers import PROVIDERS, Provider, TurnRequest, add_usage, make_provider
 from .records import GRADE_MODEL, RecordLog, model_graded
 from .tools import (
-    DATA_POLICIES,
     Allows,
     ProposalBook,
     Sources,
@@ -118,25 +117,20 @@ class AssistantConfig:
 def connection_status(
     config: AssistantConfig, env: Mapping[str, str] | None = None, home: Path | None = None
 ) -> dict:
-    """For `GET /api/assistant/status`: provider, whether Claude is reachable, and the data
-    policy now in force. Says where credentials come from, never what they are."""
-    base = {
-        "provider": config.provider,
-        "model": config.model,
-        "data_policy": config.data_policy,
-        "data_policies": list(DATA_POLICIES),
-    }
-    if config.provider == "fake":
-        return {
-            **base,
-            "connected": False,
-            "state": "fake",
-            "reason": "fake provider: answers are scripted, no model is called",
-        }
-    from .providers.anthropic import connection
+    """`GET /api/assistant/status`, exactly `{provider, connected, data_stage}`: the web shell
+    (T-010) reads these names. `connected` is true only for the anthropic provider with the
+    package and credentials on this server (the fake provider calls no model);
+    `data_stage` is the D7 policy in force. Never contains a credential."""
+    connected = False
+    if config.provider == "anthropic":
+        from .providers.anthropic import connection
 
-    ok, why = connection(env, home)
-    return {**base, "connected": ok, "state": "connected" if ok else "not_connected", "reason": why}
+        connected, _why = connection(env, home)
+    return {
+        "provider": config.provider,
+        "connected": bool(connected),
+        "data_stage": config.data_policy,
+    }
 
 
 def check_context(context: Mapping[str, Any] | None) -> dict:
