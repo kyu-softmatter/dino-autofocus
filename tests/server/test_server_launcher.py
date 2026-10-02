@@ -10,6 +10,7 @@ import pytest
 from dino_autofocus.engine.backends.mock import MockBackend
 from dino_autofocus.engine.operations import sample_ops
 from dino_autofocus.engine.runner import OPERATIONS, Runner
+from dino_autofocus.engine.sample import SAMPLES_ROOT
 from dino_autofocus.records.layout import DEFAULT_DATA_ROOT, DEFAULT_RECORDS_ROOT
 from dino_autofocus.server import __main__ as launcher
 
@@ -78,13 +79,48 @@ def test_simulated_backends_default_to_the_mock_folders():
     assert all(m != r for m, r in zip(mock, real, strict=True))
 
 
-def test_real_records_root_refused_for_a_simulated_backend(tmp_path):
-    with pytest.raises(SystemExit, match="real records folder"):
-        launcher.record_roots(DEFAULT_RECORDS_ROOT, bench=False)
+REAL_SAMPLES = Path(SAMPLES_ROOT)
+
+
+@pytest.mark.parametrize(("root", "real"), [
+    (DEFAULT_RECORDS_ROOT, "records"),  # the real records folder itself
+    (DEFAULT_RECORDS_ROOT / "sub", "records"),  # inside it
+    (Path(str(DEFAULT_RECORDS_ROOT).upper()) / "x", "records"),  # Windows: any case
+    (DEFAULT_DATA_ROOT, "data"),  # the real data folder as the records root
+    (DEFAULT_DATA_ROOT / "x", "data"),
+    (REAL_SAMPLES / "x", "samples"),
+    (DEFAULT_RECORDS_ROOT.parent, "records"),  # a folder that holds the real ones
+], ids=["records", "inside-records", "case", "data", "inside-data", "inside-samples",
+        "parent"])
+def test_simulated_backend_never_writes_into_the_real_tree(root, real):
+    with pytest.raises(SystemExit, match=f"overlaps the real {real} folder"):
+        launcher.record_roots(root, bench=False)
+
+
+def test_real_folders_stay_for_the_bench_and_others_are_fine(tmp_path):
     assert launcher.record_roots(DEFAULT_RECORDS_ROOT, bench=True)[0] == DEFAULT_RECORDS_ROOT
+    assert launcher.record_roots(DEFAULT_RECORDS_ROOT / "sub", bench=True)[0] == \
+        DEFAULT_RECORDS_ROOT / "sub"
     other = tmp_path / "rec"
     assert launcher.record_roots(other, bench=False) == (
         other, tmp_path / "rec-data", tmp_path / "rec-samples")
+    beside = DEFAULT_RECORDS_ROOT.with_name("records-elsewhere")  # a sibling, not inside
+    assert launcher.record_roots(beside, bench=False)[0] == beside
+
+
+def test_failed_start_up_stops_the_runner_before_closing_the_backend(tmp_path, monkeypatch):
+    order = []
+    monkeypatch.setattr(Runner, "shutdown",
+                        lambda self, reason="", timeout=15.0: order.append("runner"))
+    monkeypatch.setattr(MockBackend, "close", lambda self: order.append("backend"))
+
+    def broken_app(*a, **kw):
+        raise RuntimeError("create_app broke")
+
+    monkeypatch.setattr(launcher, "create_app", broken_app)
+    with pytest.raises(RuntimeError, match="create_app broke"):
+        launcher.build(args_for(tmp_path, "--records-root", str(tmp_path / "records")))
+    assert order == ["runner", "backend"]
 
 
 def test_mock_build_refuses_the_real_records_root(tmp_path):

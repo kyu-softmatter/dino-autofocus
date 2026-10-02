@@ -211,24 +211,45 @@ def record_roots(records_root: Path | None, bench: bool) -> tuple[Path, Path, Pa
 
     real = (DEFAULT_RECORDS_ROOT, DEFAULT_DATA_ROOT, Path(SAMPLES_ROOT))
     if records_root is None:
-        if bench:
-            return real
-        return tuple(r.with_name(r.name + MOCK_SUFFIX) for r in real)  # type: ignore[return-value]
-    root = Path(records_root)
-    if not bench and _same_path(root, DEFAULT_RECORDS_ROOT):
-        raise BackendUnavailable(
-            f"--records-root {root} is the real records folder; a simulated backend never "
-            f"writes there. Leave --records-root out (it defaults to "
-            f"{DEFAULT_RECORDS_ROOT.with_name(DEFAULT_RECORDS_ROOT.name + MOCK_SUFFIX)}) or "
-            f"pick another folder.")
-    return root, root.with_name(root.name + "-data"), root.with_name(root.name + "-samples")
+        chosen = real if bench else tuple(r.with_name(r.name + MOCK_SUFFIX) for r in real)
+    else:
+        root = Path(records_root)
+        chosen = (root, root.with_name(root.name + "-data"), root.with_name(root.name + "-samples"))
+    if not bench:
+        _refuse_real_roots(chosen, real)
+    return chosen  # type: ignore[return-value]
 
 
-def _same_path(a: Path, b: Path) -> bool:
+def _refuse_real_roots(chosen: tuple[Path, ...], real: tuple[Path, ...]) -> None:
+    """A simulated backend writes nowhere in the real tree: no chosen folder may be a real
+    folder, lie inside one, or hold one (director, T-009i; review 검토보조4)."""
+    names = ("records", "data", "samples")
+    for what, path in zip(names, chosen, strict=True):
+        for real_name, real_root in zip(names, real, strict=True):
+            if _overlaps(path, real_root):
+                raise BackendUnavailable(
+                    f"the {what} folder {path} overlaps the real {real_name} folder "
+                    f"{real_root}; a simulated backend never writes into the real records, "
+                    f"data or samples. Leave --records-root out (simulated runs default to "
+                    f"the *{MOCK_SUFFIX} folders) or pick a folder outside them.")
+
+
+def _norm(p: Path) -> str:
     try:
-        return os.path.normcase(a.resolve()) == os.path.normcase(b.resolve())
+        p = p.resolve()
     except OSError:
-        return os.path.normcase(str(a)) == os.path.normcase(str(b))
+        p = p.absolute()
+    return os.path.normcase(os.path.normpath(str(p)))
+
+
+def _overlaps(a: Path, b: Path) -> bool:
+    """`a` and `b` are the same folder, or one lies inside the other."""
+    x, y = _norm(a), _norm(b)
+    try:
+        common = os.path.commonpath([x, y])
+    except ValueError:  # different drives
+        return False
+    return common in (x, y)
 
 
 class Built:
@@ -273,6 +294,7 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
 
     backend, info = open_backend(args.backend, mm_config=args.mm_config,
                                  replay_source=args.replay_source)
+    runner = None
     try:
         bench = is_bench(info)
         records, data, samples = roots = record_roots(args.records_root, bench)
@@ -292,6 +314,11 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
                          samples_root=samples, hardware=hardware, sessions=sessions,
                          engine_name=args.backend, **common)
     except BaseException:
+        if runner is not None:  # started: lights off and its threads stopped first
+            try:
+                runner.shutdown("server start-up failed")
+            except Exception:
+                log.exception("stopping the engine after a failed start-up failed")
         backend.close()
         raise
     log.info("engine: %s (bench=%s); records %s, data %s, samples %s",
