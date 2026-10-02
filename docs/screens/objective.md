@@ -75,6 +75,22 @@ Returns the engine's `planned` payload for `objective_change` without starting i
 `above_4x_focus: bool` flag for a centre the operator typed. The screen never raises the range past the
 ceiling (ui-spec 5.1).
 
+### Implemented (stage B, `server/api/objective.py`)
+
+- All four routes are `GET` and read the engine only: `snapshot()` (positions, the last
+  `status` summary for the lens and PFS, `backend_info.objectives`, `awaiting_return`,
+  `running`) and `plan(cmd)` (T-029). Lens and PFS are `null` until a `status` run has read
+  them (`read_at`).
+- `/lenses` uses the engine's `objective_options()` (T-028) when it exists; until then the same
+  facts from `guards.OBJECTIVE_LIMITS` / `FREE_WD_UM`, with the preflight's reason texts.
+- `/plan` keeps the engine's escape block and adds `note`: when the engine could not decide yet
+  (`allowed: null`, "checked at preflight: ..."), the step-out stays allowed and the text is a
+  muted note, not a refusal. Steps that do not run in the chosen mode are left out.
+- `/focus100x/defaults` has no 4x focus plane yet (WP-C focus port), so `centre_um` is `null`
+  unless the operator types one; the ceiling is `min(3200, centre + 0.4 × 130)`.
+- No engine `plan` gives 503 `no_plan`; an engine refusal of the plan gives 409 `plan_refused`.
+  Refusals are `{code, message}` with `X-DinoAF-Refusal`.
+
 ## 2. Commands (`POST /api/commands`, T-009)
 
 Disabled reasons for these buttons come from the shared `GET /api/permissions?ops=objective_change,focus_100x,confirm,abort` (T-009b, backed by T-011 `check()`); this router never computes role, control, session or remote rules. If `/api/permissions` cannot be read, every control here (including "Loading done") is disabled with "Permission check unavailable"; progress stays visible. Per-lens reasons stay with `objective_options()` (T-028), and the server keeps `"Loading done"` local only. Shape is `engine.events.Command`. `origin="human"`; `user_id` and `session_id` are filled by the server.

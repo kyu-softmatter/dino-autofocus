@@ -47,6 +47,8 @@ export interface ObjectivePlan {
     allowed: boolean;
     /** engine refusal (guards.step_out_target, the stage Y limit), shown as is */
     reason: string | null;
+    /** e.g. "checked at preflight: position not known yet" when the plan could not decide */
+    note?: string | null;
     sign: "+Y" | "-Y";
     dy_um: number;
     /** e.g. "unmeasured provisional" */

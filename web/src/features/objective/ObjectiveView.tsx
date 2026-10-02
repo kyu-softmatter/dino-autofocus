@@ -50,7 +50,7 @@ function Refused({ text }: { text: string | null }) {
 }
 
 function command(kind: CommandIn["kind"], op = "", op_id = "", args: Args = {}): CommandIn {
-  return { kind, op, op_id, args, origin: "human" };
+  return { kind, op, op_id, args }; // the server sets origin (human) and the user
 }
 
 const startChange = (args: Args) => command("start", "objective_change", "", args);
@@ -291,6 +291,7 @@ function ChangePanel({
           </label>{" "}
           <span className="muted">({plan.escape.mark})</span>
           {refusal !== null && <span className="reason" data-testid="escape-reason"> {refusal}</span>}
+          {refusal === null && plan.escape.note && <span className="muted"> {plan.escape.note}</span>}
         </p>
       )}
       {plan && (
