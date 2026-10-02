@@ -16,6 +16,7 @@ import {
   readGates,
   readPermissions,
   readProfile,
+  lightGateKey,
   readStatus,
   SCREEN_OPS,
   type StatusResultOut,
@@ -154,12 +155,15 @@ export default function HardwareScreen() {
     [client],
   );
 
-  const blocked = (op: string) => blockedBy(readOnly, permissions, op, gates.find((g) => g.op === op));
+  // the permission is per op; the gate row may be per argument (light_set:aura, T-028)
+  const blocked = (op: string, gateKey = op) =>
+    blockedBy(readOnly, permissions, op, gates.find((g) => g.op === gateKey));
   const runningOp = engine.running[0]?.op || null;
   const scanBlocked = blocked("hardware_scan");
   const confirmBlocked = blocked("hardware_confirm");
   const statusBlocked = blocked("status");
-  const lightBlocked = blocked("light_set");
+  const brightfieldBlocked = blocked("light_set", lightGateKey("brightfield"));
+  const auraBlocked = blocked("light_set", lightGateKey("aura"));
   const offBlocked = blockedBy(readOnly, permissions, "lights_off");
   const start = (op: string, args: Record<string, unknown> = {}): CommandIn =>
     ({ kind: "start", op, op_id: "", args });
@@ -192,7 +196,7 @@ export default function HardwareScreen() {
         <CurrentStatePanel status={status} zUm={engine.positions?.z_um} blocked={statusBlocked}
                            onRun={() => send("status", start("status"))} />
         <LightsPanel lights={engine.lights} records={lightEvent.records} lightsT={lightEvent.t}
-                     setBlocked={lightBlocked} offBlocked={offBlocked} running={runningOp}
+                     brightfieldBlocked={brightfieldBlocked} auraBlocked={auraBlocked} offBlocked={offBlocked} running={runningOp}
                      onBrightfield={() => send("lights", start("light_set", { mode: "brightfield" }))}
                      onAura={(line, percent) => send("lights", start("light_set", { mode: "aura", line, percent }))}
                      onOff={() => send("lights", { kind: "lights_off", op: "", op_id: "" })} />

@@ -16,21 +16,28 @@ they read the last profile and gate verdict that the engine already holds.
 
 | Path | Response model | Body |
 |---|---|---|
-| `/api/hardware/profile` | `HardwareProfileOut` | `{"profile": <normalised profile> \| null, "path": str \| null, "sha256": str \| null, "error": str \| null}`. `null` = never scanned; the screen shows `"Not scanned yet"`. `sha256` is taken over the canonical JSON the engine reports. `error` is set when the engine could not read its hardware state |
-| `/api/hardware/gates` | `list[GateRow]` | One row per gated operation, off rows first, then by `op` |
-| `/api/hardware/gates/{op}` | `GateRow` | 404 `ApiError` for an unknown `op` |
+| `/api/hardware/profile` | `HardwareProfileOut` | `{"profile": <normalised profile> \| null, "path": str \| null, "sha256": str \| null, "previous": {sha256, detected_at, changed: [{key, before, after}]} \| null, "error": str \| null}`. `null` = never scanned; the screen shows `"Not scanned yet"`. `sha256` and `previous` are the engine's (T-028 `ProfileStore`). `error` is set when the engine could not read its hardware state |
+| `/api/hardware/gates` | `list[GateRow]` | One row per gate key, off rows first, then by key. `light_set` has one row per mode: `light_set:brightfield`, `light_set:aura`, `light_set:off` |
+| `/api/hardware/gates/{op}` | `GateRow` | By gate key. 404 `{code: "unknown_gate"}` for an unknown key (plain `light_set` included) |
 | `/api/hardware/status` | `StatusResultOut` | Last `finished(status)`: `{"op_id", "t", "user_id", "summary"}` or `null` if `status` has not run since the server started |
 
-The router normalises the engine's profile into the shape the screen draws. That shape is in
-`web/src/features/hardware/api.ts` (temporary until gen:api), and stage B's pydantic models match it:
-`devices` is a list of `{label, role, type, library, present, read_back, write_verified, note}`,
-`objectives` is a list of rows, `human_confirmed` maps item → `{value, by, at}`, and `previous_sha256` plus
-`changed` drive the diff (G9). Fields the engine does not report yet are left out, and the screen shows
-`"not reported"`.
+Source: `snapshot()["hardware"]`, which is T-028 `operations/hardware_scan.HardwareState` (55d88c2):
+`{profile, profile_path, sha256, previous, gates, objective_options}`, plus the runner's `last_status` and
+`error`. `objective_options` is for the objective screen (T-104) and is not served here.
 
-`GateRow` = `{op, enabled, reasons: list[str], requires: {devices, objectives, confirmed}}`. It joins
-`gates.Gate` (the requirement) with `gates.GateResult` (the verdict). The router copies the engine's
-verdict and never evaluates a gate itself (F2.2, PLAN 6절 2항).
+The router reshapes `asdict(engine.gates.HardwareProfile)` into the shape the screen draws. That shape is
+in `web/src/features/hardware/api.ts` (temporary until gen:api), and the router's pydantic models match it:
+- `backend_kind`, `host`, `bench`, `objective`, `config`, `notes` and `errors` are copied.
+- `devices` is the profile's `device_list` (properties left out), followed by every role in `devices` that
+  no loaded device fills. A missing role shows as a problem row.
+- `objectives` is `objective_rows` (falling back to the label list).
+- `human_confirmed` is `confirmed` (`{value, by, at}`).
+Fields the engine does not report stay null, and the screen shows `"not reported"`.
+
+`GateRow` = `{op, enabled, reasons: list[str], requires: {devices, objectives, confirmed, checks, arg}}`,
+copied from T-028 `gates.gate_rows`. `op` is the gate key, and anything but `enabled: true` is off. The router
+never evaluates a gate itself (F2.2, PLAN 6절 2항). The screen takes the permission per op (`light_set`) and
+the gate per key (`light_set:brightfield` for "Brightfield on", `light_set:aura` for the Aura button).
 
 Light state has no endpoint of its own. It comes from `/api/state` when the screen connects and from
 `light_changed` after that (ui-spec 5.2).
@@ -85,7 +92,7 @@ role, control, session or remote rules itself.
 
 | Panel | Fields | Engine source | State on main now |
 |---|---|---|---|
-| Detection summary | `detected_at`, `backend`, `host`, `config.{path, sha256, changed_during_load, startup_preset_applied}`, profile sha256, diff against the previous profile | `hardware_scan` writes `hardware_profile.json` (ops-spec 5) | Skeleton has `backend_kind`, `detected_at` only (G3) |
+| Detection summary | `detected_at`, `backend_kind`, `bench`, `host`, `config.{path, sha256, changed_during_load, startup_preset_applied}`, profile sha256, `previous.changed` keys | `hardware_scan` writes `hardware_profile.json` (ops-spec 5) | T-028 (in review) has all of these |
 | Devices | per device: `label`, `type`, `library`, `present`, `read_back`, `write_verified`, `note`; problem rows first | Backend `describe_devices()` (T-015) via `hardware_scan` | Skeleton `DeviceStatus{present, readable, label, note}` keyed by role (G3) |
 | Objectives | `state`, `label`, `magnification`, `na`, `immersion`, `working_distance_um` (`"not set"` if missing), `pixel_um` | `nosepiece_labels()` (T-015) + lens table | Skeleton: list of labels only. Lens table owner open (Q8, G4) |
 | Camera / piezo | `camera.{name, sensor, roi, bit_depth, ceiling_adu, pixel_type}`, `piezo.{port, connected, x_um, y_um, z_um, error}` | `info()`, `piezo_read()` (T-015) | Skeleton: `camera_bit_depth` only (G3) |
@@ -102,10 +109,10 @@ Where each gap went (manager, main 176b4c3):
 |---|---|
 | G1 | Confirmed: `lights_off` and `abort` are command kinds. ui-spec is corrected by its author |
 | G2, G3, G4, G5 | Go to future WP-G / WP-C cards (`light_set` op, profile fields, lens table, confirmed values). Stage B shows `"not reported"` for missing fields |
-| G6 | T-011: `snapshot()["hardware"] = {profile, profile_path, gates, last_status}` |
+| G6 | T-011 and T-028: `snapshot()["hardware"] = {profile, profile_path, sha256, previous, gates, objective_options, last_status}` |
 | G7 | T-011: one table op → (action class, needs control token, needs open session), read by T-009 |
 | G8 | D2, confirmed by the director (final): a remote client may send `abort` only, and remote `lights_off` is refused. Locally, anyone logged in may send `abort` and `lights_off` |
-| G9 | Open (previous-profile diff). The panel shows `"no previous profile"` |
+| G9 | T-028 `ProfileStore.previous`: the panel lists `previous.changed` keys, or `"no previous profile"` |
 | G10 | Form and tests default to `piezo_port: ""`. Tests never touch COM ports |
 
 - **G1** `lights_off` is a command kind in `events.py`; ui-spec 4.0/4.2 send it as `start("lights_off")`.

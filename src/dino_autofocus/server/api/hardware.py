@@ -2,21 +2,19 @@
 
 Read only. Scans, confirmations, status and lights are engine commands and go through
 `POST /api/commands`. Everything here comes from the engine's snapshot
-(`snapshot()["hardware"] = {profile, profile_path, gates, last_status, error}`, T-011). The
+(`snapshot()["hardware"]`: T-028 `HardwareState` {profile, profile_path, sha256, previous,
+gates, objective_options} plus the runner's last_status and error, T-011). The
 router reshapes it for the screen and never evaluates a gate or a permission itself (F2.2,
 PLAN.md 6 rule 2). Login and remote rules are the app's middleware (server/api/__init__.py).
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from ...engine import gates as engine_gates
 from . import Engine, Refusal
 
 router = APIRouter()
@@ -29,6 +27,7 @@ class DeviceRow(BaseModel):
     role: str | None = None
     type: str | None = None
     library: str | None = None
+    description: str | None = None
     present: bool
     read_back: bool | None = None  # a read of its state succeeded and was checked
     write_verified: bool | None = None  # None: no write tested yet (operations-spec 5)
@@ -39,9 +38,11 @@ class ObjectiveRow(BaseModel):
     label: str
     state: int | None = None
     magnification: float | None = None
+    registry_key: str | None = None
     na: float | None = None
     immersion: str | None = None
     working_distance_um: float | None = None
+    wd_source: str | None = None
     pixel_um: float | None = None
 
 
@@ -67,23 +68,42 @@ class PiezoInfo(BaseModel):
 
 
 class HardwareProfile(BaseModel):
+    """T-028 `engine.gates.HardwareProfile`, reshaped for the screen."""
+
     detected_at: str
-    backend: str
+    backend_kind: str
     host: str | None = None
+    bench: bool | None = None
+    objective: str | None = None  # nosepiece label at detection time
     config: dict[str, Any] | None = None
-    previous_sha256: str | None = None  # None: no previous profile (contract G9)
-    changed: list[str] | None = None
     devices: list[DeviceRow] = Field(default_factory=list)
     objectives: list[ObjectiveRow] = Field(default_factory=list)
     camera: CameraInfo | None = None
     piezo: PiezoInfo | None = None
     human_confirmed: dict[str, ConfirmedItem] = Field(default_factory=dict)
+    notes: dict[str, str] = Field(default_factory=dict)
+    errors: dict[str, str] = Field(default_factory=dict)  # section -> why its read failed
+
+
+class ProfileChange(BaseModel):
+    key: str
+    before: Any = None
+    after: Any = None
+
+
+class PreviousProfile(BaseModel):
+    """The latest version's diff against the one before (T-028 `ProfileStore.previous`)."""
+
+    sha256: str | None = None
+    detected_at: str | None = None
+    changed: list[ProfileChange] = Field(default_factory=list)
 
 
 class HardwareProfileOut(BaseModel):
     profile: HardwareProfile | None
     path: str | None
-    sha256: str | None  # of the profile as the engine reports it (canonical JSON)
+    sha256: str | None  # of hardware_profile.json as the engine read it
+    previous: PreviousProfile | None = None  # None: no previous profile
     error: str | None = None  # the engine could not read its hardware state
 
 
@@ -91,10 +111,12 @@ class GateRequires(BaseModel):
     devices: list[str] = Field(default_factory=list)
     objectives: list[str] = Field(default_factory=list)
     confirmed: list[str] = Field(default_factory=list)
+    checks: list[str] = Field(default_factory=list)  # profile checks, e.g. camera_bit_depth
+    arg: dict[str, str] | None = None  # the row is for this argument value (light_set mode)
 
 
 class GateRow(BaseModel):
-    op: str
+    op: str  # the gate key: the op, or `op:value` for a per-argument row (light_set:aura)
     enabled: bool
     reasons: list[str] = Field(default_factory=list)
     requires: GateRequires = Field(default_factory=GateRequires)
@@ -115,55 +137,53 @@ def _hardware(eng: Any) -> dict[str, Any]:
     return hw if isinstance(hw, dict) else {}
 
 
-def _devices(raw: Any) -> list[DeviceRow]:
-    if isinstance(raw, dict):  # T-002 skeleton: role -> {present, readable, label, note}
-        return [
+def _devices(p: dict[str, Any]) -> list[DeviceRow]:
+    """`device_list` (T-028, one row per loaded device) plus every role from `devices` that no
+    loaded device fills, so a missing role shows as a problem row."""
+    roles = p.get("devices") if isinstance(p.get("devices"), dict) else {}
+    rows = [
+        DeviceRow(**{"present": True, **{k: v for k, v in d.items() if k != "properties"}})
+        for d in p.get("device_list") or []
+        if isinstance(d, dict) and "label" in d
+    ]
+    covered = {r.role for r in rows}
+    for role, d in roles.items():
+        if role in covered or not isinstance(d, dict):
+            continue
+        rows.append(
             DeviceRow(
                 label=d.get("label") or role,
                 role=role,
                 present=bool(d.get("present")),
-                read_back=d.get("read_back", d.get("readable")),
-                write_verified=d.get("write_verified"),
+                read_back=d.get("readable"),
                 note=d.get("note") or None,
-                type=d.get("type"),
-                library=d.get("library"),
             )
-            for role, d in raw.items()
-            if isinstance(d, dict)
-        ]
-    if isinstance(raw, list):  # operations-spec 5 shape
-        return [
-            DeviceRow(**{"present": True, **d}) for d in raw if isinstance(d, dict) and "label" in d
-        ]
-    return []
-
-
-def _objectives(raw: Any) -> list[ObjectiveRow]:
-    rows = []
-    for o in raw if isinstance(raw, list) else []:
-        if isinstance(o, str):  # T-002 skeleton: nosepiece labels only
-            rows.append(ObjectiveRow(label=o))
-        elif isinstance(o, dict) and "label" in o:
-            rows.append(ObjectiveRow(**o))
+        )
     return rows
 
 
+def _objectives(p: dict[str, Any]) -> list[ObjectiveRow]:
+    rich = [ObjectiveRow(**o) for o in p.get("objective_rows") or [] if isinstance(o, dict)]
+    if rich:
+        return rich
+    return [ObjectiveRow(label=o) for o in p.get("objectives") or [] if isinstance(o, str)]
+
+
 def _confirmed(p: dict[str, Any]) -> dict[str, ConfirmedItem]:
-    raw = p.get("human_confirmed", p.get("confirmed"))
     out = {}
-    for item, v in raw.items() if isinstance(raw, dict) else []:
+    for item, v in (p.get("confirmed") or {}).items():
         if isinstance(v, dict):
             out[item] = ConfirmedItem(
                 value=str(v.get("value", NOT_REPORTED)), by=v.get("by"), at=v.get("at")
             )
-        else:  # T-002 skeleton keeps only "who/when" (contract G5)
+        else:  # the T-002 skeleton kept only "who/when"
             out[item] = ConfirmedItem(value=NOT_REPORTED, by=str(v))
     return out
 
 
 def _camera(p: dict[str, Any]) -> CameraInfo | None:
     cam = p.get("camera")
-    if isinstance(cam, dict):
+    if isinstance(cam, dict) and cam:
         return CameraInfo(**cam)
     if p.get("camera_bit_depth") is not None:
         return CameraInfo(bit_depth=p["camera_bit_depth"])
@@ -171,47 +191,44 @@ def _camera(p: dict[str, Any]) -> CameraInfo | None:
 
 
 def normalize_profile(p: dict[str, Any]) -> HardwareProfile:
-    """The engine's profile, in either the T-002 skeleton or the operations-spec 5 shape,
-    reshaped for the screen. Fields the engine does not report stay None."""
+    """`asdict(engine.gates.HardwareProfile)` (T-028), reshaped for the screen. Fields the
+    engine does not report stay None or empty."""
+    piezo = p.get("piezo")
     return HardwareProfile(
         detected_at=str(p.get("detected_at", NOT_REPORTED)),
-        backend=str(p.get("backend", p.get("backend_kind", NOT_REPORTED))),
-        host=p.get("host"),
-        config=p.get("config") if isinstance(p.get("config"), dict) else None,
-        previous_sha256=p.get("previous_sha256"),
-        changed=p.get("changed"),
-        devices=_devices(p.get("devices")),
-        objectives=_objectives(p.get("objectives")),
+        backend_kind=str(p.get("backend_kind", NOT_REPORTED)),
+        host=p.get("host") or None,
+        bench=p.get("bench"),
+        objective=p.get("objective"),
+        config=p.get("config") or None,
+        devices=_devices(p),
+        objectives=_objectives(p),
         camera=_camera(p),
-        piezo=PiezoInfo(**p["piezo"]) if isinstance(p.get("piezo"), dict) else None,
+        piezo=PiezoInfo(**piezo) if isinstance(piezo, dict) and piezo else None,
         human_confirmed=_confirmed(p),
+        notes=p.get("notes") or {},
+        errors=p.get("errors") or {},
     )
 
 
-def _requires(op: str, entry: dict[str, Any]) -> GateRequires:
-    if isinstance(entry.get("requires"), dict):
-        return GateRequires(**entry["requires"])
-    for g in engine_gates.GATES:  # the requirement table the verdict came from
-        if g.op == op:
-            return GateRequires(
-                devices=list(g.devices), objectives=list(g.objectives), confirmed=list(g.confirmed)
-            )
-    return GateRequires()
+def _row(op: str, entry: dict[str, Any]) -> GateRow:
+    return GateRow(
+        op=op,
+        enabled=entry.get("enabled") is True,  # anything but a plain yes is off
+        reasons=[str(r) for r in entry.get("reasons", [])],
+        requires=GateRequires(**(entry.get("requires") or {})),
+    )
 
 
 def gate_rows(raw: Any) -> list[GateRow]:
-    """Off rows first, then by op. The verdict is the engine's, copied as it is."""
-    rows = []
-    for op, v in raw.items() if isinstance(raw, dict) else []:
-        entry = v if isinstance(v, dict) else {}
-        rows.append(
-            GateRow(
-                op=op,
-                enabled=bool(entry.get("enabled")),
-                reasons=[str(r) for r in entry.get("reasons", [])],
-                requires=_requires(op, entry),
-            )
-        )
+    """Off rows first, then by key. The verdict is the engine's (T-028 `gates.gate_rows`, a
+    list), copied as it is. A dict keyed by op is the runner's empty default."""
+    if isinstance(raw, list):
+        rows = [_row(str(e["op"]), e) for e in raw if isinstance(e, dict) and "op" in e]
+    elif isinstance(raw, dict):
+        rows = [_row(op, e if isinstance(e, dict) else {}) for op, e in raw.items()]
+    else:
+        rows = []
     return sorted(rows, key=lambda r: (r.enabled, r.op))
 
 
@@ -227,18 +244,20 @@ def profile(eng: Engine) -> HardwareProfileOut:
         return HardwareProfileOut(
             profile=None, path=hw.get("profile_path"), sha256=None, error=hw.get("error")
         )
-    digest = hashlib.sha256(json.dumps(raw, sort_keys=True, default=str).encode()).hexdigest()
+    prev = hw.get("previous")
     return HardwareProfileOut(
         profile=normalize_profile(raw),
         path=hw.get("profile_path"),
-        sha256=digest,
+        sha256=hw.get("sha256"),
+        previous=PreviousProfile(**prev) if isinstance(prev, dict) else None,
         error=hw.get("error"),
     )
 
 
 @router.get("/gates", response_model=list[GateRow])
 def gates(eng: Engine) -> list[GateRow]:
-    """Every gated operation: on/off, the reasons it is off, what it needs."""
+    """Every gate row: on/off, the reasons it is off, what it needs. `light_set` has one row
+    per mode (`light_set:brightfield`, `light_set:aura`, `light_set:off`)."""
     return gate_rows(_hardware(eng).get("gates"))
 
 

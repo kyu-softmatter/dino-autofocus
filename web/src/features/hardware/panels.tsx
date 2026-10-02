@@ -65,19 +65,19 @@ export function SummaryPanel({ out }: { out: HardwareProfileOut }) {
       </section>
     );
   }
-  const diff =
-    p.previous_sha256 == null
-      ? "no previous profile"
-      : p.changed && p.changed.length > 0
-        ? `changed: ${p.changed.join(", ")}`
-        : "no changes";
+  const prev = out.previous;
+  const diff = !prev
+    ? "no previous profile"
+    : prev.changed.length > 0
+      ? `changed: ${prev.changed.map((c) => c.key).join(", ")}`
+      : "no changes";
   return (
     <section aria-label="Detection summary">
       <h3>Detection summary</h3>
       {error}
       <dl className="hw-dl">
         <dt>Detected</dt><dd>{p.detected_at}</dd>
-        <dt>Backend</dt><dd>{p.backend}</dd>
+        <dt>Backend</dt><dd>{p.backend_kind}{p.bench === false ? " (not the bench)" : ""}</dd>
         <dt>Host</dt><dd>{p.host ?? NOT_REPORTED}</dd>
         <dt>Config</dt><dd>{p.config?.path ?? NOT_REPORTED} ({short(p.config?.sha256)})</dd>
         <dt>Profile</dt><dd>{out.path ?? NOT_REPORTED} ({short(out.sha256)})</dd>
@@ -240,7 +240,8 @@ export function GatesPanel({ gates, selected, onSelect }: {
                 <td>{g.op}</td>
                 <td>{g.enabled ? "On" : "Off"}</td>
                 <td>{g.reasons.length > 0 ? <ul>{g.reasons.map((r) => <li key={r}>{r}</li>)}</ul> : ""}</td>
-                <td>{[...g.requires.devices, ...g.requires.objectives, ...g.requires.confirmed].join(", ")}</td>
+                <td>{[...g.requires.devices, ...g.requires.objectives, ...g.requires.confirmed,
+                      ...(g.requires.checks ?? [])].join(", ")}</td>
               </tr>
             ))}
           </tbody>
@@ -320,11 +321,13 @@ export function lightText(view: LightsView | null, records: LightRecord[] = []):
   return { text: view.lights.map((l) => lightPart(l.name, l.on === true, l.raw)).join(" · "), warn: false };
 }
 
-export function LightsPanel({ lights, records, lightsT, setBlocked, offBlocked, running, onBrightfield, onAura, onOff }: {
+export function LightsPanel({ lights, records, lightsT, brightfieldBlocked, auraBlocked, offBlocked, running, onBrightfield, onAura, onOff }: {
   lights: LightsView | null;
   records: LightRecord[];
   lightsT: number | null | undefined;
-  setBlocked: string | null;
+  /** light_set has one gate row per mode (T-028), so each button has its own reason */
+  brightfieldBlocked: string | null;
+  auraBlocked: string | null;
   offBlocked: string | null;
   running: string | null;
   onBrightfield: () => void;
@@ -341,16 +344,19 @@ export function LightsPanel({ lights, records, lightsT, setBlocked, offBlocked, 
         {text}
         {lightsT ? <span className="muted"> (read {new Date(lightsT * 1000).toLocaleTimeString()})</span> : null}
       </p>
-      <div className="hw-row">
-        <button type="button" disabled={setBlocked !== null} onClick={onBrightfield}>Brightfield on</button>
-        <input aria-label="Aura line" value={line} disabled={setBlocked !== null}
+      <div className="hw-row" data-testid="light-brightfield">
+        <button type="button" disabled={brightfieldBlocked !== null} onClick={onBrightfield}>Brightfield on</button>
+        <Reason text={brightfieldBlocked} />
+      </div>
+      <div className="hw-row" data-testid="light-aura">
+        <input aria-label="Aura line" value={line} disabled={auraBlocked !== null}
                onChange={(e) => setLine(e.target.value)} />
         <input aria-label="Aura percent" type="number" min={0} max={100} step={0.1} value={percent}
-               disabled={setBlocked !== null} onChange={(e) => setPercent(Number(e.target.value))} />
-        <button type="button" disabled={setBlocked !== null} onClick={() => onAura(line, percent)}>
+               disabled={auraBlocked !== null} onChange={(e) => setPercent(Number(e.target.value))} />
+        <button type="button" disabled={auraBlocked !== null} onClick={() => onAura(line, percent)}>
           Aura {line} {percent} % on
         </button>
-        <Reason text={setBlocked} />
+        <Reason text={auraBlocked} />
       </div>
       <div className="hw-row">
         <button type="button" disabled={offBlocked !== null} onClick={onOff}>Lights off</button>

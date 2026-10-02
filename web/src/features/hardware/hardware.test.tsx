@@ -10,10 +10,12 @@ import HardwareScreen from "./index";
 const PROFILE: HardwareProfileOut = {
   path: "D:/AutoFocus/hardware/hardware_profile.json",
   sha256: "abcdef0123456789",
+  previous: { sha256: "ef".repeat(32), detected_at: "2026-10-01T17:00:00",
+              changed: [{ key: "device.XYStage.read_back", before: true, after: false }] },
   profile: {
     detected_at: "2026-10-01T18:00:00",
-    backend: "mock",
-    previous_sha256: null,
+    backend_kind: "mock",
+    bench: false,
     devices: [
       { label: "Kinetix_red", type: "Camera", present: true, read_back: true, write_verified: null },
       { label: "ZDrive", type: "Stage", present: true, read_back: true, write_verified: null },
@@ -25,14 +27,22 @@ const PROFILE: HardwareProfileOut = {
   },
 };
 
+function requires(over: Partial<GateRow["requires"]> = {}): GateRow["requires"] {
+  return { devices: [], objectives: [], confirmed: [], checks: [], arg: null, ...over };
+}
+
+// as server/api/hardware.py serves T-028 gate_rows: light_set has one row per mode
 const GATES: GateRow[] = [
-  { op: "status", enabled: true, reasons: [], requires: { devices: ["camera"], objectives: [], confirmed: [] } },
+  { op: "status", enabled: true, reasons: [], requires: requires({ devices: ["camera"] }) },
   {
     op: "sample_map",
     enabled: false,
     reasons: ["xy_stage detected but its state did not read back"],
-    requires: { devices: ["camera", "xy_stage"], objectives: ["4x"], confirmed: [] },
+    requires: requires({ devices: ["camera", "xy_stage"], objectives: ["4x"], checks: ["camera_bit_depth"] }),
   },
+  { op: "light_set:brightfield", enabled: true, reasons: [],
+    requires: requires({ devices: ["dia_lamp"], arg: { mode: "brightfield" } }) },
+  { op: "light_set:aura", enabled: true, reasons: [], requires: requires({ devices: ["aura"], arg: { mode: "aura" } }) },
 ];
 
 const ALLOWED: Permissions = Object.fromEntries(SCREEN_OPS.map((op) => [op, { allowed: true, reason: null }]));
@@ -92,12 +102,13 @@ describe("hardware screen", () => {
   it("shows off gates first, with their reasons", async () => {
     setup();
     const table = within(await screen.findByRole("region", { name: "Gates" }));
-    await waitFor(() => expect(table.getAllByRole("row")).toHaveLength(3));
+    await waitFor(() => expect(table.getAllByRole("row")).toHaveLength(5));
     const rows = table.getAllByRole("row").slice(1);
     expect(rows[0].textContent).toContain("sample_map");
     expect(rows[0].textContent).toContain("Off");
     expect(rows[0].textContent).toContain("xy_stage detected but its state did not read back");
-    expect(rows[1].textContent).toContain("status");
+    expect(rows.map((r) => (r as HTMLTableRowElement).cells[0].textContent)).toEqual(
+      ["sample_map", "light_set:aura", "light_set:brightfield", "status"]);
   });
 
   it("sorts problem devices first", async () => {
@@ -167,10 +178,10 @@ describe("hardware screen", () => {
   it("needs an open experiment session for light_set (D15)", async () => {
     const noSession = { ...ALLOWED, light_set: { allowed: false, reason: "Open an experiment session first" } };
     setup({ permissions: () => ({ status: 200, body: noSession }) });
-    expect(await screen.findByText("Open an experiment session first")).toBeTruthy();
+    expect((await screen.findAllByText("Open an experiment session first")).length).toBe(2); // both modes
     expect(isDisabled(button("Brightfield on"))).toBe(true);
     expect(isDisabled(button("Scan hardware"))).toBe(false);
-    expect(screen.getByText("Open an experiment session first")).toBeTruthy();
+    expect(isDisabled(button("Aura GREEN 1 % on"))).toBe(true);
   });
 
   it("scans with the piezo skipped by default", async () => {
@@ -250,11 +261,29 @@ describe("hardware screen", () => {
     setup({
       gates: [...GATES, {
         op: "hardware_scan", enabled: false, reasons: ["camera not detected"],
-        requires: { devices: ["camera"], objectives: [], confirmed: [] },
+        requires: requires({ devices: ["camera"] }),
       }],
     });
     expect(await screen.findByText("hardware_scan is off: camera not detected")).toBeTruthy();
     expect(isDisabled(button("Scan hardware"))).toBe(true);
+  });
+
+  it("takes each light button's gate from its own light_set mode row (T-028)", async () => {
+    setup({
+      gates: GATES.map((g) => g.op === "light_set:brightfield"
+        ? { ...g, enabled: false, reasons: ["dia_lamp not detected"] } : g),
+    });
+    const bf = within(screen.getByTestId("light-brightfield"));
+    expect(await bf.findByText("light_set:brightfield is off: dia_lamp not detected")).toBeTruthy();
+    expect(isDisabled(button("Brightfield on"))).toBe(true);
+    expect(isDisabled(button("Aura GREEN 1 % on"))).toBe(false);
+  });
+
+  it("shows the previous-profile diff and the backend kind", async () => {
+    setup();
+    const summary = within(await screen.findByRole("region", { name: "Detection summary" }));
+    expect(await summary.findByText("changed: device.XYStage.read_back")).toBeTruthy();
+    expect(summary.getByText("mock (not the bench)")).toBeTruthy();
   });
 
   it("shows a server refusal next to the button", async () => {
