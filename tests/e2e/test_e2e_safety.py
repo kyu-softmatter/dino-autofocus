@@ -41,7 +41,7 @@ def lamp_is_on(op_id):
     def pred(e) -> bool:
         return (e.kind == "light_changed" and e.op_id == op_id
                 and any(r["device"] == "DiaLamp" and str(r["read"]) == "1"
-                        for r in e.data.get("readbacks", [])))
+                        for r in e.data.get("records") or e.data.get("readbacks", [])))
     return pred
 
 
