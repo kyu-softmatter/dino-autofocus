@@ -37,7 +37,9 @@ powershell -ExecutionPolicy Bypass -File tools\launcher\build.ps1
 
 Writes `DINO Autofocus.exe` to the Desktop using the .NET Framework compiler that ships
 with Windows. If an exe is already there, the build stops and prints its size and date;
-check whether it is a build you want to keep before adding `-Force` to replace it.
+check whether it is a build you want to keep before adding `-Force` to replace it. `-Force`
+first copies the old exe to `DINO Autofocus.prev.exe` next to it (a timestamped name if that
+exists) and prints the path.
 
 The exe starts the web app server from this clone's uv env
 (`uv run python -m dino_autofocus.server`) and opens the browser at `http://127.0.0.1:8765/`.
