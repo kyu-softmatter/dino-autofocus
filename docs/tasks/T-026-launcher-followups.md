@@ -26,3 +26,10 @@
 
 - Common criteria, headless tests only (no windows on the desktop), trailer `Session: AF 실행10`.
 - Real exe runs are listed as "user check needed" in the review request.
+
+## Director additions
+
+- Stage 2: after `POST /api/shutdown`, wait a bounded time (about 10 s) polling `GET /api/health`. Use
+  `taskkill /F` only after that, and write to the launcher log that a forced kill was needed.
+- The user check must warn before `build.ps1 -Force` overwrites the existing Desktop exe (it may be the
+  user's own build from main).

@@ -122,3 +122,10 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - `shutdown(reason)`: abort the running operation, run the normal exit path (lights off with readback,
   records finished), stop the acquisition stream, and record the reason. The server's `POST /api/shutdown`
   (T-009) calls it.
+
+## Shutdown safety (director)
+
+- `shutdown(reason)` runs `lights_off` FIRST, then aborts and finishes records.
+- The engine marks itself running in a small state file at start and clears it on a clean shutdown. On the
+  next start, if the mark is still there, record "unclean shutdown", read the lights back, and report it in
+  `snapshot()` (next to `last_shutdown_lights`) before accepting any command.

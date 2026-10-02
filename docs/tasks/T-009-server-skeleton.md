@@ -77,3 +77,8 @@
 - `POST /api/shutdown`, loopback only (refused for remote viewers, including under D13). It asks the engine to
   stop: abort the running operation, lights off with readback, finish records, then the server exits.
   The launcher (T-026) calls it before any hard kill. Test with the fake engine.
+
+## Shutdown safety (director)
+
+- Hardware must not depend on the graceful route alone. The server's own exit hooks (signal handlers and
+  `atexit`) call the engine's all-off as well, so Ctrl+C or a normal process exit still turns lights off.
