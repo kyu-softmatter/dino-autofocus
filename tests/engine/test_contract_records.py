@@ -125,3 +125,20 @@ def test_scope_light_helpers_pass_the_guard_token(fake, tmp_path):
     kinds = [json.loads(x)["kind"] for x in
              (tmp_path / op.op_id / "log.jsonl").read_text().splitlines()]
     assert kinds.count("light_changed") == 3  # two on, one exit-path off
+
+
+@pytest.mark.parametrize("when", ["error", "finish"])
+def test_a_failing_record_writer_does_not_replace_the_original_error(fake, tmp_path, when):
+    with pytest.raises(ValueError, match="the real problem"), \
+            operation(fake, tmp_path, "op") as op:
+        real = op.record.sink
+
+        def broken(ev):
+            if ev.kind == ("error" if when == "error" else "light_changed"):
+                raise OSError("disk full")
+            real(ev)
+        op.record.sink = broken
+        raise ValueError("the real problem")
+    s = json.loads((tmp_path / op.op_id / "summary.json").read_text())
+    assert s["status"] == "error" and "disk full" in s["error"]
+    assert "the real problem" in s["error"]

@@ -226,3 +226,7 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - Also in T-011b (from T-029): cache the BackendInfo read at start() and expose it as
   `snapshot()["backend_info"]` (including `stage_limits` and `bench`), so `plan()` can compute T-029's escape
   without touching hardware.
+
+## T-011c (from T-031, small)
+
+- OpContext gets a public `record_dir` (ops read `ctx._op.record.dir` today). Owner AF 실행15, review AF 검토보조1.

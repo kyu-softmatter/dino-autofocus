@@ -95,16 +95,17 @@ export interface components {
         };
         /**
          * CommandIn
-         * @description A command for the engine. `start` names an operation in `op` with its `args`; `abort`
-         *     and `confirm` name the running operation by `op_id`; `lights_off` pre-empts anything.
-         *     An `assistant` command is a proposal until a human confirms it.
+         * @description A command for the engine, as the browser sends it. `start` names an operation in `op`
+         *     with its `args`; `abort`, `confirm` and `update` name the running operation by `op_id`;
+         *     `approve` / `reject` name a proposal by `op_id`; `lights_off` pre-empts anything. Any
+         *     other field is refused (422): the server sets the rest (see SERVER_STAMPED).
          */
         CommandIn: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "start" | "abort" | "confirm" | "lights_off";
+            kind: "start" | "abort" | "confirm" | "lights_off" | "update" | "approve" | "reject";
             /**
              * Op
              * @default
@@ -119,14 +120,6 @@ export interface components {
             args?: {
                 [key: string]: unknown;
             };
-            /**
-             * Origin
-             * @default human
-             * @enum {string}
-             */
-            origin: "human" | "assistant";
-            /** Session Id */
-            session_id?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -180,13 +173,16 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
-        /** EventOut */
+        /**
+         * EventOut
+         * @description `user_id` / `session_id` are the operation's (rule 12); None for engine-wide events.
+         */
         EventOut: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "planned" | "preflight_ok" | "preflight_failed" | "started" | "progress" | "frame_ready" | "reading" | "finished" | "aborted" | "error" | "position" | "light_changed" | "property_set" | "motion" | "confirm_required" | "confirmed" | "log";
+            kind: "planned" | "preflight_ok" | "preflight_failed" | "started" | "progress" | "frame_ready" | "reading" | "finished" | "aborted" | "error" | "position" | "light_changed" | "property_set" | "motion" | "confirm_required" | "confirmed" | "proposed" | "approved" | "rejected" | "refused" | "updated" | "map_changed" | "sample_opened" | "objective" | "session_changed" | "log";
             /**
              * Op Id
              * @default
@@ -198,6 +194,16 @@ export interface components {
             };
             /** T */
             t: number;
+            /**
+             * User Id
+             * @default null
+             */
+            user_id: string | null;
+            /**
+             * Session Id
+             * @default null
+             */
+            session_id: string | null;
         };
         /**
          * WsAccepted
