@@ -292,14 +292,16 @@ const STEP_NAMES = { geometry: "geometry", person: "person", image: "image" } as
  */
 export function LoadingCheck({
   loading,
-  blocked,
+  personBlocked,
+  imageBlocked,
   reasons,
   imageStatus,
   onPerson,
   onImage,
 }: {
   loading: LoadingState;
-  blocked: string | null;
+  personBlocked: string | null;
+  imageBlocked: string | null;
   reasons: Record<string, string>;
   imageStatus: string | null;
   onPerson: () => void;
@@ -311,7 +313,6 @@ export function LoadingCheck({
   return (
     <section aria-label="Loading check" className="sample-panel">
       <h3>Loading check</h3>
-      <Reason text={blocked} />
       <ol className="sample-steps">
         <li>
           {tick(loading.geometry.done)} Geometry entered
@@ -322,24 +323,24 @@ export function LoadingCheck({
           {loading.person.done ? (
             `confirmed by ${loading.person.by ?? "?"} ${loading.person.t ?? ""}`
           ) : (
-            <button disabled={blocked !== null} onClick={onPerson}>
+            <button disabled={personBlocked !== null} onClick={onPerson}>
               Sample is on the stage
             </button>
           )}
-          <Reason text={reasons.person} />
+          <Reason text={loading.person.done ? reasons.person : (personBlocked ?? reasons.person)} />
         </li>
         <li>
           {tick(img.done && img.ok === true)} Image:{" "}
           {img.done && img.ok === true ? (
             `hole edge seen (${img.by ?? "?"} ${img.t ?? ""})`
           ) : (
-            <button disabled={blocked !== null || imageStatus !== null} onClick={onImage}>
+            <button disabled={imageBlocked !== null || imageStatus !== null} onClick={onImage}>
               Check with an image
             </button>
           )}
           {img.done && img.ok === false && <Reason text={`image check failed: ${img.why ?? "no reason given"}`} />}
           {imageStatus && <span className="muted"> {imageStatus}</span>}
-          <Reason text={reasons.image} />
+          <Reason text={img.done && img.ok === true ? reasons.image : (imageBlocked ?? reasons.image)} />
         </li>
       </ol>
       {loading.confirmed ? (

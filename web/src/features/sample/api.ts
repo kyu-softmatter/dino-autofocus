@@ -82,17 +82,24 @@ export interface LoadingState {
   confirmed: boolean;
 }
 
-/** Reasons the server gives before a click (ui-spec 7.0); null = no reason */
+/** Sample-specific pre-click facts from this area's router, GET /api/sample/access */
 export interface SampleAccess {
-  /** remote, role or control, the first that applies */
-  read_only_reason: string | null;
   /** local request only (G9) */
   can_open_folder: boolean;
   /** why sample_open / sample_new would be refused now (a session is open for another sample) */
   open_reason: string | null;
-  /** why the geometry and loading ops would be refused now (no open session of this sample) */
-  session_reason: string | null;
 }
+
+/**
+ * Generic pre-click verdicts (ui-spec 7.0: remote, role, control, session, running op), the same
+ * for every screen: `GET /api/permissions?ops=a,b` -> `{op: {allowed, reason}}` (T-009b, backed by
+ * T-011 `check()`). The screen reads them only through `SampleApi.permissions()`.
+ */
+export interface Permission {
+  allowed: boolean;
+  reason: string | null;
+}
+export type Permissions = Partial<Record<SampleOp, Permission>>;
 
 /** engine snapshot()["sample"] via GET /api/state (T-011) */
 export interface CurrentSample {
@@ -135,6 +142,7 @@ export interface SampleApi {
   geometry(sampleId: string): Promise<Geometry>;
   loading(sampleId: string): Promise<LoadingState>;
   access(sampleId: string | null): Promise<SampleAccess>;
+  permissions(ops: readonly SampleOp[]): Promise<Permissions>;
   current(): Promise<CurrentSample | null>;
   send(cmd: CommandIn): Promise<SendResult>;
   openFolder(sampleId: string): Promise<SendResult>;
@@ -170,6 +178,9 @@ export const httpSampleApi: SampleApi = {
   geometry: (id) => getJson(`/api/sample/${enc(id)}/geometry`),
   loading: (id) => getJson(`/api/sample/${enc(id)}/loading`),
   access: (id) => getJson(`/api/sample/access${id ? `?sample_id=${enc(id)}` : ""}`),
+  // Until T-009b serves it, a failed call means "no pre-click reasons": refusals then show
+  // after the click, from the 403 detail or preflight_failed.
+  permissions: (ops) => getJson<Permissions>(`/api/permissions?ops=${ops.join(",")}`).catch(() => ({})),
   current: async () => ((await getJson<{ sample?: CurrentSample | null }>("/api/state")).sample ?? null),
   send: (cmd) => post("/api/commands", cmd),
   openFolder: (id) => post(`/api/sample/${enc(id)}/open-folder`, {}),
@@ -224,12 +235,9 @@ export class FakeSampleApi implements SampleApi {
   samples = new Map<string, FakeSample>();
   fieldList: GeometryField[] = PROVISIONAL_FIELDS;
   currentSample: CurrentSample | null = null;
-  accessFor: (id: string | null) => SampleAccess = () => ({
-    read_only_reason: null,
-    can_open_folder: true,
-    open_reason: null,
-    session_reason: null,
-  });
+  accessFor: (id: string | null) => SampleAccess = () => ({ can_open_folder: true, open_reason: null });
+  /** the fake /api/permissions answer per op; default: allowed */
+  permissionFor: (op: SampleOp) => Permission = () => ({ allowed: true, reason: null });
   sent: CommandIn[] = [];
   opened: string[] = [];
   /** op -> refusal detail, as the server's 403 would give */
@@ -290,6 +298,9 @@ export class FakeSampleApi implements SampleApi {
   }
   async access(id: string | null) {
     return this.accessFor(id);
+  }
+  async permissions(ops: readonly SampleOp[]) {
+    return Object.fromEntries(ops.map((op) => [op, this.permissionFor(op)])) as Permissions;
   }
   async current() {
     return this.currentSample;

@@ -125,12 +125,8 @@ describe("sample screen", () => {
 
   it("read-only: every command is off with the server's reason, the folder is a path only", async () => {
     const api = withOpenSample();
-    api.accessFor = () => ({
-      read_only_reason: "Read-only: remote view",
-      can_open_folder: false,
-      open_reason: null,
-      session_reason: null,
-    });
+    api.accessFor = () => ({ can_open_folder: false, open_reason: null });
+    api.permissionFor = () => ({ allowed: false, reason: "Read-only: remote view" });
     mount(api);
     await screen.findByLabelText("Sample thickness");
     await waitFor(() => expect(screen.getAllByText("Read-only: remote view").length).toBeGreaterThan(0));
@@ -145,12 +141,7 @@ describe("sample screen", () => {
 
   it("session open for this sample: other samples cannot be opened, with the reason shown", async () => {
     const api = withOpenSample();
-    api.accessFor = () => ({
-      read_only_reason: null,
-      can_open_folder: true,
-      open_reason: `Session s-1 is open for sample ${ID}`,
-      session_reason: null,
-    });
+    api.accessFor = () => ({ can_open_folder: true, open_reason: `Session s-1 is open for sample ${ID}` });
     mount(api);
     await screen.findByLabelText("Sample thickness");
     expect((screen.getByRole("button", { name: "New sample" }) as HTMLButtonElement).disabled).toBe(true);
@@ -162,15 +153,14 @@ describe("sample screen", () => {
   it("no session for the sample: geometry and loading steps are off with the reason", async () => {
     const api = withOpenSample();
     api.currentSample = { sample_id: ID, reserved: false, session_id: null };
-    api.accessFor = () => ({
-      read_only_reason: null,
-      can_open_folder: true,
-      open_reason: null,
-      session_reason: "Open an experiment session first",
-    });
+    api.permissionFor = (op) =>
+      op === "sample_open" || op === "sample_new"
+        ? { allowed: true, reason: null }
+        : { allowed: false, reason: "Open an experiment session first" };
     mount(api);
     await screen.findByLabelText("Sample thickness");
-    await waitFor(() => expect(screen.getAllByText("Open an experiment session first")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText("Open an experiment session first")).toHaveLength(3));
+    expect((screen.getByRole("button", { name: "New sample" }) as HTMLButtonElement).disabled).toBe(false);
     for (const name of ["Save geometry", "Sample is on the stage", "Check with an image"]) {
       expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
     }

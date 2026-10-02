@@ -20,6 +20,7 @@ import {
   type Geometry,
   type GeometryField,
   type LoadingState,
+  type Permissions,
   SAMPLE_OPS,
   type SampleAccess,
   type SampleDetail,
@@ -68,6 +69,7 @@ export default function SampleScreen() {
   const [current, setCurrent] = useState<CurrentSample | null>(null);
   const [selected, setSelected] = useState<Selected | null>(null);
   const [access, setAccess] = useState<SampleAccess | null>(null);
+  const [perms, setPerms] = useState<Permissions>({});
   const [error, setError] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [imageStatus, setImageStatus] = useState<string | null>(null);
@@ -95,9 +97,12 @@ export default function SampleScreen() {
 
   useEffect(() => {
     let live = true;
-    api
-      .access(viewId)
-      .then((a) => live && setAccess(a))
+    Promise.all([api.access(viewId), api.permissions(SAMPLE_OPS)])
+      .then(([a, p]) => {
+        if (!live) return;
+        setAccess(a);
+        setPerms(p);
+      })
       .catch((e: Error) => live && setError(e.message));
     if (viewId === null) {
       setSelected(null);
@@ -192,9 +197,13 @@ export default function SampleScreen() {
     setReason("folder", res.ok ? null : res.reason);
   }, [api, selected, setReason]);
 
-  const readOnly = access?.read_only_reason ?? null;
-  const openBlocked = readOnly ?? access?.open_reason ?? null;
-  const sessionBlocked = readOnly ?? access?.session_reason ?? null;
+  // the shared verdict first (ui-spec 7.0 order is the server's), then the sample-specific one
+  const denied = (op: SampleOp): string | null => {
+    const p = perms[op];
+    return p && !p.allowed ? (p.reason ?? `${op} is not allowed now`) : null;
+  };
+  const openBlocked = denied("sample_open") ?? access?.open_reason ?? null;
+  const newBlocked = denied("sample_new") ?? access?.open_reason ?? null;
   const id = selected?.detail.sample_id ?? null;
 
   const details = useMemo(() => {
@@ -219,18 +228,13 @@ export default function SampleScreen() {
           {error}
         </p>
       )}
-      {readOnly && (
-        <p className="sample-reason" role="note">
-          {readOnly}
-        </p>
-      )}
       <section aria-label="Samples" className="sample-panel">
         <h3>Samples</h3>
         <p>
-          <button disabled={openBlocked !== null} onClick={() => void send({ kind: "start", op: "sample_new", args: {} })}>
+          <button disabled={newBlocked !== null} onClick={() => void send({ kind: "start", op: "sample_new", args: {} })}>
             New sample
           </button>
-          <Reason text={openBlocked ?? reasons.new} />
+          <Reason text={newBlocked ?? reasons.new} />
         </p>
         <SampleList
           samples={list}
@@ -253,13 +257,14 @@ export default function SampleScreen() {
           <GeometryForm
             fields={fields}
             geometry={selected.geometry}
-            blocked={sessionBlocked}
+            blocked={denied("sample_geometry_set")}
             reason={reasons.geometry}
             onSave={(values) => void send({ kind: "start", op: "sample_geometry_set", args: { sample_id: id, values } })}
           />
           <LoadingCheck
             loading={selected.loading}
-            blocked={sessionBlocked}
+            personBlocked={denied("loading_confirm_person")}
+            imageBlocked={denied("loading_check_image")}
             reasons={reasons}
             imageStatus={imageStatus}
             onPerson={() => void send({ kind: "start", op: "loading_confirm_person", args: { sample_id: id } })}
