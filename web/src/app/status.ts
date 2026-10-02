@@ -109,6 +109,7 @@ function readLastShutdown(data: unknown): LastShutdown | null {
 /** Kinds after which the running list may have changed: re-read the snapshot. */
 const LIFECYCLE = new Set([
   "started", "finished", "aborted", "error", "refused", "confirmed", "planned", "session_changed",
+  "approved", "rejected", "updated",
 ]);
 
 export function useEngineStatus(): EngineStatus {
