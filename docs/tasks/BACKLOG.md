@@ -2,6 +2,61 @@
 
 과제로 아직 배정하지 않은 요구, 공유 파일 변경 순서, 현미경 PC 확인 항목을 모은다. 매니저만 쓴다.
 
+## HANDOVER (freeze, 2026-10-02) — read this first
+
+User decision: no new work is assigned. Work already committed or in review finishes (review → merge → push by hash);
+then each seat is archived. Development moves to another platform later; this section is the handover list.
+Everything below "HANDOVER" is the older working backlog and stays for history.
+
+### In flight at the freeze (finishes on its own; check `git branch --no-merged main`)
+
+- Server: T-009g hardware wiring, T-009i real runner at start-up (mock default, separate mock records root,
+  records + committer wired), T-009j replay start-up + op records into the open session. Stacked g → i → j.
+- Web: T-010-9 (401 code, locked = stale, WsLock types, `--dev-origin`), schema regen 3.
+- Assistant: T-013c (proposal reject needs confirm's permission).
+- Tests: T-015e (server helpers out of conftest + guard test).
+- Simulation: T-012-6 (`gsd` dependency).
+- Sample map: T-032 stage 2 (sample_map, goto_xy, map record ops, edge_trace writes sample events).
+- Screens: T-105 login, T-106 sessions, T-014c/d prompt box, T-103b / T-100c type follow-ups (only if already
+  committed).
+
+### Carded but not started (unassigned; pick up from the card)
+
+- T-010-12 vitest `maxWorkers` cap + 15 s App-level timeouts (T-010 card).
+- T-035d import torch only inside torch tests: tests/test_backbone.py and tests/test_live.py (T-035 card).
+- T-106b session.json carries backend kind/bench; T-106c records/librarian_mock.py skips bench:false sessions in the
+  real root (T-106 card).
+- T-026 stage 3 launcher `-Backend mock|mm-demo|replay|mm-real` (mm-real only with `-Bench`) (T-026 card).
+- T-038d runbook step 2c: remove "blocked" once goto_xy (T-032 stage 2) is on main (T-038 card).
+- T-101b (contingent) align features/hardware + server/api/hardware.py if T-028 field names change.
+- T-107 browser M1 walk-through in web/e2e/ reusing T-035's mock day; needs a headless-browser package decision.
+
+### Blocked on the user
+
+- T-036 unlock: the one-line `BENCH_MOTION = "UNLOCKED"` in engine/backends/mm_real.py was refused by the seat's
+  permission check, so it is the user's (branch exec12/T-036-unlock parked at ebfff88). All eleven code prerequisites
+  are on main (b1d5a1d). Director: do it when the user is at the microscope PC for runbook step 1.
+- Second lock: `guards.BENCH_APPROACH = "UNMEASURED"` (T-029d) stays until the bench measurements below, then its own
+  reviewed flip with the director's confirmation.
+- Microscope PC measurements and checks (see "현미경 PC" items below and docs/microscope-pc-checklist.md):
+  cfg passes `check_load_settings` with BENCH_DEVICES; whether System/Shutdown applies at unload; stage limits and
+  the +Y 15 mm step-out; Q13 (approach step) and Q20 (XY move needing a Z retract); FREE_WD for 10x/20x/40x WI/60x;
+  T-029d per-step read latency.
+- trajectory.txt samples (three layouts) and the WSL source path, for the T-012 txt reader (now "unverified").
+- Copy the old Desktop "DINO Autofocus.exe" aside before `build.ps1 -Force`.
+- Operator name in docs/runs/2026-09-30_* ("kyuchoi"): keep or replace before the repo goes public.
+- M1 check: log in on the dev desktop and run F1–F7 end to end on the mock (after T-009i, T-105, T-106 merge).
+
+### Process notes for whoever continues
+
+- Rules live in docs/sessions.md (branch from a hash, `git merge main`, commit by path, push by hash only by the
+  reviewer, full suites limited to 3 at once with `OPENBLAS/OMP/MKL_NUM_THREADS=1`).
+- This desktop's limit is Windows commit charge, not RAM: about 30 open sessions left 10 GB free; full runs crash
+  with 0xc000070a / 0x8007000e below ~20 GB free. Those codes mean rerun, not a test failure.
+- Safety cards to read before any stand motion: T-036 (lock), T-029d (BENCH_APPROACH), T-027b (per-lens ceiling),
+  T-015b/c (is_bench fail-safe), T-036b/d (preset check), T-029c (step-out intent), T-038 (runbook).
+- Ownership after archiving: guards/sample.py/gates had 실행1/17, runner 실행15; any new owner reads those cards.
+
 ## 공유 파일 변경 순서
 
 | 파일 | 지금 권한 | 다음 | 그다음 |
