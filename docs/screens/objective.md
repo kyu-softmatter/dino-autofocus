@@ -119,7 +119,7 @@ Refusals come back synchronously from `POST /api/commands` (403 remote, permissi
 | `started` | `data.start_state` (`return_xy`, `z_before`, `objective_before`) | step 1 row |
 | `progress` | `data.step` (1..7), readbacks per step; for step 7 `{step: 7, z_um, target_um, step_index, n_steps}` (`step` is already the step number); for `focus_100x` `{phase: coarse \| fine, z_readback_um, score, sat}` | step rows, Z approach bar (moves per event, never jumps), sweep curve |
 | `position` | `z_um`, `x_um`, `y_um` | current Z, readbacks |
-| `light_changed` | `dialamp`, `aura`, `verified` | step 1b row, result line |
+| `light_changed` | the shell's one light shape (T-010-6): `{dialamp: {state, intensity}, aura: {state, lines}, verified, records}` | status bar (the shell's); this area shows no light state of its own |
 | `confirm_required` | `data.key`, `data.kind` (`manual_step` for `load_immersion`), `data.prompt`, `data.options`, `data.context` | the loading card (C7) and dialogs C6, C8–C11 |
 | `confirmed` | who, when | loading card "done by … at …" |
 | `motion` | axis, target, readback | optional detail line |

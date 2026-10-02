@@ -148,7 +148,8 @@ function toLoading(opId: string, escape = true): Ev[] {
     { kind: "started", op_id: opId, data: { op: "objective_change",
       start_state: { return_xy: [8026.0, 571.6], z_before: 3048.7, objective_before: "1-Plan Apo LmbdD20 4x" } } },
     { kind: "progress", op_id: opId, data: { step: 1, detail: "recorded" } },
-    { kind: "light_changed", op_id: opId, data: { dialamp: "off", aura: { state: 0 }, verified: true } },
+    // the one light shape the shell reads (T-010-6)
+    { kind: "light_changed", op_id: opId, data: { dialamp: { state: 0, intensity: 608 }, aura: { state: 0, lines: {} }, verified: true, records: [] } },
     { kind: "progress", op_id: opId, data: { step: 2, axis: "z", commanded: 0, readback: 0.0, pfs_in_range: "Out of Range" } },
     { kind: "position", op_id: opId, data: { z_um: 0.0, x_um: 8026.0, y_um: 571.6 } },
     ...(escape ? [{ kind: "progress", op_id: opId, data: { step: 3, axis: "y", commanded: 15571.6, readback: 15571.6 } }] : []),
@@ -166,7 +167,7 @@ function afterLoading(opId: string, nSteps = 3, escape = true): Ev[] {
     evs.push({ kind: "progress", op_id: opId, data: { step: 7, z_um: z, target_um: 2800, step_index: i, n_steps: nSteps } });
     evs.push({ kind: "position", op_id: opId, data: { z_um: z } });
   }
-  evs.push({ kind: "finished", op_id: opId, data: { state: "done", end_state: { lights: "off" } } });
+  evs.push({ kind: "finished", op_id: opId, data: { state: "done", end_state: { lights: { dialamp: { state: 0, intensity: 608 }, aura: { state: 0, lines: {} }, verified: true, records: [] } } } });
   return evs;
 }
 
