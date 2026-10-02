@@ -22,7 +22,8 @@ What it does, in order:
 6. stops on: more than `max_radius_um` from the start, path or time limit, the edge lost,
    a full loop, abort, an error. Z never moves.
 7. the hole is fitted to all boundary points (`robust_circle`) and written to sample.json with
-   `fitted_at`, `boundary_limits_um` and `stage_camera_calibration`. A diameter more than
+   `fitted_at`, `trace_stop`, `closed_loop` (True only when the trace came round to where it
+   first saw the edge), `boundary_limits_um` and `stage_camera_calibration`. A diameter more than
    20 % off `hole_diameter_mm` is a warning in the result.
 8. every exit path switches the lights off (DiaLamp too, unlike live_focus: 9/30 problem 4).
 
@@ -73,6 +74,7 @@ CAL_MIN_PEAK = 8.0  # phase-correlation peak sharpness below this: too little st
 CAL_SCALE_RANGE = (0.7, 1.4)  # measured um/px over the camera pixel
 CAL_MAX_ANGLE_DIFF_DEG = 10.0  # against the reference calibration
 DIAMETER_WARN_FRACTION = 0.2
+FULL_LOOP = "back where the edge was first seen: full loop"
 
 # docs/runs/2026-09-30_substrate-scan.yaml calibration_4x: the image is mirrored vs the stage
 REFERENCE_CAL_4X = {
@@ -524,7 +526,7 @@ class EdgeTracer:
                     loop_start = edge_stage
                 elif (self.path_um > 3000
                       and np.linalg.norm(edge_stage - loop_start) < 3 * self.step):
-                    return self._stop("back where the edge was first seen: full loop")
+                    return self._stop(FULL_LOOP)
             wait = self.step / self.speed - (self.clock() - last_move)
             if wait > 0:
                 self._wait(wait)
@@ -771,6 +773,7 @@ def _finish(sample: Sample, tracer: EdgeTracer, objective: str, a: EdgeTraceArgs
     if hole is not None:
         hole["fitted_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         hole["trace_stop"] = tracer.why or "aborted or failed"  # a partial arc says so
+        hole["closed_loop"] = tracer.why == FULL_LOOP  # stable flag for sample.hole_loop()
         info.hole = hole
         info.boundary_limits_um = {"x": [float(pts[:, 0].min()), float(pts[:, 0].max())],
                                    "y": [float(pts[:, 1].min()), float(pts[:, 1].max())]}
