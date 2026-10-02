@@ -101,7 +101,7 @@ Refusals come back synchronously from `POST /api/commands` (403 remote, permissi
 | `planned` | `data.steps`, `data.ceiling_um` | plan table, sweep plan |
 | `preflight_failed` | `data.why` | reason next to the button |
 | `started` | `data.start_state` (`return_xy`, `z_before`, `objective_before`) | step 1 row |
-| `progress` | `data.step` (1..7), readbacks per step; for step 7 `{z_um, target_um, step, n_steps}`; for `focus_100x` `{phase: coarse \| fine, z_readback_um, score, sat}` | step rows, Z approach bar (moves per event, never jumps), sweep curve |
+| `progress` | `data.step` (1..7), readbacks per step; for step 7 `{step: 7, z_um, target_um, step_index, n_steps}` (`step` is already the step number); for `focus_100x` `{phase: coarse \| fine, z_readback_um, score, sat}` | step rows, Z approach bar (moves per event, never jumps), sweep curve |
 | `position` | `z_um`, `x_um`, `y_um` | current Z, readbacks |
 | `light_changed` | `dialamp`, `aura`, `verified` | step 1b row, result line |
 | `confirm_required` | `data.key`, `data.kind` (`manual_step` for `load_immersion`), `data.prompt`, `data.options`, `data.context` | the loading card (C7) and dialogs C6, C8–C11 |
@@ -120,7 +120,7 @@ Refusals come back synchronously from `POST /api/commands` (403 remote, permissi
 | 3 | Re-load variant name | T-029 (WP-J) fixes the op names, including `reload`. This contract keeps `args: {reload: true}` until T-029 says otherwise |
 | 4 | Plan without starting | T-011 adds a plan-only call (`plan(cmd)`) |
 | 5 | Lens rows with reasons | T-028: `objective_options()` returns the rows with the engine's reason per lens |
-| 6 | `progress.data` keys for steps 2–6 | T-029 fixes them. Proposed here: `{step, axis, commanded, readback}`, plus `pfs_in_range` at step 2 and `label_read` at step 4 |
+| 6 | `progress.data` keys for steps 2–7 | T-029 fixes them. Proposed here and used by the web fake: `{step, axis, commanded, readback}`, plus `pfs_in_range` at step 2, `label_read` at step 4, and `{z_um, target_um, step_index, n_steps}` at step 7 |
 | 7 | `lights_off` from a remote client | Settled (D2, T-011 text fixed): remote clients send `abort` only |
 | 8 | `approach_step_um` | Settled: per-objective guards column, 10 µm, `"unmeasured provisional"`. Read-only on screen; never in the rotate args unless the engine echoes it back |
 | 9 | 4x focus plane at the current XY | Goes to the WP-C focus port. Until it exists, `focus100x/defaults` returns `z_4x_focus_um: null` and `centre_um: null`, and the form shows the centre as `"not set"`; the operator types it, and C11 still applies |
