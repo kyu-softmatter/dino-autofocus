@@ -78,10 +78,10 @@ def test_map_writes_only_through_map_router(op, engine, make_client):
 
 
 def test_login_routes_open_to_remote_viewers(engine, make_client):
-    """Exactly the five login routes skip the loopback rule (they 404 until T-018 adds them);
+    """Exactly the six login routes skip the loopback rule (they 404 until T-018 adds them);
     any other write under /api/auth stays local only, and foreign pages are still refused."""
     c = make_client(engine, remote=True, remote_view=True)
-    for name in ("login", "logout", "unlock", "activity", "signup"):
+    for name in ("login", "logout", "lock", "unlock", "activity", "signup"):
         assert c.post(f"/api/auth/{name}", json={}).status_code == 404
     assert c.post("/api/auth/users", json={}).status_code == 403
     assert c.post("/api/auth/login/extra", json={}).status_code == 403

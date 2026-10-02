@@ -10,7 +10,7 @@ Access scope (PLAN.md 5, D13, D16; the rules live in `server/api/__init__.py`):
   from a page served by this server or a loopback dev server (or a non-browser client), so a
   web page open in another tab cannot drive the stage.
 - D13: a remote viewer may send `abort` and nothing else (`remote_abort`, default on).
-- Exception: the five login routes `POST /api/auth/{login, logout, unlock, activity, signup}`
+- Exception: the six login routes `POST /api/auth/{login, logout, lock, unlock, activity, signup}`
   are open to remote viewers (they must log in); none of them reaches the engine.
 - D16: map writes are refused on `/api/commands`; they go through `/api/map`.
 """
@@ -52,7 +52,7 @@ LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 COMMANDS_PATH = "/api/commands"  # checked in the endpoint, which knows the command kind
 # remote viewers must be able to log in (PLAN.md 5); T-018 adds the routes in server/api/auth.py
 AUTH_OPEN_PATHS = frozenset(
-    f"/api/auth/{name}" for name in ("login", "logout", "unlock", "activity", "signup")
+    f"/api/auth/{name}" for name in ("login", "logout", "lock", "unlock", "activity", "signup")
 )
 
 
