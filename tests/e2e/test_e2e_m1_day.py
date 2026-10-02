@@ -18,7 +18,7 @@ from conftest import OFF, OPERATOR, after, need, read_jsonl
 from dino_autofocus.auth import ControlBusy, ControlError
 from dino_autofocus.engine.backends.mock_world import SampleSpec
 from dino_autofocus.engine.runner import CommandRefused
-from dino_autofocus.engine.sample import SampleGeometry, SampleInfo
+from dino_autofocus.engine.sample import read_sample
 from dino_autofocus.records import GitFolderStore, SessionClosedError, open_session, sample_state
 
 SPEC = SampleSpec()  # the sample MockBackend(seed=0) holds: 6.144 mm hole at (8026, 571.6)
@@ -29,6 +29,20 @@ TRACE_ROI_PX = 1200
 def pending(module: str, task: str) -> None:
     need(module, task)
     pytest.skip(f"{task} is on main; this step of the day is still to be written (T-035)")
+
+
+def view(day):
+    """What the sample, map and sessions screens read (T-027 `read_sample`)."""
+    return read_sample(day.store, day.sample.id, day.samples_root, day.open_session_id)
+
+
+def at_the_edge(day) -> None:
+    """The operator's hands: joystick to the chamber edge, focus knob to the 4x focus."""
+    world = day.backend.world
+    r = SPEC.hole_diameter_mm * 500 + 300
+    world.move_xy(SPEC.hole_centre_um[0] + r * math.cos(0.7),
+                  SPEC.hole_centre_um[1] + r * math.sin(0.7))
+    world.move_z(world.in_focus_z())
 
 
 def summaries(day) -> list[dict]:
@@ -75,14 +89,16 @@ def test_03_status_before_the_session(day):
     day.done.add("status_before")
 
 
-def test_04_operator_opens_an_experiment_session(day):
+def test_04_operator_picks_a_sample_and_opens_a_session(day):
     after(day, "control")
-    s = day.open_session()
+    s = day.open_session()  # sample_new through the runner, then the session for it
     assert open_session(day.store)["session_id"] == s.session_id
     info = json.loads((s.layout.root / "session.json").read_text(encoding="utf-8"))
     assert (info["user_id"], info["sample_id"], info["status"]) == (
         OPERATOR, day.sample.id, "open")
+    assert day.sample.dir.is_dir()
     assert day.runner.snapshot()["sample"]["sample_id"] == day.sample.id
+    assert view(day).created is not None  # sample_created, the sample's first event
     day.done.add("session")
 
 
@@ -95,39 +111,55 @@ def test_05_f2_hardware_scan_and_gates(day):
 
 # -- F3: the sample goes on -------------------------------------------------------------------
 
-def test_06_f3_sample_geometry_is_recorded(day):
-    """Until T-027's sample_geometry_set, the geometry goes into the sample and the session
-    the way that operation will write it."""
+#: the operator's entries on the sample screen (docs/screens/sample.md section 2)
+GEOMETRY = {"sample_size_mm": list(SPEC.size_mm), "chamber_shape": "hole",
+            "hole_diameter_mm": SPEC.hole_diameter_mm,
+            "coverslip_thickness_um": SPEC.coverslip_um,
+            "sample_thickness_um": 1000.0,  # the slide; the mock does not model it
+            "orientation": "upright"}
+
+
+def test_06_f3_sample_geometry_is_entered(day):
     after(day, "session")
-    geometry = SampleGeometry(size_mm=SPEC.size_mm, chamber="hole",
-                              hole_diameter_mm=SPEC.hole_diameter_mm,
-                              coverslip_um=SPEC.coverslip_um, orientation="upright",
-                              confirmed_by_operator=True)
-    day.sample.save_info(SampleInfo(day.sample.id, geometry=geometry))
-    saved = day.sample.load_info().to_dict()["geometry"]
-    day.session.record("sample_geometry", {"sample_id": day.sample.id, "geometry": saved})
-    assert day.sample.load_info().geometry == geometry
-    (line,) = read_jsonl(day.session.layout.operation_record("sample_geometry"))
-    assert (line["user_id"], line["session_id"]) == (OPERATOR, day.session.session_id)
+    with pytest.raises(CommandRefused, match="equipment control"):
+        day.start("sample_geometry_set", {"sample_id": day.sample.id, "values": GEOMETRY},
+                  grant=None)
+    bad = day.run("sample_geometry_set", {"sample_id": day.sample.id,
+                                          "values": {"orientation": "sideways"}})
+    assert bad.kind == "error" and bad.data["where"] == "preflight"  # refused, nothing written
+    end = day.run("sample_geometry_set", {"sample_id": day.sample.id, "values": GEOMETRY})
+    assert end.kind == "finished", end.data
+    g = view(day).geometry
+    assert {k: g[k]["value"] for k in GEOMETRY} == GEOMETRY
+    assert all(g[k]["source"]["kind"] == "entered" and g[k]["source"]["by"] == OPERATOR
+               for k in GEOMETRY)
+    assert view(day).loading["geometry"]["done"] and not view(day).loading["confirmed"]
     day.done.add("geometry")
 
 
-def test_07_f3_loading_confirm(day):
+def test_07_f3_loading_is_confirmed_by_the_person_and_the_image(day):
     after(day, "geometry")
-    pending("dino_autofocus.engine.operations.sample_ops", "T-027")
+    at_the_edge(day)  # the image check needs structure in view: the chamber edge, in focus
+    end = day.run("loading_confirm_person", {"sample_id": day.sample.id})
+    assert end.kind == "finished", end.data
+    end = day.run("loading_check_image", {"sample_id": day.sample.id})
+    assert end.kind == "finished", end.data
+    assert end.data["summary"]["ok"], end.data["summary"]
+    assert day.lights() == OFF  # the lamp for the frame is off again
+    loading = view(day).loading
+    assert loading["person"]["done"] and loading["image"]["ok"] and loading["confirmed"]
+    assert loading["person"]["by"] == OPERATOR
+    assert (day.sample.dir / end.data["summary"]["frame_ref"]).is_file()
+    day.done.add("loaded")
 
 
 # -- F4: find the hole, map the sample ---------------------------------------------------------
 
 def test_08_f4_edge_trace_fits_the_hole(day):
-    after(day, "geometry")
-    b, world = day.backend, day.backend.world
+    after(day, "loaded")
+    b = day.backend
     assert b.nosepiece().endswith("4x")
-    # the operator's hands: joystick to the chamber edge, focus knob to the 4x focus there
-    r = SPEC.hole_diameter_mm * 500 + 300
-    world.move_xy(SPEC.hole_centre_um[0] + r * math.cos(0.7),
-                  SPEC.hole_centre_um[1] + r * math.sin(0.7))
-    world.move_z(world.in_focus_z())
+    at_the_edge(day)
     b.set_roi(TRACE_ROI_PX)
     z_before = b.positions().z_um
 
@@ -150,23 +182,27 @@ def test_08_f4_edge_trace_fits_the_hole(day):
     day.done.add("edge_trace")
 
 
-def test_09_sample_events_fold_to_the_traced_hole(day):
-    """Until T-027's boundary_mark writes them, the day records the trace as sample events
-    the way that operation will; the fold must give back the traced hole."""
+def test_09_the_trace_lands_in_the_sample_record(day):
+    """Each traced edge point goes in through T-027's boundary_mark (the edge_trace op will
+    call it once it is registered, T-032); the hole fit itself is written as its sample
+    event here until then. The sample view must give back the traced hole and loop."""
     after(day, "edge_trace")
     s, hole = day.session, day.trace["hole"]
-    boundary = day.sample.load_map().boundary
-    s.sample_event("boundary_clear")
-    for x, y in boundary:
-        s.sample_event("boundary_point", x_um=x, y_um=y)
+    points = [list(p) for p in day.sample.load_map().boundary]  # what the trace saw
+    assert len(points) == day.trace["n_points"]
+    for x, y in points:
+        assert day.run("boundary_mark", {"sample_id": day.sample.id, "x_um": x,
+                                         "y_um": y}).kind == "finished"
     s.sample_event("hole_fit", **hole)
 
+    v = view(day)
+    assert [[p["x_um"], p["y_um"]] for p in v.boundary] == points
+    assert v.hole["centre_um"] == hole["centre_um"]
+    assert v.hole["diameter_mm"] == hole["diameter_mm"]
+    assert v.hole_loop["closed"]
+    assert v.sessions == [s.session_id]
     st = sample_state(day.store, day.sample.id)
-    assert st.hole["centre_um"] == hole["centre_um"]
-    assert st.hole["diameter_mm"] == hole["diameter_mm"]
-    assert [(p["x_um"], p["y_um"]) for p in st.boundary] == [tuple(p) for p in boundary]
-    assert len(st.boundary) == day.trace["n_points"]
-    assert st.sessions == [s.session_id]
+    assert len(st.boundary) == len(points) and st.sessions == [s.session_id]
     assert all(e.user_id == OPERATOR and e.session_id == s.session_id for e in s.events())
     day.done.add("fold")
 
@@ -215,16 +251,17 @@ def test_15_light_set_stays_through_status_then_lights_off(day):
 
 
 def test_16_every_record_carries_the_user_and_the_session(day):
-    after(day, "lights", "edge_trace")
+    after(day, "lights", "fold")
     sid = day.session.session_id
     recs = summaries(day)
     ops = [r["op"] for r in recs]
-    assert {"edge_trace", "light_set", "status", "lights_off"} <= set(ops)
+    assert {"edge_trace", "light_set", "status", "lights_off", "sample_geometry_set",
+            "loading_confirm_person", "loading_check_image", "boundary_mark"} <= set(ops)
     for r in recs:  # the runner's records and the edge_trace code's own record
         assert r["user_id"] == OPERATOR, r["op_id"]
         assert r["session_id"] == sid, r["op_id"]
     lay = day.session.layout
-    for path in (lay.log, lay.sample_events, lay.operation_record("sample_geometry")):
+    for path in (lay.log, lay.sample_events, lay.manual_steps):
         for line in read_jsonl(path):
             assert (line["user_id"], line["session_id"]) == (OPERATOR, sid), path.name
     for ev in day.events:  # what every screen heard

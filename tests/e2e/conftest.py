@@ -16,8 +16,10 @@ brings it, so `pytest tests/e2e -rs` reads as M1's progress. No windows, no netw
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import json
+import pkgutil
 import queue
 import shutil
 import time
@@ -29,6 +31,7 @@ import pytest
 
 from dino_autofocus.auth import AccountStore, AuditLog, DeviceControl, LoginSessions, passwords
 from dino_autofocus.auth import config as auth_config
+from dino_autofocus.engine import operations as operations_pkg
 from dino_autofocus.engine.backends.mock import MockBackend
 from dino_autofocus.engine.events import Command, Event, queue_sink
 from dino_autofocus.engine.guards import OperationAborted, OpScope, exclusive
@@ -55,6 +58,15 @@ USERS = [
     {"name": "Vera Viewer", "email": "vera@example.test", "role": "viewer"},
 ]
 PASSWORD = "e2e-test-pass-2468"
+
+# every operations module on main registers its classes with the runner on import (as the
+# server will load them); a module that is not on main yet simply is not there
+for _m in pkgutil.iter_modules(operations_pkg.__path__):
+    importlib.import_module(f"{operations_pkg.__name__}.{_m.name}")
+try:  # T-027: the runner reaches the records store and the open session through this seat
+    from dino_autofocus.engine.operations import sample_ops
+except ImportError:  # pragma: no cover - before T-027
+    sample_ops = None
 OPERATOR = "otto@example.test"
 ENDS = ("finished", "aborted", "error")
 #: inner lifecycle events of a T-030 run_* function; the runner announces its own
@@ -191,7 +203,8 @@ class Bench:
         self.samples_root.mkdir(parents=True, exist_ok=True)
 
         self.backend = MockBackend(seed=seed)
-        registry, self.stand_ins = Registry(), []
+        self.registry = registry = Registry()
+        self.stand_ins: list[str] = []
         for cls in stand_ins(self):
             real = OPERATIONS.get(cls.name)
             registry.register(real or cls)
@@ -206,6 +219,13 @@ class Bench:
             config=RunnerConfig(position_interval_s=None,
                                 local_gone_abort_s=local_gone_abort_s))
         self.runner.subscribe(queue_sink(self._q))
+        if sample_ops is not None:
+            sample_ops.install_sample_seat(self.runner, sample_ops.SampleSeat(
+                self.store, self.samples_root, session_for=self._session_for))
+
+    def _session_for(self, session_id: str):
+        s = self.session
+        return s if s is not None and s.session_id == session_id else None
 
     # -- ids
     @property
@@ -227,11 +247,20 @@ class Bench:
         self.control_token = self.control.acquire(self.login_token, local=True).token
 
     def open_session(self, user: str = OPERATOR) -> ExperimentSession:
-        self.sample = Sample(new_sample_id(self.samples_root), self.samples_root)
-        self.sample.dir.mkdir()
+        """Pick a new sample (T-027 `sample_new` through the runner when it is registered),
+        then open the experiment session for it as the server will."""
+        if self.registry.get("sample_new") is not None:
+            end = self.run("sample_new")
+            assert end.kind == "finished", end.data
+            self.sample = Sample(end.data["summary"]["sample_id"], self.samples_root)
+        else:
+            self.sample = Sample(new_sample_id(self.samples_root), self.samples_root)
+            self.sample.dir.mkdir()
+            self.runner.set_current_sample(self.sample.id)
         self.session = ExperimentSession.open(self.store, user, self.sample.id)
+        if sample_ops is not None:
+            sample_ops.ensure_sample_created(self.session, self.store)
         self.runner.set_experiment_session(self.session.session_id, time.time())
-        self.runner.set_current_sample(self.sample.id)
         return self.session
 
     def ready(self) -> Bench:
