@@ -79,3 +79,12 @@
 - Same fix in the `finally` loop (reviewer, 5006a4a merge).
 - SAFETY (reviewer, before M3/M4): `approach()` refuses on a non-mock backend when `clearance` is None. This is
   defence in depth next to the T-011 runner check. Test with a bench-flagged FakeBackend.
+- guards table (PLAN v1.3, fbc1e08): add the F5 step-out as data, `escape_dy_um = +15000` (sign +Y, 15 mm), marked
+  "unmeasured provisional", plus a check that refuses a step-out beyond the stage Y limit read from the backend.
+- Reader: expose whether the current hole fit came from a closed loop (`trace_stop`, `arc_deg`), next to
+  `fitted_at`, so the re-trace rule and scan_4x can tell a partial arc from a full fit.
+- `hole_loop()` prefers `hole["closed_loop"]` when present (T-032 adds it); the text match and the
+  FULL_LOOP_ARC_DEG = 330 (unmeasured provisional) rule stay only for older fits.
+- guards `registry_key`: the regex `(\d+)x\b` fails on the real 40x label "4-Apo LmbdS 40xC WI", so it falls to
+  the strictest row. Match `(\d+)x` followed by a letter or boundary; add tests with every lens label in
+  `configs/ti2_*.yaml` and the mock world, including "40xC WI" → "40x-WI".
