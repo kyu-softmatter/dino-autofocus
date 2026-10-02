@@ -221,15 +221,19 @@ def test_relative_xy_moves_go_through_the_absolute_guard(fake):
     assert not any(c[0] == "move_xy_rel" for c in fake.calls)
 
 
-@pytest.mark.parametrize("kind", ["mm-real", "something-new"])
-def test_approach_on_a_bench_needs_a_clearance_check(fake, kind):
+@pytest.mark.parametrize("flagged", ["bench=True", "no bench field, unknown kind"])
+def test_approach_on_a_bench_needs_a_clearance_check(fake, flagged):
+    from types import SimpleNamespace
+
     real_info = fake.info
 
     def bench_info():
         info = real_info()
-        info.kind = kind
-        return info
-    fake.info = bench_info  # a bench-flagged FakeBackend
+        if flagged == "bench=True":
+            info.bench = True  # a bench-flagged FakeBackend (T-033)
+            return info
+        return SimpleNamespace(kind="something-new")  # a backend from before T-033
+    fake.info = bench_info
     fake.z = 0.0
     a = axis(fake, OIL)
     with pytest.raises(GuardError, match="needs a clearance check"):
