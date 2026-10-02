@@ -315,10 +315,16 @@ class FocusAxis:
                            k is not None and k == len(pts) - 1 and len(pts) > 1)
 
     def _simulated(self) -> bool:
+        """BackendInfo.bench decides (T-033: True on mm-real). Before that field exists the
+        kind is checked instead, strictly: a kind not in SIMULATED_KINDS is a bench."""
         try:
-            return self.b.info().kind in SIMULATED_KINDS
+            info = self.b.info()
         except Exception:  # noqa: BLE001 - an unreadable backend counts as a bench
             return False
+        bench = getattr(info, "bench", None)
+        if isinstance(bench, bool):
+            return not bench
+        return info.kind in SIMULATED_KINDS
 
     def _check_plan(self, plan: SweepPlan) -> None:
         """A plan is re-checked here, so a hand-built one cannot pass the ceiling."""
@@ -554,6 +560,35 @@ def snapshot(backend: Backend) -> dict:
     return out
 
 
+def check_lights(readbacks: list[Readback], emit: EventSink = null_sink,
+                 op_id: str = "") -> list[Readback]:
+    """Emit `light_changed` with the readbacks; raise GuardError if any does not verify or
+    there is none (an empty readback proves nothing)."""
+    emit(Event("light_changed", op_id, {"readbacks": [asdict(r) for r in readbacks]}))
+    bad = [f"{r.device}.{r.prop} wanted {r.wanted}, read {r.read}" for r in readbacks
+           if not r.verified]
+    if not readbacks:
+        bad = ["the backend returned no readback"]
+    if bad:
+        raise GuardError("light not verified: " + "; ".join(bad))
+    return readbacks
+
+
+def lamp_on(backend: Backend, emit: EventSink = null_sink, op_id: str = "") -> list[Readback]:
+    """Transmitted lamp on with the guard token (D15), read back and recorded. For
+    operations run by the runner, which owns the exit path that switches it off again."""
+    return check_lights(backend.lamp_on(token=GUARD_TOKEN), emit, op_id)
+
+
+def aura_line_on(backend: Backend, line: str, percent: float, emit: EventSink = null_sink,
+                 op_id: str = "") -> list[Readback]:
+    """One Aura line on at `percent` with the guard token, read back and recorded."""
+    pct = plain(percent, "Aura percent")
+    if not 0.0 < pct <= 100.0:
+        raise GuardError(f"Aura percent {pct} is outside (0, 100]")
+    return check_lights(backend.aura_line_on(str(line), pct, token=GUARD_TOKEN), emit, op_id)
+
+
 @dataclass
 class OpScope:
     """`answers` receives `confirm` Commands from whoever dispatches commands (the UI)."""
@@ -568,14 +603,11 @@ class OpScope:
     def lamp_on(self) -> list[Readback]:
         """Transmitted lamp on: the one legal way for an operation (D15). Off is the scope's
         exit path, or `backend.lamp_off()` / `all_off()`, which need no token."""
-        return self.lights(self._backend().lamp_on(token=GUARD_TOKEN))
+        return lamp_on(self._backend(), self.emit, self.op_id)
 
     def aura_line_on(self, line: str, percent: float) -> list[Readback]:
         """One Aura line on at `percent` (the backend converts to per-mille); lamp off first."""
-        pct = plain(percent, "Aura percent")
-        if not 0.0 < pct <= 100.0:
-            raise GuardError(f"Aura percent {pct} is outside (0, 100]")
-        return self.lights(self._backend().aura_line_on(str(line), pct, token=GUARD_TOKEN))
+        return aura_line_on(self._backend(), line, percent, self.emit, self.op_id)
 
     def _backend(self) -> Backend:
         if self.backend is None:
@@ -584,13 +616,7 @@ class OpScope:
 
     def lights(self, readbacks: list[Readback]) -> list[Readback]:
         """Record a light change; any readback that does not verify stops the operation."""
-        rbs = [asdict(r) for r in readbacks]
-        self.emit(Event("light_changed", self.op_id, {"readbacks": rbs}))
-        bad = [f"{r.device}.{r.prop} wanted {r.wanted}, read {r.read}" for r in readbacks
-               if not r.verified]
-        if bad:
-            raise GuardError("light not verified: " + "; ".join(bad))
-        return readbacks
+        return check_lights(readbacks, self.emit, self.op_id)
 
     def ask(self, key: str, text: str, timeout_s: float | None = None, **data: Any) -> bool:
         """A manual step: emit `confirm_required`, wait for the matching confirm, record it.
@@ -655,7 +681,10 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
         end = snapshot(backend)
         closing = [Event("light_changed", rec.op_id, lights)]
         if status != "error":
-            closing.append(Event(status, rec.op_id, {"error": error}))
+            data = {"error": error}
+            if status == "finished":
+                data["summary"] = scope.result  # the screens read finished.data.summary
+            closing.append(Event(status, rec.op_id, data))
         for ev in closing:
             error = _emit_safely(ev, rec, sink, error)
         rec.finish(status, lights=lights, end_state=end, result=scope.result, error=error)

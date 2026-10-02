@@ -286,3 +286,22 @@ def test_config_lens_names_map_to_table_rows():
     assert len(names) == 6
     keys = {registry_key(n) for n in names}
     assert keys == {"4x", "10x", "20x", "40x-WI", "60x-Oil", "100x-Oil"}
+
+
+@pytest.mark.parametrize("bench, refused", [(True, True), (False, False)])
+def test_the_bench_flag_decides_when_present(fake, bench, refused):
+    real_info = fake.info
+
+    def flagged():
+        info = real_info()
+        info.kind = "mock"
+        info.bench = bench  # T-033 field; set by hand until it lands
+        return info
+    fake.info = flagged
+    fake.z = 0.0
+    a = axis(fake, OIL)
+    if refused:
+        with pytest.raises(GuardError, match="needs a clearance check"):
+            a.approach(2810)
+    else:
+        assert a.approach(2810) == 2810

@@ -339,3 +339,133 @@ class Sample:
         d = {**m.extra, "visits": m.visits[-MAP_VISITS_KEPT:], "boundary": m.boundary}
         self.map_json.write_text(json.dumps(d, indent=0), encoding="utf-8")
         return self.map_json
+
+
+# -- the reader: one fold (records.events.fold, T-019), one projection ---------------------
+BOUNDARY_UNDO = "boundary_undo"  # drops the latest boundary point still standing
+# F5 step-out / return, written by objective_change (T-029); the latest one decides
+STEPPED_OUT, STEPPED_BACK = "objective_stepped_out", "objective_stepped_back"
+
+
+def _order(rec: dict[str, Any]) -> tuple:
+    """The fold's own order: parsed time, session, seq (seq orders events in one second)."""
+    from datetime import datetime
+
+    t = datetime.fromisoformat(rec["t"])
+    return (t if t.tzinfo else t.astimezone(), rec.get("session_id", ""), int(rec.get("seq", 0)))
+
+
+def boundary_view(points: list[dict[str, Any]], other: list[dict[str, Any]]) -> list[dict]:
+    """Boundary points still standing: fold's `boundary` (after its last clear) with every
+    `boundary_undo` applied in order. An undo removes the latest point before it; an undo
+    from before the last clear finds no earlier point and does nothing."""
+    timeline = [(_order(p), 0, p) for p in points]
+    timeline += [(_order(o), 1, o) for o in other if o.get("kind") == BOUNDARY_UNDO]
+    standing: list[dict[str, Any]] = []
+    for _, is_undo, rec in sorted(timeline, key=lambda x: x[0]):
+        if not is_undo:
+            standing.append(rec)
+        elif standing:
+            standing.pop()
+    return standing
+
+
+@dataclass
+class SampleView:
+    """Everything the sample, map and sessions screens read about one sample."""
+
+    sample_id: str
+    exists: bool
+    created: str | None
+    hole: dict[str, Any] | None
+    hole_loop: dict[str, Any]
+    boundary: list[dict[str, Any]]
+    visits: list[dict[str, Any]]
+    flags: dict[str, dict[str, Any]]
+    candidates: dict[str, dict[str, Any]]
+    confirmed_particles: dict[str, dict[str, Any]]
+    geometry: dict[str, dict[str, Any]]
+    loading: dict[str, Any]
+    sessions: list[str]
+    last_session: dict[str, Any] | None
+    awaiting_return: bool
+    objectives_used: list[str]
+    n_events: int
+    updated: str | None
+
+    def summary(self) -> dict[str, Any]:
+        """SampleSummary of docs/screens/sample.md section 3."""
+        return {"sample_id": self.sample_id, "created": self.created,
+                "fitted_at": (self.hole or {}).get("fitted_at"),
+                "closed_loop": self.hole_loop["closed"],
+                "objectives_used": self.objectives_used, "last_session": self.last_session,
+                "awaiting_return": self.awaiting_return}
+
+
+def read_sample(store: Any, sample_id: str, samples_root: Path = SAMPLES_ROOT,
+                session_id: str | None = None) -> SampleView:
+    """Project the folded sample events (all sessions) into one view. `session_id` is the
+    open experiment session, for the loading state. A sample from before the event store
+    (2026-09-30) falls back to its legacy sample.json for hole and created."""
+    from dino_autofocus.records.session import sample_state, sessions_of_sample
+
+    state = sample_state(store, sample_id)
+    legacy = Sample(sample_id, samples_root)
+    info = legacy.load_info() if legacy.sample_json.exists() else None
+    other = list(state.other)
+    created = next((o["t"] for o in other if o.get("kind") == SAMPLE_CREATED), None)
+    if created is None and info is not None:
+        created = info.created
+    hole = state.hole if state.hole is not None else (info.hole if info else None)
+    sessions = sessions_of_sample(store, sample_id)
+    last = max(sessions, key=lambda i: i.get("started_at", ""), default=None)
+    steps = [o for o in other if o.get("kind") in (STEPPED_OUT, STEPPED_BACK)]
+    objectives = sorted({str(v["objective"]) for v in state.visits if v.get("objective")}
+                        | set(info.objectives_used if info else []))
+    return SampleView(
+        sample_id=sample_id,
+        exists=legacy.dir.is_dir() or bool(sessions),
+        created=created, hole=hole, hole_loop=hole_loop(hole),
+        boundary=boundary_view(state.boundary, other), visits=list(state.visits),
+        flags=dict(state.flags),
+        candidates={k: p for k, p in state.particles.items() if p.get("status") != "confirmed"},
+        confirmed_particles={k: p for k, p in state.particles.items()
+                             if p.get("status") == "confirmed"},
+        geometry=geometry_view(other), loading=loading_view(other, session_id),
+        sessions=[i["session_id"] for i in sessions],
+        last_session=None if last is None else {"session_id": last["session_id"],
+                                                "opened_at": last.get("started_at")},
+        awaiting_return=bool(steps) and steps[-1].get("kind") == STEPPED_OUT,
+        objectives_used=objectives, n_events=state.n_events, updated=state.updated)
+
+
+def write_derived_views(view: SampleView, samples_root: Path = SAMPLES_ROOT,
+                        with_map: bool = False) -> None:
+    """Regenerate the legacy sample.json (and, with `with_map`, map.json) from the view, so
+    the 2026-09-30 tools keep working. Keys these files hold that the view does not know
+    are kept. map.json is written only when asked (an op that changed the boundary or the
+    visits), so a sample whose map exists only in the legacy file is not wiped."""
+    s = Sample(view.sample_id, samples_root)
+    info = s.load_info() if s.sample_json.exists() else SampleInfo(view.sample_id)
+    if view.created:
+        info.created = view.created
+    if view.hole is not None:
+        info.hole = view.hole
+    info.objectives_used = view.objectives_used
+    entered = {k: v["value"] for k, v in view.geometry.items()
+               if v["source"]["kind"] == "entered"}
+    if entered:
+        old = info.geometry or SampleGeometry()
+        info.geometry = SampleGeometry(old.extra, **{**old.values, **entered})
+    if with_map:
+        pts = [[float(p["x_um"]), float(p["y_um"])] for p in view.boundary]
+        info.boundary_limits_um = None if len(pts) < 2 else {
+            "x": [min(p[0] for p in pts), max(p[0] for p in pts)],
+            "y": [min(p[1] for p in pts), max(p[1] for p in pts)]}
+        info.n_fields_visited = len(view.visits)
+        m = s.load_map()
+        m.boundary = pts
+        m.visits = [{**v, "x": v.get("x_um", v.get("x")), "y": v.get("y_um", v.get("y"))}
+                    for v in view.visits]
+        s.save_map(m)
+    s.save_info(info)
