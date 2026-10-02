@@ -46,6 +46,8 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 - SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard and T-011's bench check are both on main. Tell the director when they are.
 
+- On resume of the screen routers: T-106 (실행2) calls `ensure_sample_created(session, store)` on session open (T-027 seam).
+
 ## 후속 과제 후보
 
 - **WP-C 초점 이식에 같이 넣을 것** (실행2 메모, 2026-10-01): `focus/classical.py` 에

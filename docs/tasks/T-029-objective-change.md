@@ -45,3 +45,8 @@
 
 - mock_world's 40x uses key "40x-Water"; guards use "40x-WI". Use the guards key so the mock 40x gets its own
   table row. One-line change plus a test that every mock lens maps to a non-strictest row.
+
+## Sample events for awaiting_return (from T-027)
+
+- Write sample events `objective_stepped_out` on the Y step-out and `objective_stepped_back` on the return
+  (constants STEPPED_OUT / STEPPED_BACK in `engine/sample.py`); `read_sample().awaiting_return` reads the latest.

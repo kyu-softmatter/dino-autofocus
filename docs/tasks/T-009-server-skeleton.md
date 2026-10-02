@@ -134,3 +134,10 @@
 
 - The remote middleware's 403 carries `detail.code = "remote_view"` (and a header `X-DinoAF-Refusal: remote_view`).
   Every other 403 (D16, session owner, role) uses its own code. Test both.
+
+## Sample seat wiring (T-009b, from T-027 9e192b0)
+
+- At app start: `import dino_autofocus.engine.operations.sample_ops` (registers the ops) and
+  `install_sample_seat(runner, SampleSeat(store, samples_root, session_for))`, where `session_for(session_id)` returns the
+  server's open ExperimentSession object, so every writer shares one seq counter.
+- The sessions router (T-106) calls `ensure_sample_created(session, store)` on session open.
