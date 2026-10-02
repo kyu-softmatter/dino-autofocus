@@ -175,3 +175,14 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 - `snapshot()["sample"] = {sample_id, reserved, session_id}`, so the server can open a session for the current
   sample.
+
+## Bench backends need a clearance callback (from T-002-4 pre-review)
+
+- When the backend is a bench backend (mm-real), the runner refuses any op that calls `approach()` without a
+  clearance callback. Before M4.
+
+## Permission check for the screens (from T-103)
+
+- `check(ops, context) -> {op: {allowed, reason}}`, computed from the one permission table plus engine state
+  (running op, awaiting_return, open session, control holder). The server adds remote and auth state
+  (T-009b `GET /api/permissions`). Screens never compute these reasons themselves.
