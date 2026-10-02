@@ -266,7 +266,7 @@ describe("map screen", () => {
     const w = await mount();
     w.data.flags[SAMPLE] = [
       ...w.data.flags[SAMPLE],
-      { flag_id: "f9", name: "new one", note: "", t: 0, objective: "4x", x_um: 1, y_um: 2, z_um: null, replaces: null, retired_at: null },
+      { flag_id: "f9", name: "new one", note: "", t: 0, objective: "4x", x_um: 1, y_um: 2, z_um: null, replaces: null, retired: false, retired_at: null },
     ];
     await w.emit("map_changed", { sample_id: SAMPLE });
     await screen.findByRole("button", { name: "new one" });
@@ -276,7 +276,7 @@ describe("map screen", () => {
     const w = await mount();
     w.data.flags[SAMPLE] = [
       ...w.data.flags[SAMPLE],
-      { flag_id: "f8", name: "missed while offline", note: "", t: 0, objective: "4x", x_um: 1, y_um: 2, z_um: null, replaces: null, retired_at: null },
+      { flag_id: "f8", name: "missed while offline", note: "", t: 0, objective: "4x", x_um: 1, y_um: 2, z_um: null, replaces: null, retired: false, retired_at: null },
     ];
     const first = w.socket();
     await act(async () => first.close());

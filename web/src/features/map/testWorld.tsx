@@ -47,7 +47,7 @@ function answer(data: FakeData, path: string): { status: number; body?: unknown 
   if (area === "results") return ok(rid === undefined ? (data.results[id] ?? []) : data.details[rid]);
   if (area === "flags") {
     const all = query.get("include_retired") === "true";
-    return ok((data.flags[id] ?? []).filter((f) => all || !(f.retired === true || f.retired_at !== null)));
+    return ok((data.flags[id] ?? []).filter((f) => all || !(f.retired === true || f.retired_at != null)));
   }
   if (area === "candidates") {
     const all = query.get("include_rejected") === "true";
