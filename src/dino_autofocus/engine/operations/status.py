@@ -8,8 +8,9 @@ folder `status_<stamp>/` is written only when the user asked for the status (`ke
 so a status bar refresh never creates folders.
 
 Nothing is switched: the lights stay as they are (a `light_set` before it keeps its light).
-Until the T-011 runner lands, `run_status` drives the T-002 record lifecycle directly; the
-runner adapter will call `read_status` the same way.
+`StatusOp` is the runner's `status` (registered with T-011); `run_status` drives the T-002
+record lifecycle directly for callers without a runner. Under the runner a finished status
+keeps every light as it was (the runner's `restore` exit rule).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from ..backend import Backend
 from ..events import Event, EventSink, fan_out, null_sink
 from ..guards import snapshot
 from ..records import OpRecord
+from ..runner import Operation, register_operation
 
 NAME = "status"
 
@@ -104,3 +106,19 @@ def run_status(backend: Backend, parent: Path | None = None, sink: EventSink = n
             emit(Event("finished", rec.op_id, {"error": None}))
         rec.finish(status, lights=lights, end_state=snapshot(backend), result=st, error=error)
     return st
+
+
+@register_operation
+class StatusOp(Operation):
+    """`start("status")`: one `reading` event; the summary carries the same fields."""
+
+    name = NAME
+    motion = False
+
+    def plan(self) -> dict:
+        return {"op": NAME, "text": "Read objective, Z, PFS and lights. Nothing moves."}
+
+    def run(self) -> dict:
+        st = read_status(self.ctx.backend)
+        self.ctx.emit("reading", op=NAME, source="status", value=st)
+        return {"status": st}
