@@ -54,7 +54,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from . import records as op_records
-from .backend import Frame, Positions
+from .backend import AURA_LINES, Frame, Positions
 from .events import Command, Event, EventSink
 
 log = logging.getLogger(__name__)
@@ -72,7 +72,10 @@ AWAITING_WHY = "the stage is away from the sample; return it first"
 
 @runtime_checkable
 class EngineAPI(Protocol):
-    """What the server (T-009) talks to. abort / confirm / lights_off are Commands too."""
+    """What the server (T-009) talks to. abort / confirm / lights_off are Commands too.
+
+    Sinks are called in order under one lock, from engine threads (also the lights-off
+    path): a sink must hand the event on and return at once, never block or wait."""
 
     def submit(self, cmd: Command) -> str: ...  # op_id; raises CommandRefused
     def subscribe(self, sink: EventSink) -> Callable[[], None]: ...  # returns unsubscribe
@@ -97,38 +100,43 @@ class Aborted(Exception):
 @dataclass(frozen=True)
 class Permission:
     action: str  # "motion" | "light" | "read" | "record" | "stop"
-    control: bool  # needs the operator's control grant
-    session: bool  # needs an open experiment session
+    control: bool  # needs the operator's control grant (checked here)
+    session: bool  # needs an open experiment session (checked here)
+    operator: bool = False  # needs a logged-in local operator (the server checks the role)
 
 
 MOTION = Permission("motion", True, True)
+_MARK = Permission("record", False, True, operator=True)  # beside a hardware op (D16)
 PERMISSIONS: dict[str, Permission] = {
-    # proposed classes for the screen contracts' op names; the server reads this table
+    # manager-confirmed classes (T-011 card); the server reads this table
     "hardware_scan": Permission("read", True, False),  # detection only, before a session
-    "hardware_confirm": Permission("record", True, False),
     "status": Permission("read", True, False),
-    "light_set": Permission("light", True, True),  # D15
-    "edge_trace": MOTION,
-    "boundary_mark": Permission("record", True, True),
-    "boundary_undo": Permission("record", True, True),
-    "boundary_reset": Permission("record", True, True),
-    "scan_4x": MOTION,
-    "sample_map": MOTION,
-    "goto_xy": MOTION,
-    "objective_change": MOTION,
-    "focus_100x": MOTION,
-    "map_flag": Permission("record", True, True),  # D16: operators only
-    "map_flag_retire": Permission("record", True, True),
-    "candidate_confirm": Permission("record", True, True),
-    "candidate_reject": Permission("record", True, True),
+    "hardware_confirm": Permission("record", True, False, operator=True),
     # pick the sample for the next session; with a session open the operation's preflight
     # refuses any sample but the session's own (one sample per session, T-019)
     "sample_open": Permission("record", True, False),
     "sample_new": Permission("record", True, False),
-    "score_tare": Permission("record", True, True),
+    "sample_geometry_set": Permission("record", True, True),
+    "loading_confirm_person": Permission("record", True, True),
+    "loading_check_image": Permission("record", True, True),
+    "boundary_mark": _MARK,
+    "boundary_undo": _MARK,
+    "boundary_reset": _MARK,
+    "map_flag": _MARK,
+    "map_flag_retire": _MARK,
+    "candidate_confirm": _MARK,
+    "candidate_reject": _MARK,
+    "score_tare": Permission("record", True, True),  # not in the card's table yet
     "score_tare_clear": Permission("record", True, True),
     "frame_save": Permission("record", True, True),
-    # command kinds, listed so the server's table is complete
+    "light_set": Permission("light", True, True),  # D15
+    "edge_trace": MOTION,
+    "scan_4x": MOTION,
+    "sample_map": MOTION,
+    "goto_xy": MOTION,
+    "focus_100x": MOTION,
+    "objective_change": MOTION,
+    # command kinds, listed so the server's table is complete (D13: remote abort only)
     "abort": Permission("stop", False, False),
     LIGHTS_OFF: Permission("stop", False, False),
 }
@@ -405,6 +413,8 @@ class _Op:
     confirmed_at: float | None = None
     why: str = ""
     quiet: bool = False  # plan-only: events go nowhere
+    lights_before: dict | None = None  # light payload at start: what `restore` keeps
+    hand_back: _Op | None = None  # lights_off: an owner that did not exit keeps the core
     last_progress: dict | None = None
     end_state: dict = field(default_factory=dict)
     manual_steps: list = field(default_factory=list)
@@ -594,7 +604,11 @@ class Runner:
             self._stream.stop()
         except Exception:
             log.exception("stream stop failed")
-        last = self._last_off or {}
+        # once more after everything ended: an op finishing in the window (light_set) may
+        # have switched a light on again; this readback is the one the next start shows
+        final = self._new_op(LightsOff, Command("lights_off", args={"why": reason}))
+        self._lights_off(final, timeout, preempt=False)
+        last = final.end_state.get("lights") or {}
         rec = {"t": time.time(), "reason": reason, "all_off": last.get("verified") is True,
                "records": last.get("records", []), "error": last.get("error")}
         self._write_state(LAST_SHUTDOWN, rec)
@@ -693,6 +707,9 @@ class Runner:
         self._emit(Event("session_changed", data={
             "session_id": sid, "started_at": started_at if session_id else None,
             "state": "open" if session_id else "closed"}, session_id=session_id))
+        if prev and not session_id and self._started and not self._closed:
+            # closing a session is a stop: abort what runs and switch everything off
+            self.submit(Command("lights_off", args={"why": "session closed"}))
 
     def set_current_sample(self, sample_id: str | None, *, reserved: bool = False) -> None:
         """The sample on the stage (`sample_open` / `sample_new` call it through their
@@ -758,6 +775,8 @@ class Runner:
                                            "proposal_id": op.proposal_id,
                                            "conversation_id": op.conversation_id})
             return op.op_id
+        if cmd.confirmed_by and cmd.confirmed_by != cmd.user_id:
+            raise self._refuse(cmd, op.op_id, "confirmed_by must be the user who sends it")
         if why := self._unauthorized(cmd, op.op):
             raise self._refuse(cmd, op.op_id, why)
         # an assistant command here was confirmed on its T-013 card by `confirmed_by`
@@ -775,9 +794,19 @@ class Runner:
             raise self._refuse(cmd, cmd.op_id, "no proposal with that op_id")
         if why := self._unauthorized(cmd, op.op):
             raise self._refuse(cmd, op.op_id, why)
+        with self._lock:  # two approves at once: only one launches
+            taken = op.state == "proposed"
+            if taken:
+                op.state = "approving"
+        if not taken:
+            raise self._refuse(cmd, op.op_id, "no proposal with that op_id")
         op.confirmed_by, op.confirmed_at = cmd.user_id, cmd.t
         op.user_id, op.session_id = cmd.user_id, self._session_of(cmd) or op.session_id
-        return self._launch(op, cmd, approved=True)
+        try:
+            return self._launch(op, cmd, approved=True)
+        except CommandRefused:
+            op.state = "proposed"  # busy: the card stays and can be approved again
+            raise
 
     def _on_reject(self, cmd: Command) -> str:
         op = self._ops.get(cmd.op_id)
@@ -933,6 +962,7 @@ class Runner:
                         prev.thread.join(self.config.preempt_wait_s if timeout is None
                                          else timeout)
                         if prev.thread.is_alive():
+                            op.hand_back = prev  # it may still drive hardware: keep it owned
                             self._emit_op(op, "log", {"level": "warning",
                                                       "text": f"{prev.op_id} did not exit; "
                                                               "switching off anyway"})
@@ -958,10 +988,13 @@ class Runner:
                 paused = True
             op.state = "running"
             touched = cls.exclusive
+            start_state = self._state_now(cls)
+            op.lights_before = start_state.get("lights")
             self._emit_op(op, "started", {**op.meta(), "args": dict(op.args),
-                                          "start_state": self._state_now(cls)})
+                                          "start_state": start_state})
             summary = dict(inst.run() or {})
-            state = "finished"
+            # abort asked while run() was returning: it ends aborted, lights off
+            state = "aborted" if op.abort_evt.is_set() else "finished"
         except Aborted:
             state = "aborted"
         except Exception as e:
@@ -976,21 +1009,7 @@ class Runner:
         if summary.get("state") == "awaiting_return":  # e.g. return_xy goes with it
             end = {**summary, **end}
         if cls.exclusive:
-            keep = state == "finished" and cls.keep_lights_on_finish
-            if cls is LightsOff and state == "finished":
-                end["lights"] = self._last_off
-            elif touched and not keep:
-                try:
-                    recs = self._switch_off(op)
-                    end["lights"] = {"off": True, "verified": _verified(recs),
-                                     "records": recs}
-                except Exception as e:
-                    self._emit_op(op, "error", {"op": op.op, "where": "exit",
-                                                "message": f"lights off failed: {e}"})
-                    end["lights"] = {"off": False, "verified": False, "error": str(e)}
-                    self._last_off = {"verified": False, "records": [], "error": str(e)}
-            else:
-                end["lights"] = self._read_lights()
+            end["lights"] = self._exit_lights(op, state, touched)
         if paused:
             try:
                 self._stream.resume()
@@ -1004,7 +1023,8 @@ class Runner:
         with self._lock:
             op.state = state
             if self._owner is op:
-                self._owner = None
+                back = op.hand_back
+                self._owner = back if back is not None and back.state not in ENDED else None
             self._idle.notify_all()
         record_dir = getattr(op.record, "dir", None)
         if state == "finished":
@@ -1024,6 +1044,53 @@ class Runner:
         except Exception:
             log.exception("record close of %s failed", op.op_id)
         self._emit(ev)
+
+    def _exit_lights(self, op: _Op, state: str, touched: bool) -> dict:
+        """The exit-path light rule, recorded as `rule`:
+        - `restore`: a normal finish turns off only what this operation turned on, so a
+          light_set survives a following status;
+        - `keep`: light_set (`keep_lights_on_finish`) finishing leaves its light as set;
+        - `all_off`: abort, error, lights_off, shutdown, D14 and session close;
+        - `untouched`: the operation never started, so nothing was commanded."""
+        cls = op.cls
+        if cls is LightsOff and state == "finished":
+            return {**(self._last_off or {}), "off": True, "rule": "all_off"}
+        if not touched:
+            return {**self._read_lights(), "rule": "untouched"}
+        if state == "finished" and cls.keep_lights_on_finish:
+            return {**self._read_lights(), "rule": "keep"}
+        if state == "finished":
+            try:
+                return {**self._restore_lights(op), "rule": "restore"}
+            except Exception as e:  # cannot tell what to keep: switch everything off
+                self._emit_op(op, "log", {"level": "warning",
+                                          "text": f"light restore failed ({e}); all off"})
+        try:
+            self._switch_off(op)
+            return {**self._last_off, "off": True, "rule": "all_off"}
+        except Exception as e:
+            self._emit_op(op, "error", {"op": op.op, "where": "exit",
+                                        "message": f"lights off failed: {e}"})
+            self._last_off = {**self._light_payload([], False), "error": str(e)}
+            return {**self._last_off, "off": False, "rule": "all_off"}
+
+    def _restore_lights(self, op: _Op) -> dict:
+        before = op.lights_before or {}
+        now = dict(self._backend.light_state())
+        recs: list[dict] = []
+        for device, off in (("Aura", self._backend.aura_off), ("DiaLamp", self._backend.lamp_off)):
+            was_on = (before.get(device.lower()) or {}).get("state") == "on"
+            if _on_off(now.get(device)) != "off" and not was_on:
+                recs += [asdict(r) for r in off()]
+        for r in recs:
+            self._emit_op(op, "property_set", {"device": r["device"], "property": r["prop"],
+                                               "wanted": r["wanted"], "read": r["read"],
+                                               "verified": r["verified"]})
+        lights = self._light_payload(recs, _verified(recs) if recs else None)
+        self._last_lights = lights
+        if recs:
+            self._emit_op(op, "light_changed", lights)
+        return lights
 
     def _runner_checks(self, op: _Op) -> list[dict]:
         checks = []
@@ -1135,19 +1202,44 @@ class Runner:
             self._emit_op(op, "property_set", {"device": r["device"], "property": r["prop"],
                                                "wanted": r["wanted"], "read": r["read"],
                                                "verified": r["verified"]})
-        lights = {"state": {r["device"]: r["read"] for r in recs},
-                  "verified": _verified(recs), "records": recs}
+        lights = self._light_payload(recs, _verified(recs))
         self._last_lights = self._last_off = lights
         self._emit_op(op, "light_changed", lights)
         return recs
 
     def _read_lights(self) -> dict:
-        try:
-            lights = {"state": dict(self._backend.light_state()), "verified": None}
-        except Exception as e:
-            return {"state": None, "error": str(e)}
-        self._last_lights = lights
+        lights = self._light_payload([], None)
+        if "error" not in lights:
+            self._last_lights = lights
         return lights
+
+    def _light_payload(self, recs: list[dict], verified: bool | None) -> dict:
+        """The one light shape (light_changed, snapshot, records): `{dialamp: {state,
+        intensity}, aura: {state, lines: {LINE: percent}}, verified, records}`. States are
+        "on" / "off" / "unknown"; a read that fails leaves its field None or unknown."""
+        state = {r["device"]: r["read"] for r in recs if r.get("prop") == "State"}
+        out = {"dialamp": {"state": "unknown", "intensity": None},
+               "aura": {"state": "unknown", "lines": {}},
+               "verified": verified, "records": recs}
+        try:
+            state = {**dict(self._backend.light_state()), **state}
+        except Exception as e:
+            out["error"] = str(e)
+        out["dialamp"]["state"] = _on_off(state.get("DiaLamp"))
+        out["aura"]["state"] = _on_off(state.get("Aura"))
+        out["dialamp"]["intensity"] = _number(self._prop("DiaLamp", "Intensity"))
+        for line in AURA_LINES:  # a line counts when its switch reads on, or, where the
+            on = _on_off(self._prop("Aura", line))  # device has no switch, when it has power
+            permille = _number(self._prop("Aura", f"{line}_Intensity"))
+            if on == "on" or (on == "unknown" and permille):
+                out["aura"]["lines"][line] = None if permille is None else permille / 10
+        return out
+
+    def _prop(self, device: str, prop: str) -> str | None:
+        try:
+            return self._backend.read_property(device, prop)
+        except Exception:
+            return None
 
     def _state_now(self, cls: type[Operation]) -> dict:
         if not cls.exclusive:
@@ -1281,3 +1373,16 @@ def _where(e: BaseException) -> str:
 
 def _verified(recs: list[dict]) -> bool:
     return bool(recs) and all(r["verified"] for r in recs)  # an empty readback proves nothing
+
+
+def _on_off(v: object) -> str:
+    v = None if v is None else str(v).strip().lower()
+    return {"1": "on", "on": "on", "open": "on", "0": "off", "off": "off",
+            "closed": "off"}.get(v, "unknown")
+
+
+def _number(v: object) -> float | None:
+    try:
+        return float(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None

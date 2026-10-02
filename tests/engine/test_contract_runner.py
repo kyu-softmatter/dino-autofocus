@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 
 import pytest
 
@@ -218,6 +219,33 @@ class LightSet(Operation):
         return {}
 
 
+class Stuck(Operation):
+    """Ignores abort for a while, like a driver call that does not return."""
+
+    name = "stuck"
+
+    def run(self) -> dict:
+        self.ctx.backend.lamp_on(token=GUARD_TOKEN)
+        self.ctx.progress("stuck")
+        time.sleep(self.args.get("s", 0.6))
+        return {}
+
+
+class LateLight(Operation):
+    """light_set that turns the lamp on after the shutdown's first lights-off."""
+
+    name = "late_light"
+    motion = False
+    keep_lights_on_finish = True
+    first_off = threading.Event()
+
+    def run(self) -> dict:
+        self.ctx.progress("waiting")
+        assert LateLight.first_off.wait(T)
+        self.ctx.backend.lamp_on(token=GUARD_TOKEN)
+        return {}
+
+
 class Approach(Operation):
     """Stands in for an op that calls FocusAxis.approach()."""
 
@@ -253,7 +281,7 @@ class Stream:
 
 REG = Registry()
 for _cls in (Steps, Hold, Watched, Boom, Oil, Tare, Trace, Escape, GoBack, Snapper, Peeks,
-             SampleOpen, Status, LightSet, Approach):
+             SampleOpen, Status, LightSet, Approach, Stuck, LateLight):
     REG.register(_cls)
 
 
@@ -287,7 +315,8 @@ def make(fake, records):
 
         kw.setdefault("control", AllowAll())
         kw.setdefault("config", QUIET)
-        r = Runner(fake, registry=REG, records=factory, **kw)
+        kw.setdefault("registry", REG)
+        r = Runner(fake, records=factory, **kw)
         made.append(r)
         sink = Collect()
         r.subscribe(sink)
@@ -319,8 +348,10 @@ def test_normal_run_ends_with_lights_off_readback_and_a_record(make, fake, recor
     r, sink = make()
     op_id = r.submit(start("steps", n=2))
     fin = sink.wait("finished", op_id)
+    # a normal finish turns off only what the op turned on (DiaLamp)
     assert sink.kinds(op_id) == ["planned", "preflight_ok", "started", "progress", "progress",
-                                 "property_set", "property_set", "light_changed", "finished"]
+                                 "property_set", "light_changed", "finished"]
+    assert fin.data["end_state"]["lights"]["rule"] == "restore"
     assert fin.data["summary"] == {"done": True}
     assert fin.data["end_state"]["lights"]["verified"] is True
     assert fake.lights == {"DiaLamp": "0", "Aura": "0"}
@@ -561,7 +592,7 @@ def test_rule_12_refuses_motion_and_light_without_a_session(make):
     sink.wait("finished", r.submit(start("sample_open", sample_id="s1")))  # no session needed
     r.set_experiment_session(SESSION, 2000.0)
     lit = r.submit(start("light_set"))
-    assert sink.wait("finished", lit).data["end_state"]["lights"]["state"]["DiaLamp"] == "1"
+    assert sink.wait("finished", lit).data["end_state"]["lights"]["dialamp"]["state"] == "on"
     sink.wait("finished", r.submit(start("steps")))
     r.set_experiment_session(None)
     refuse(r, start("steps"))
@@ -592,6 +623,12 @@ def test_permission_table_covers_the_screen_ops_and_defaults_to_motion():
         assert op in PERMISSIONS
     assert permission("abort").action == "stop" and not permission("lights_off").control
     assert permission("something_new") == permission("scan_4x")
+    mark = permission("boundary_mark")
+    assert (mark.action, mark.control, mark.session, mark.operator) == ("record", False, True,
+                                                                         True)
+    assert permission("hardware_confirm").operator and not permission("hardware_confirm").session
+    for op in ("sample_geometry_set", "loading_confirm_person", "loading_check_image"):
+        assert permission(op).control and permission(op).session
 
 
 # -- update, awaiting_return, stream, frames, plan
@@ -795,7 +832,7 @@ def test_unclean_shutdown_is_reported_before_any_command(fake, tmp_path):
     nxt.start()
     try:
         unclean = nxt.snapshot()["unclean_shutdown"]
-        assert unclean["mark"]["pid"] and unclean["lights"]["state"]["DiaLamp"] == "1"
+        assert unclean["mark"]["pid"] and unclean["lights"]["dialamp"]["state"] == "on"
         assert sink.logs("unclean_shutdown")[0].data["lights"] == unclean["lights"]
         logged = (tmp_path / "unclean_shutdowns.jsonl").read_text().splitlines()
         assert json.loads(logged[-1])["detected_at"] == unclean["detected_at"]
@@ -908,6 +945,168 @@ def test_check_explains_what_is_allowed_now(make):
     r.set_experiment_session(None)
     assert r.check(["steps"], me)["steps"]["reason"] == "no open experiment session"
     json.dumps(r.check(context=me))
+
+
+def test_preemption_keeps_the_core_while_the_old_owner_is_alive(make, fake):
+    r, sink = make(config=RunnerConfig(position_interval_s=None, preempt_wait_s=0.1))
+    stuck = r.submit(start("stuck", s=0.8))
+    sink.wait("progress", stuck)
+    off = r.submit(Command("lights_off"))
+    sink.wait("finished", off)
+    assert r.snapshot()["owner"] == stuck  # it may still drive hardware
+    assert "busy: stuck_" in refuse(r, start("steps")).why
+    ab = sink.wait("aborted", stuck)  # run() returned after the abort: aborted, lights off
+    assert ab.data["end_state"]["lights"]["off"] is True
+    assert r.wait_idle(T) and r.snapshot()["owner"] is None
+    sink.wait("finished", r.submit(start("steps")))
+    assert fake.lights == {"DiaLamp": "0", "Aura": "0"}
+
+
+def test_run_returning_after_abort_ends_aborted_even_with_keep_lights(make, fake):
+    class KeepOn(Operation):
+        name = "keep_on"
+        motion = False
+        keep_lights_on_finish = True
+
+        def run(self) -> dict:
+            self.ctx.backend.lamp_on(token=GUARD_TOKEN)
+            self.ctx.progress("on")
+            while not self.ctx.aborted:
+                time.sleep(0.01)
+            return {}  # returns normally instead of raising
+
+    reg = Registry()
+    reg.register(KeepOn)
+    r, sink = make(registry=reg)
+    op_id = r.submit(start("keep_on"))
+    sink.wait("progress", op_id)
+    r.submit(cmd("abort", op_id))
+    assert sink.wait("aborted", op_id).data["end_state"]["lights"]["off"] is True
+    assert fake.lights == {"DiaLamp": "0", "Aura": "0"}
+
+
+def test_shutdown_reads_the_lights_back_after_everything_ended(make, fake, tmp_path):
+    LateLight.first_off.clear()
+    r, sink = make(state_dir=tmp_path)
+
+    def on_first_off(ev: Event) -> None:
+        if ev.kind == "light_changed" and ev.op_id.startswith("lights_off_"):
+            LateLight.first_off.set()
+
+    r.subscribe(on_first_off)
+    late = r.submit(start("late_light"))
+    sink.wait("progress", late)
+    rec = r.shutdown("end of day", timeout=T)
+    assert fake.lights == {"DiaLamp": "0", "Aura": "0"}
+    assert rec["all_off"] is True
+    offs = [e for e in sink.events if e.kind == "light_changed"
+            and e.op_id.startswith("lights_off_")]
+    assert len(offs) >= 2  # lights off first, and once more at the very end
+    assert sink.events.index(offs[-1]) > sink.events.index(sink.wait(
+        "aborted" if any(e.kind == "aborted" and e.op_id == late for e in sink.events)
+        else "finished", late))
+    assert json.loads((tmp_path / "last_shutdown_lights.json").read_text()) == rec
+
+
+def test_assistant_command_confirmed_by_someone_else_is_refused(make):
+    r, _ = make()
+    c = Command("start", op="steps", origin="assistant", proposal_id="p", conversation_id="c",
+                confirmed_by="other@example.test", user_id=USER, session_id=SESSION)
+    assert "confirmed_by must be the user" in refuse(r, c).why
+
+
+def test_two_approves_at_once_launch_once(make):
+    r, sink = make()
+    op_id = r.submit(start("tare", origin="assistant"))
+    sink.wait("proposed", op_id)
+    gate, results = threading.Barrier(6), []
+
+    def go() -> None:
+        gate.wait()
+        try:
+            results.append(r.submit(cmd("approve", op_id)))
+        except CommandRefused:
+            results.append(None)
+
+    threads = [threading.Thread(target=go) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(T)
+    assert results.count(op_id) == 1
+    assert r.wait_idle(T)
+    assert [e.kind for e in sink.events if e.op_id == op_id].count("started") == 1
+
+
+def test_one_light_shape_for_events_snapshot_and_end_state(make, fake):
+    r, sink = make()
+    fake.aura_line_on("GREEN", 1, token=GUARD_TOKEN)
+    fake.props[("DiaLamp", "Intensity")] = "40"
+    off = r.submit(Command("lights_off"))
+    fin = sink.wait("finished", off)
+    seen = sink.wait("reading", off).data["value"]
+    assert seen == {"DiaLamp": "0", "Aura": "1"}
+    changed = sink.wait("light_changed", off).data
+    assert set(changed) >= {"dialamp", "aura", "verified", "records"}
+    assert changed["dialamp"] == {"state": "off", "intensity": 40.0}
+    assert changed["aura"]["state"] == "off" and changed["verified"] is True
+    assert r.snapshot()["lights"] == changed
+    assert fin.data["end_state"]["lights"] == {**changed, "off": True, "rule": "all_off"}
+    r2 = r.submit(start("light_set"))
+    lit = sink.wait("finished", r2).data["end_state"]["lights"]
+    assert lit["dialamp"]["state"] == "on" and lit["verified"] is None
+    fake.aura_line_on("GREEN", 1, token=GUARD_TOKEN)
+    assert r._read_lights()["aura"] == {"state": "on", "lines": {"GREEN": 1.0}}
+
+
+def test_light_set_survives_a_following_status_but_not_an_abort(make, fake):
+    r, sink = make()
+    lit = sink.wait("finished", r.submit(start("light_set")))
+    assert lit.data["end_state"]["lights"]["rule"] == "keep"
+    st = sink.wait("finished", r.submit(start("status")))
+    assert st.data["end_state"]["lights"]["rule"] == "restore"
+    assert fake.lights["DiaLamp"] == "1"  # status did not switch it on, so it stays
+    held = r.submit(start("hold"))  # Hold turns the lamp on too; it was already on
+    sink.wait("progress", held)
+    r.submit(cmd("abort", held))
+    ab = sink.wait("aborted", held)
+    assert ab.data["end_state"]["lights"]["rule"] == "all_off"
+    assert fake.lights == {"DiaLamp": "0", "Aura": "0"}
+
+
+def test_restore_turns_off_only_what_the_op_turned_on(make, fake):
+    fake.lamp_on(token=GUARD_TOKEN)  # DiaLamp was on before the op
+    r, sink = make()
+
+    class AuraToo(Operation):
+        name = "aura_too"
+
+        def run(self) -> dict:
+            self.ctx.backend.aura_line_on("GREEN", 1, token=GUARD_TOKEN)
+            return {}
+
+    reg = Registry()
+    reg.register(AuraToo)
+    r2, sink2 = make(registry=reg)
+    fin = sink2.wait("finished", r2.submit(start("aura_too")))
+    assert fin.data["end_state"]["lights"]["rule"] == "restore"
+    # aura_line_on switches the lamp off first, so only Aura is on at the end; Aura is
+    # switched off (the op turned it on) and the lamp is not switched back on
+    assert fake.lights["Aura"] == "0"
+    assert [e.data["device"] for e in sink2.events
+            if e.kind == "property_set" and e.op_id == fin.op_id] == ["Aura"]
+
+
+def test_closing_the_session_switches_everything_off(make, fake):
+    r, sink = make()
+    sink.wait("finished", r.submit(start("light_set")))
+    held = r.submit(start("hold"))
+    sink.wait("progress", held)
+    r.set_experiment_session(None)
+    assert sink.wait("aborted", held).data["why"] == "lights_off"
+    assert r.wait_idle(T) and fake.lights == {"DiaLamp": "0", "Aura": "0"}
+    off = next(e for e in sink.events if e.kind == "planned" and e.op_id.startswith("lights_off"))
+    assert off.data["args"] == {"why": "session closed"}
 
 
 def test_registry_refuses_reserved_and_duplicate_names():
