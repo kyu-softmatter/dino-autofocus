@@ -8,6 +8,7 @@ export type CommandInput = Pick<CommandIn, "kind"> & Partial<Omit<CommandIn, "ki
 export type EventOut = components["schemas"]["EventOut"];
 export type EventKind = EventOut["kind"];
 type WsEvent = components["schemas"]["WsEvent"];
+type WsLock = components["schemas"]["WsLock"];
 
 /**
  * Everything the shell and the screens need from the server, in one injectable
@@ -116,7 +117,7 @@ export class EventStream {
       } catch {
         return;
       }
-      const m = parsed as Partial<WsEvent> | { type?: string; locked?: unknown };
+      const m = parsed as Partial<WsEvent> | Partial<WsLock>;
       if (m.type === "event" && "event" in m && m.event) {
         this.handlers.forEach((h) => h(m.event as EventOut));
       } else if (m.type === "lock" && "locked" in m && typeof m.locked === "boolean") {
@@ -340,4 +341,18 @@ export function useEventsConnected(): boolean {
   const [open, setOpen] = useState(events.open);
   useEffect(() => events.onStatus(setOpen), [events]);
   return open;
+}
+
+/**
+ * Whether the server says the login is locked (WsLock on /ws/events, T-009c).
+ * While locked the server sends no events, so values on screen are not live.
+ */
+export function useEventsLocked(): boolean {
+  const { events } = useClient();
+  const [locked, setLocked] = useState(events.locked === true);
+  useEffect(() => {
+    setLocked(events.locked === true);
+    return events.onLock(setLocked);
+  }, [events]);
+  return locked;
 }

@@ -448,6 +448,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sample/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sample List
+         * @description Every sample, newest first. A reserved sample (sample_new, no session yet) has its id,
+         *     folder and created time from the folder.
+         */
+        get: operations["sample_list_api_sample_list_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sample/geometry-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Geometry Fields
+         * @description The provisional F3.1 field list (engine.sample.GEOMETRY_FIELDS); the screen renders it.
+         */
+        get: operations["geometry_fields_api_sample_geometry_fields_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sample/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Access
+         * @description Sample-specific facts before a click. Role, control, session and remote come from
+         *     /api/permissions, not from here.
+         */
+        get: operations["access_api_sample_access_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sample/{sample_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sample Detail */
+        get: operations["sample_detail_api_sample__sample_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sample/{sample_id}/geometry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sample Geometry */
+        get: operations["sample_geometry_api_sample__sample_id__geometry_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sample/{sample_id}/loading": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sample Loading
+         * @description The engine's loading state for this sample in the open session (none: all steps open).
+         */
+        get: operations["sample_loading_api_sample__sample_id__loading_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sample/{sample_id}/open-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Folder
+         * @description Open the sample folder in Explorer on the microscope PC (G9: any logged-in local user;
+         *     `LocalOnly` refuses a remote request with 403 remote_view). Not an engine op: it writes
+         *     no record.
+         */
+        post: operations["open_folder_api_sample__sample_id__open_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/simulation/runs": {
         parameters: {
             query?: never;
@@ -750,6 +888,17 @@ export interface components {
             /** At */
             at?: string | null;
         };
+        /** Counts */
+        Counts: {
+            /** Flags */
+            flags: number;
+            /** Candidates */
+            candidates: number;
+            /** Visits */
+            visits: number;
+            /** Boundary Points */
+            boundary_points: number;
+        };
         /** CurveOut */
         CurveOut: {
             /** Path */
@@ -906,6 +1055,39 @@ export interface components {
             reasons?: string[];
             requires?: components["schemas"]["GateRequires"];
         };
+        /** Geometry */
+        Geometry: {
+            /** Values */
+            values: {
+                [key: string]: components["schemas"]["GeometryValue"];
+            };
+        };
+        /** GeometryFieldOut */
+        GeometryFieldOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "number" | "pair" | "choice";
+            /** Unit */
+            unit: string | null;
+            /** Choices */
+            choices: string[] | null;
+            /** Default */
+            default: number | number[] | string | null;
+            /** Safety */
+            safety: boolean;
+        };
+        /** GeometryValue */
+        GeometryValue: {
+            /** Value */
+            value: number | number[] | string | null;
+            source: components["schemas"]["ValueSource"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1010,6 +1192,23 @@ export interface components {
             /** Status */
             status?: string | null;
         };
+        /** Hole */
+        Hole: {
+            /** Centre Um */
+            centre_um?: number[] | null;
+            /** Diameter Mm */
+            diameter_mm?: number | null;
+            /** Fit Rms Um */
+            fit_rms_um?: number | null;
+            /** N Points */
+            n_points?: number | null;
+            /** Arc Deg */
+            arc_deg?: number | null;
+            /** Fitted At */
+            fitted_at?: string | null;
+            /** Status */
+            status?: string | null;
+        };
         /** HoleFit */
         HoleFit: {
             /** Centre Um */
@@ -1037,6 +1236,21 @@ export interface components {
              * @default
              */
             loop_why: string;
+        };
+        /** ImageStep */
+        ImageStep: {
+            /** Done */
+            done: boolean;
+            /** By */
+            by?: string | null;
+            /** T */
+            t?: string | null;
+            /** Ok */
+            ok?: boolean | null;
+            /** Why */
+            why?: string | null;
+            /** Result Ref */
+            result_ref?: string | null;
         };
         /** InboxMessageOut */
         InboxMessageOut: {
@@ -1084,6 +1298,13 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** LastSession */
+        LastSession: {
+            /** Session Id */
+            session_id: string;
+            /** Opened At */
+            opened_at: string | null;
+        };
         /**
          * Lights
          * @description The one light shape (light_changed, snapshot, records).
@@ -1101,6 +1322,16 @@ export interface components {
             error?: string | null;
         } & {
             [key: string]: unknown;
+        };
+        /** LoadingState */
+        LoadingState: {
+            /** Session Id */
+            session_id: string | null;
+            geometry: components["schemas"]["StepState"];
+            person: components["schemas"]["StepState"];
+            image: components["schemas"]["ImageStep"];
+            /** Confirmed */
+            confirmed: boolean;
         };
         /** MapState */
         MapState: {
@@ -1496,6 +1727,35 @@ export interface components {
             /** Approval Kind */
             approval_kind?: string | null;
         };
+        /** SampleAccess */
+        SampleAccess: {
+            /** Can Open Folder */
+            can_open_folder: boolean;
+            /** Open Reason */
+            open_reason: string | null;
+        };
+        /** SampleDetail */
+        SampleDetail: {
+            /** Sample Id */
+            sample_id: string;
+            /** Created */
+            created: string | null;
+            /** Fitted At */
+            fitted_at: string | null;
+            /** Closed Loop */
+            closed_loop: boolean;
+            /** Objectives Used */
+            objectives_used: string[];
+            last_session: components["schemas"]["LastSession"] | null;
+            /** Awaiting Return */
+            awaiting_return: boolean;
+            /** Reserved */
+            reserved: boolean;
+            /** Dir */
+            dir: string;
+            hole: components["schemas"]["Hole"] | null;
+            counts: components["schemas"]["Counts"];
+        };
         /** SampleRef */
         SampleRef: {
             /** Sample Id */
@@ -1509,6 +1769,24 @@ export interface components {
             session_id?: string | null;
         } & {
             [key: string]: unknown;
+        };
+        /** SampleSummary */
+        SampleSummary: {
+            /** Sample Id */
+            sample_id: string;
+            /** Created */
+            created: string | null;
+            /** Fitted At */
+            fitted_at: string | null;
+            /** Closed Loop */
+            closed_loop: boolean;
+            /** Objectives Used */
+            objectives_used: string[];
+            last_session: components["schemas"]["LastSession"] | null;
+            /** Awaiting Return */
+            awaiting_return: boolean;
+            /** Reserved */
+            reserved: boolean;
         };
         /** SeriesOut */
         SeriesOut: {
@@ -1623,6 +1901,15 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** StepState */
+        StepState: {
+            /** Done */
+            done: boolean;
+            /** By */
+            by?: string | null;
+            /** T */
+            t?: string | null;
+        };
         /** StoreOut */
         StoreOut: {
             /**
@@ -1674,6 +1961,18 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ValueSource */
+        ValueSource: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "entered" | "default" | "not_set";
+            /** By */
+            by?: string | null;
+            /** T */
+            t?: string | null;
         };
         /** Visit */
         Visit: {
@@ -1846,6 +2145,22 @@ export interface components {
             meta?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * WsLock
+         * @description `/ws/events`, server -> client: the login's lock state, sent once on connect and on
+         *     every change. While `locked`, no `event` messages are sent (command replies still are,
+         *     since stops are allowed); after unlock the client reloads `/api/state` (T-009c, D14).
+         */
+        WsLock: {
+            /**
+             * Type
+             * @default lock
+             * @constant
+             */
+            type: "lock";
+            /** Locked */
+            locked: boolean;
         };
     };
     responses: never;
@@ -3398,6 +3713,199 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    sample_list_api_sample_list_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SampleSummary"][];
+                };
+            };
+        };
+    };
+    geometry_fields_api_sample_geometry_fields_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeometryFieldOut"][];
+                };
+            };
+        };
+    };
+    access_api_sample_access_get: {
+        parameters: {
+            query?: {
+                sample_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SampleAccess"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sample_detail_api_sample__sample_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SampleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sample_geometry_api_sample__sample_id__geometry_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Geometry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sample_loading_api_sample__sample_id__loading_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoadingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_folder_api_sample__sample_id__open_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

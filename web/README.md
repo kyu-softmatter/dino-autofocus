@@ -14,7 +14,16 @@ uv run npm --prefix web run build        # typecheck + vite build -> web/dist (n
 uv run npm --prefix web run gen:api      # regenerate src/api/ from the server's OpenAPI
 ```
 
-Set `DINO_AF_SERVER` to point the dev server at another address.
+For `npm run dev`, start the server so it accepts the dev page's origin (T-009c checks the
+`Origin` of every REST and WebSocket request):
+
+```
+uv run python -m dino_autofocus.server --dev-origin http://localhost:5173
+```
+
+The Vite dev server is pinned to `http://localhost:5173` (`strictPort`), so that origin stays
+right. The proxy never rewrites `Origin`. Set `DINO_AF_SERVER` to point the proxy at another
+server address. The built app served by the server itself needs no `--dev-origin`.
 
 ## Layout
 

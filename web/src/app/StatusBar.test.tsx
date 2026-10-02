@@ -159,6 +159,21 @@ describe("StatusBar", () => {
     expect(screen.getByTestId("sb-server").textContent).toBe("server: disconnected");
     expect(screen.getByTestId("sb-lights-stale").textContent).toContain("lights: unknown");
   });
+
+  it("treats a locked login like a dropped socket: no live values until the unlock", async () => {
+    const { sockets } = setup();
+    await screen.findByText(/Z 3048.70/);
+    const events = sockets.find((s) => s.path === "/ws/events")!;
+    act(() => events.send({ type: "lock", locked: true }));
+    expect(screen.getByTestId("sb-server").textContent).toBe("server: connected · login locked");
+    expect(screen.getByTestId("sb-lights-stale").textContent).toContain("lights: unknown");
+    expect(screen.getByTestId("sb-position").textContent?.startsWith("position: unknown")).toBe(true);
+    expect(screen.getByTestId("sb-running").textContent).toBe("operation: unknown");
+    act(() => events.send({ type: "lock", locked: false }));
+    expect(screen.getByTestId("sb-server").textContent).toBe("server: connected");
+    expect(screen.getByTestId("sb-lights").textContent).toContain("DiaLamp off");
+    expect(screen.getByTestId("sb-position").textContent).toContain("Z 3048.70 µm");
+  });
 });
 
 describe("last-shutdown notice (ui-spec 5.2)", () => {

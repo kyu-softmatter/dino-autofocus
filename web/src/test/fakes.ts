@@ -59,7 +59,7 @@ function authDefaults(opts: FakeOptions): Record<string, Route> {
   const me = opts.me === undefined ? TEST_ME : opts.me;
   return {
     "/api/auth/me": () =>
-      me === null ? { status: 401, body: { detail: { code: "not_logged_in", message: "log in" } } } : { status: 200, body: me },
+      me === null ? { status: 401, body: { detail: { code: "login_required", message: "log in first" } } } : { status: 200, body: me },
     "/api/auth/setup": () => ({ status: 200, body: { state: "ready" } }),
     "/api/auth/control": () => ({ status: 200, body: { holder: null } }),
     "/api/auth/activity": () => ({ status: 204 }),

@@ -109,17 +109,19 @@ export function StatusBarView({
   user?: ReactNode;
 }) {
   const p = status.positions;
-  // With the event socket down the last values may be old. They are never shown as
-  // current (an old "lights off" is the dangerous one): "unknown", then the last known
-  // value with its time. GET /api/state restores them on reconnect.
-  const stale = !status.connected;
+  // With the event socket down, or the login locked (the server sends no events then,
+  // T-009c), the last values may be old. They are never shown as current (an old
+  // "lights off" is the dangerous one): "unknown", then the last known value with its
+  // time. GET /api/state restores them on reconnect or after the unlock.
+  const locked = status.locked === true;
+  const stale = !status.connected || locked;
   const lastKnown = (at: number | null) =>
     at === null ? "never read" : `last known at ${new Date(at).toLocaleTimeString()}`;
   return (
     <div className="status-bar" role="status" aria-live="polite">
       {user}
-      <span className={`sb-item ${status.connected ? "" : "warn"}`} data-testid="sb-server">
-        {status.connected ? "server: connected" : "server: disconnected"}
+      <span className={`sb-item ${stale ? "warn" : ""}`} data-testid="sb-server">
+        {!status.connected ? "server: disconnected" : locked ? "server: connected · login locked" : "server: connected"}
       </span>
       {readOnly.readOnly && (
         <span className="sb-item badge" data-testid="sb-readonly" title={readOnly.why ?? undefined}>

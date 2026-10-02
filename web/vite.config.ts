@@ -13,6 +13,13 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
   },
   server: {
+    // The proxy passes the browser's Origin (http://localhost:5173) on; the server only
+    // accepts it when started with `--dev-origin http://localhost:5173` (T-009c). The port
+    // is pinned so that origin stays true; the Origin header is never rewritten here,
+    // which would bypass the server's origin check.
+    host: "localhost",
+    port: 5173,
+    strictPort: true,
     proxy: {
       "/api": SERVER,
       "/ws": { target: SERVER, ws: true },
