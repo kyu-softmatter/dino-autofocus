@@ -18,7 +18,7 @@ All are mounted at `/api/console` by T-009's area-router mechanism. Bodies are t
 
 | Method, path | Query / body | Response | AgentStore |
 |---|---|---|---|
-| `GET /store` | | `{store, writable}`: `"mock"` / `"soft-matter-agents"` (see "Rules") | store kind, `writable` (gap 1) |
+| `GET /store` | | `{store, writable}`: `"mock"` / `"soft-matter-agents"` (see "Rules") | store kind, `store.writable` |
 | `GET /questions` | `agent=microscope\|simulation`, optional. Omitted: both, merged newest first | `QuestionSummary[]` | `list_questions(agent)`, once per agent |
 | `GET /questions/{qid}` | `version=N`, optional. Omitted: latest | `QuestionDetail` (`summary.versions` lists the others) | `get_question(qid, version)` |
 | `GET /runs` | `agent=`, optional, as for questions | `RunSummary[]` | `list_runs(agent)` |
@@ -26,9 +26,11 @@ All are mounted at `/api/console` by T-009's area-router mechanism. Bodies are t
 | `GET /inbox` | | `InboxThread[]` with messages | `list_inbox()` |
 | `POST /questions` | `{text, target, purpose?, observable?}` | `201`, `QuestionSummary` | `submit_question(text, target, purpose=, observable=)` |
 
-Error mapping: `NotFoundError` → 404, bad `agent` / `purpose` / empty text (`ValueError`) → 422,
-`ReadOnlyStoreError` → 409 with `"Submitting to soft-matter-agents is not connected yet (read-only)"`,
-other `StoreError` → 500 with its message. Bodies are T-009's `ApiError {detail}`.
+Error mapping (all T-009b refusals: `detail = {code, message}` and the `X-DinoAF-Refusal` header):
+`NotFoundError` → 404 `not_found`; empty text or an unknown `purpose` (`ValueError`) → 422 `invalid`
+(a bad `agent` / `target` is FastAPI's own 422); a read-only store → 409 `read_only_store` with
+`"Submitting to soft-matter-agents is not connected yet (read-only)"`; other `StoreError` → 500
+`store_error`.
 
 Versions: the picker lists every entry of `summary.versions` as the store returns it (1 for unprefixed
 files, N for any `vN_` prefix; v4_, v5_ exist). The screen assumes no upper bound and no fixed set, unlike
@@ -56,16 +58,20 @@ client (`useClient().get`); the screen re-reads when the event socket reconnects
 
 | Check | Where | Status on submit | Screen text |
 |---|---|---|---|
-| Request is not from the microscope PC | `/api/permissions`; T-009 middleware on the POST | 403 | `"Read-only: remote view"` (the permission reason) |
-| Not logged in, screen locked, role below operator | `/api/permissions`; `authorize(SUBMIT_QUESTION)` on the POST, D16 | 403 | the permission reason, e.g. `"Needs the operator role"` |
-| Store is not the mock store | `/api/console/store`; `ReadOnlyStoreError` on the POST | 409 | `"Submitting to soft-matter-agents is not connected yet (read-only)"` |
+| Request is not from the microscope PC | the shell's read-only flag; the access middleware on the POST | 403 `remote_view` | `"Read-only: remote view"` |
+| Not logged in, screen locked | `/api/permissions`; the access middleware | 401 `login_required`, 423 `locked` | the permission reason |
+| Role below operator (viewer), D16 | `/api/permissions`; `server_action_why(me, "submit_question")` in the route | 403 `role` | the permission reason, shown next to the form |
+| Store is not the mock store | `/api/console/store`; `store.writable` in the route | 409 `read_only_store` | `"Submitting to soft-matter-agents is not connected yet (read-only)"` |
 
-- D16: the POST route still calls `authorize(Action.SUBMIT_QUESTION, login_token, local=<loopback>)` on the
-  server. Disabling the button is only the display of the permission answer. Device control (the control
-  token) is not needed: submitting moves nothing. An open experiment session is not needed either (PLAN
-  6절 12항 covers commands that move hardware); `session_id` is recorded when one is open, else null.
-- Every submit attempt, accepted or refused, goes to the audit log with `user_id`, `session_id`, `target`
-  and the new `qid` (PLAN 5절 "로그 세 가지", gap 4).
+- D16: the POST route calls `server_action_why` (T-018 `SUBMIT_QUESTION` plus loopback) on the server.
+  Disabling the button is only the display of the permission answer. Device control (the control token)
+  is not needed: submitting moves nothing. An open experiment session is not needed either (PLAN 6절 12항
+  covers commands that move hardware).
+- The web submit goes through the shell's `client.post`: only a 403 `remote_view` switches the app to
+  read-only; every other refusal is shown next to the form and changes no global state.
+- An accepted submit goes to the audit log as `question_submitted` with `user_id`, `session_id` (the open
+  experiment session, else null), `origin: "console"`, `target` and the new `qid` (PLAN 5절 "로그 세 가지").
+  Refusals are not logged by this route: the audit kinds have none for a refused question.
 
 ## Prompt context (X1)
 
@@ -82,25 +88,19 @@ no card bodies and no images (D7).
 
 ## Gaps (requests)
 
-1. **T-008, store**: no way to tell a writable store from a read-only one without trying a write. Request
-   a `writable: bool` attribute on the protocol (`MockStore` True, `SmaFiles` False) or a store-level
-   `source`. Fallback in stage B: `isinstance(store, MockStore)`.
-2. **T-009, server**: no AgentStore on the app. Request `create_app(..., agent_store=...)` storing it on
-   `app.state` and an `AgentStoreDep` beside `Engine` in `server/api/__init__.py`. Default for the dev
-   server: `MockStore()` with a temp write folder.
-3. **T-009 / T-018, server**: routes need the current login and the loopback flag. Request a dependency
-   that yields `(login_token, local)` from the auth cookie and `_is_loopback(request.client.host)`, and
-   the `control` object on `app.state` (server side of T-018: `server/api/auth.py`).
-4. **T-018, audit**: `AuditKind` has no kind for a question submit. Request `QUESTION_SUBMITTED` /
-   `QUESTION_REFUSED` (or confirm `COMMAND_PROPOSED` / `COMMAND_REJECTED` is meant). Also, `roles.py`
-   documents `SUBMIT_QUESTION` as "a question to the assistant from a prompt box"; the console's F1.1
-   submit to AgentStore uses the same permission (T-100 card). Please widen the docstring, or name a
-   separate action if the two should differ.
+1. ~~T-008~~: closed, `AgentStore.writable` (T-025).
+2. ~~T-009~~: closed, `create_app(agent_store=...)` and `AgentStoreDep`.
+3. ~~T-009 / T-018~~: closed, `Login`, `IsLocal`, `server_action_why` (T-009b).
+4. ~~T-018~~: closed, `AuditKind.QUESTION_SUBMITTED` covers the console submit and prompt boxes. There is
+   no kind for a refused question, so refusals are not logged here.
 5. **T-019 / sample**: the "이 저장소의 실험" list has no read API yet; stage B links out only.
 6. ~~T-010 / T-012~~: closed. The link is `#/simulation/runs/<run_id>`; the shell passes `#/<area>/<rest>`
    through (no link helper) and T-012 stage 2 reads the suffix.
 7. ~~T-014~~: resolved by the shell's `useScreenContext` (T-010); nothing waits on T-014.
 8. **T-008 / T-025, store**: ui-spec 7.1 list columns that the summaries do not carry: `purpose`, `intent`,
    `observable.name` of the latest goal (`QuestionSummary`), and `approval.kind` of the log (`RunSummary`).
-   Taken into T-025 as `purpose`, `intent`, `observable_name`, `approval_kind`; the lists show them as soon
-   as the store sends them ("—" until then).
+   Closed: T-025 sends `purpose`, `intent`, `observable_name`, `approval_kind`; the lists show them ("—"
+   when a card has none).
+
+Web types: the router's models and `PermissionOut` are not in the committed `web/src/api/schema.ts` yet, so
+`features/console/api.ts` keeps hand copies until T-010 regenerates it after this router merges.

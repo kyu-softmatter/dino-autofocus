@@ -222,7 +222,10 @@ describe("ask a question", () => {
 
   it("shows a non-remote 403 next to the form and leaves the app writable (D16 viewer)", async () => {
     const t = renderConsole(
-      { ...FAKE_DATA, postRefusal: { status: 403, body: { detail: "role viewer may not submit_question" } } },
+      {
+        ...FAKE_DATA,
+        postRefusal: { status: 403, body: { detail: { code: "role", message: "role viewer may not submit_question" } } },
+      },
       "#/console/ask",
     );
     await screen.findByText("Store: mock");
@@ -236,6 +239,25 @@ describe("ask a question", () => {
     expect(t.client.readOnly.get()).toEqual({ readOnly: false, why: null });
     expect(screen.queryByText(READ_ONLY_REMOTE)).toBeNull();
     expect(submitButton().disabled).toBe(false);
+  });
+
+  it("a 403 remote_view on submit switches the app to read-only (the shell's rule)", async () => {
+    const t = renderConsole(
+      {
+        ...FAKE_DATA,
+        postRefusal: { status: 403, body: { detail: { code: "remote_view", message: "remote view: no" } } },
+      },
+      "#/console/ask",
+    );
+    await screen.findByText("Store: mock");
+    fireEvent.change(screen.getByLabelText("Question"), { target: { value: "How fast?" } });
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(submitButton());
+    });
+    await waitFor(() => expect(t.client.readOnly.get().readOnly).toBe(true));
+    expect(submitButton().disabled).toBe(true);
+    expect(screen.getAllByText(READ_ONLY_REMOTE).length).toBeGreaterThan(0);
   });
 
   it("submits to the mock store and re-reads the list", async () => {

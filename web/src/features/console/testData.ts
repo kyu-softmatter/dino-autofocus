@@ -64,8 +64,12 @@ export function consoleRoutes(data: FakeData): { routes: Record<string, Route>; 
     if (init?.method !== "POST") return list(init);
     if (data.postRefusal !== undefined) return data.postRefusal;
     const perm = data.permissions?.[SUBMIT_OP];
-    if (perm === undefined || !perm.allowed) return { status: 403, body: { detail: perm?.reason ?? "refused" } };
-    if (!data.store.writable) return { status: 409, body: { detail: READ_ONLY_STORE_REASON } };
+    if (perm === undefined || !perm.allowed) {
+      return { status: 403, body: { detail: { code: perm?.code ?? "role", message: perm?.reason ?? "refused" } } };
+    }
+    if (!data.store.writable) {
+      return { status: 409, body: { detail: { code: "read_only_store", message: READ_ONLY_STORE_REASON } } };
+    }
     const body = JSON.parse(String(init.body)) as SubmitIn;
     submitted.push(body);
     const qid = `${body.target === "microscope" ? "mic" : "sim"}-20261001-${900 + submitted.length}`;

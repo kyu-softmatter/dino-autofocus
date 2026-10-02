@@ -7,7 +7,7 @@
  * imports from it; nothing else changes.
  */
 
-import type { Client } from "../../app/client";
+import { type Client, CommandRefused } from "../../app/client";
 
 export type Agent = "microscope" | "simulation";
 export const AGENTS: readonly Agent[] = ["microscope", "simulation"];
@@ -119,6 +119,8 @@ export interface StoreInfo {
 export interface Permission {
   allowed: boolean;
   reason: string | null;
+  /** the server's refusal code (login_required, locked, remote_view, role); null for the engine's */
+  code?: string | null;
 }
 
 export type Permissions = Record<string, Permission>;
@@ -167,48 +169,14 @@ export async function fetchPermissions(client: Client, ops: readonly string[]): 
   return out;
 }
 
-export class SubmitRefused extends Error {
-  constructor(
-    public status: number,
-    public detail: string,
-  ) {
-    super(detail);
-  }
-}
-
 /**
- * Stand-in for the shell's `useClient().post<T>(path, body?)` (T-010 stage 3, in review), with the
- * same signature: JSON body, `null` for 204, `SubmitRefused` with the server's `detail` otherwise.
- * It changes no global state: a 403 here is the action's own reason (e.g. a viewer, D16) and is
- * shown next to the form. Replace with `client.post` when stage 3 merges; only that one puts the
- * app in read-only, and only for a 403 with `detail.code == "remote_view"` (T-009b, stage 4).
+ * `POST /api/console/questions`: the console's one write (mock store only, D16 on the server).
+ * Goes through the shell's `client.post`: only a 403 with code `remote_view` switches the app to
+ * read-only; any other refusal (a viewer, a read-only store) is thrown with its reason and shown
+ * next to the form.
  */
-export async function post<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
-  const r = await client.transport.fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!r.ok) {
-    let detail = `HTTP ${r.status}`;
-    try {
-      const b = (await r.json()) as { detail?: unknown };
-      if (typeof b.detail === "string") detail = b.detail;
-      // T-009b may send {code, message}
-      else if (typeof (b.detail as { message?: unknown } | null)?.message === "string") {
-        detail = (b.detail as { message: string }).message;
-      }
-    } catch {
-      // not JSON; keep the status
-    }
-    throw new SubmitRefused(r.status, detail);
-  }
-  return r.status === 204 ? null : ((await r.json()) as T);
-}
-
-/** `POST /api/console/questions`: the console's one write (mock store only, D16 on the server). */
 export async function submitQuestion(client: Client, body: SubmitIn): Promise<QuestionSummary> {
-  const q = await post<QuestionSummary>(client, "/api/console/questions", body);
-  if (q === null) throw new SubmitRefused(204, "the server returned no question");
+  const q = await client.post<QuestionSummary>("/api/console/questions", body);
+  if (q === null) throw new CommandRefused(502, "the server returned no question");
   return q;
 }
