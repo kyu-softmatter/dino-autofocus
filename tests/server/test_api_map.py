@@ -12,8 +12,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from conftest import OPERATOR, VIEWER, FakeEngine  # tests/server is on sys.path (rootdir conftest)
 from PIL import Image
+from server_fakes import OPERATOR, VIEWER, FakeEngine
 
 from dino_autofocus.engine.operations.sample_ops import SampleSeat
 from dino_autofocus.records import FolderStore, RecordsConfig
