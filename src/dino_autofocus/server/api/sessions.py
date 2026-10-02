@@ -9,10 +9,11 @@ sample per session, the session's owner, closed sessions), as plain refusals tha
 The records store is `app.state.records`, the T-019 `RecordsStore` the server was created with.
 Commits go to the app's one `AutoCommitter`, `app.state.committer` (T-009e: the launcher passes
 it, the lifespan flushes and stops it), so a handler never waits on git; without one, a
-session commits in the request thread. The code version is read once per app (G4). The open session object lives
-in `app.state.sessions` (`SessionSeat`), so the engine's sample operations write through the
-same object and share its seq counter; the engine hears about every change through
-`set_experiment_session`.
+session commits in the request thread. The code version is read once per app (G4).
+
+The open session object lives in `app.state.sessions` (`SessionSeat`), so the engine's sample
+operations write through the same object and share its seq counter; the engine hears about
+every change through `set_experiment_session`.
 """
 
 from __future__ import annotations
