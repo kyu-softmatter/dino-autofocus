@@ -69,6 +69,18 @@ class ApiError(BaseModel):
     detail: str
 
 
+class ShutdownIn(BaseModel):
+    reason: str = "api"
+
+
+class ShutdownAccepted(BaseModel):
+    """The engine has stopped (abort, lights off with readback, records finished); the server
+    exits next. `already` is true when another exit path had stopped the engine first."""
+
+    reason: str
+    already: bool
+
+
 # --- WebSocket messages (not REST routes; added to the OpenAPI components by app.py) ---
 
 
@@ -95,7 +107,8 @@ class WsAccepted(BaseModel):
 
 class WsError(BaseModel):
     """`/ws/events`, server -> client: a refused or malformed message. `status` follows HTTP
-    (403 remote command, 422 bad message)."""
+    (400 refused by the engine, 403 not allowed from here, 422 bad message,
+    503 shutting down)."""
 
     type: Literal["error"] = "error"
     status: int

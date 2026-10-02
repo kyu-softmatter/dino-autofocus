@@ -27,6 +27,11 @@ class EngineAPI(Protocol):
 
     def snapshot(self) -> dict[str, Any]: ...  # positions, lights, running op; JSON-native
 
+    def shutdown(self, reason: str) -> None:
+        """Lights off with readback first, then abort, finish records, record `reason`
+        (T-011). Blocks until done."""
+        ...
+
 
 @runtime_checkable
 class FrameSource(Protocol):

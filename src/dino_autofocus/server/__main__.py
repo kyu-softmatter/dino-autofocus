@@ -9,10 +9,12 @@ streams a synthetic picture, so the web shell has something to show.
 from __future__ import annotations
 
 import argparse
+import atexit
 import contextlib
 import json
 import logging
 import os
+import signal
 import socket
 import sys
 import threading
@@ -93,6 +95,10 @@ class PlaceholderEngine:
 
         return unsubscribe
 
+    def shutdown(self, reason: str) -> None:
+        self._emit("light_changed", **self._lights)  # already off: nothing was ever lit
+        self._emit("log", msg=f"placeholder engine stopped: {reason}")
+
     def snapshot(self) -> dict[str, Any]:
         return {"engine": "placeholder", "positions": dict(self._positions),
                 "lights": dict(self._lights), "running": None}
@@ -147,6 +153,34 @@ def this_pc_hosts() -> list[str]:
     return sorted(h for h in hosts if h)
 
 
+def install_exit_hooks(app: Any, server: Any) -> Callable[[], None]:
+    """Hardware must not depend on `POST /api/shutdown` alone. Lights go off on every way out:
+    the route, a signal (uvicorn traps SIGINT, SIGTERM and on Windows SIGBREAK; we start the
+    engine stop at once instead of after open connections drain), the app's lifespan end, the
+    `finally` around `server.run()`, and `atexit`. The engine is stopped once; returns the
+    atexit hook."""
+    stop = app.state.stop_engine
+
+    def request_exit() -> None:
+        server.should_exit = True
+
+    app.state.request_exit = request_exit
+    trap = server.handle_exit
+
+    def handle_exit(sig: int, frame: Any) -> None:
+        trap(sig, frame)  # graceful exit, or forced on a second Ctrl+C
+        name = signal.Signals(sig).name
+        threading.Thread(target=stop.quietly, args=(f"signal {name}",), name="engine-stop").start()
+
+    server.handle_exit = handle_exit
+
+    def at_exit() -> None:
+        stop.quietly("process exit")
+
+    atexit.register(at_exit)
+    return at_exit
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m dino_autofocus.server", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -184,11 +218,18 @@ def main(argv: list[str] | None = None) -> int:
 
     import uvicorn
 
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(message)s")
     host = "0.0.0.0" if remote_view else "127.0.0.1"
     print(f"dino-autofocus server, engine={name}: open http://127.0.0.1:{args.port} on this PC"
           + (" (other PCs: view only)" if remote_view else ""))
     # proxy headers off: the client address must be the socket's, it decides who may command
-    uvicorn.run(app, host=host, port=args.port, proxy_headers=False, log_level="info")
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=args.port, proxy_headers=False,
+                                           log_level="info"))
+    install_exit_hooks(app, server)
+    try:
+        server.run()
+    finally:
+        app.state.stop_engine.quietly("server exit")
     return 0
 
 

@@ -46,7 +46,9 @@ CLOSE_UNSUPPORTED = 1003
 Refuse = Callable[[HTTPConnection, str | None], str | None]  # (connection, kind) -> why not
 
 
-def install(app: FastAPI, engine: EngineAPI, *, refuse: Refuse) -> None:
+def install(
+    app: FastAPI, engine: EngineAPI, *, refuse: Refuse, stopped: Callable[[], bool] = lambda: False
+) -> None:
     frames = FrameBridge(engine)
     app.state.frames = frames
 
@@ -91,6 +93,8 @@ def install(app: FastAPI, engine: EngineAPI, *, refuse: Refuse) -> None:
             why = refuse(conn, msg.command.kind)
             if why is not None:
                 return WsError(status=403, detail=why)
+            if stopped():
+                return WsError(status=503, detail="the server is shutting down")
             try:
                 op_id = await asyncio.to_thread(engine.submit, msg.command.to_engine())
             except ValueError as e:

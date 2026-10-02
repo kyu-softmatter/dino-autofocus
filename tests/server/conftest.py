@@ -23,6 +23,8 @@ class FakeEngine:
         self.sinks: list[Callable[[Event], None]] = []
         self.frame: tuple[np.ndarray, dict[str, Any]] | None = None
         self.frame_reads = 0
+        self.shutdowns: list[str] = []
+        self.fail_shutdown = False  # the next shutdown raises once
         self._lock = threading.Lock()
 
     def submit(self, cmd: Command) -> str:
@@ -35,6 +37,12 @@ class FakeEngine:
         with self._lock:
             self.sinks.append(sink)
         return lambda: self.sinks.remove(sink)
+
+    def shutdown(self, reason: str) -> None:
+        if self.fail_shutdown:
+            self.fail_shutdown = False
+            raise RuntimeError("readback timed out")
+        self.shutdowns.append(reason)
 
     def snapshot(self) -> dict[str, Any]:
         return {"positions": {"x_um": 1.0, "y_um": 2.0, "z_um": 3000.0}, "running": None}

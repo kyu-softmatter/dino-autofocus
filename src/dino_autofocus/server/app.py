@@ -14,13 +14,17 @@ Access scope (PLAN.md 5, D13):
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import ipaddress
-from collections.abc import Sequence
+import logging
+import threading
+from collections.abc import AsyncIterator, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic.json_schema import models_json_schema
@@ -29,7 +33,18 @@ from starlette.requests import HTTPConnection
 
 from . import static, ws
 from .api import Engine, include_area_routers
-from .schemas import WS_MODELS, ApiError, CommandAccepted, CommandIn, EngineAPI, Health
+from .schemas import (
+    WS_MODELS,
+    ApiError,
+    CommandAccepted,
+    CommandIn,
+    EngineAPI,
+    Health,
+    ShutdownAccepted,
+    ShutdownIn,
+)
+
+log = logging.getLogger(__name__)
 
 READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
@@ -64,6 +79,38 @@ def command_refusal(conn: HTTPConnection, kind: str | None = None) -> str | None
     return None
 
 
+class EngineStopper:
+    """Stops the engine once, from whichever exit path gets there first: `POST /api/shutdown`,
+    a signal, the app's lifespan end, the launcher's `finally`, or `atexit`. A failed attempt
+    does not count, so a later path tries again."""
+
+    def __init__(self, engine: EngineAPI) -> None:
+        self._engine = engine
+        self._lock = threading.Lock()
+        self.reason: str | None = None
+
+    @property
+    def done(self) -> bool:
+        return self.reason is not None
+
+    def __call__(self, reason: str) -> bool:
+        """True if this call stopped the engine, False if it was already stopped."""
+        with self._lock:
+            if self.reason is not None:
+                return False
+            self._engine.shutdown(reason)
+            self.reason = reason
+            log.info("engine stopped (%s)", reason)
+            return True
+
+    def quietly(self, reason: str) -> None:
+        """For exit hooks: never raise, log instead."""
+        try:
+            self(reason)
+        except Exception:
+            log.exception("engine shutdown (%s) failed", reason)
+
+
 def _package_version() -> str:
     try:
         return version("dino-autofocus")
@@ -82,10 +129,19 @@ def create_app(
 ) -> FastAPI:
     """`allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
     launcher passes this PC's host names and addresses."""
-    app = FastAPI(title="dino-autofocus", version=_package_version())
+    stopper = EngineStopper(engine)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await asyncio.to_thread(stopper.quietly, "server stopping")
+
+    app = FastAPI(title="dino-autofocus", version=_package_version(), lifespan=lifespan)
     app.state.engine = engine
     app.state.remote_view = remote_view
     app.state.remote_abort = remote_abort
+    app.state.stop_engine = stopper
+    app.state.request_exit = None  # set by the launcher: makes the server process exit
 
     @app.middleware("http")
     async def writes_from_this_pc_only(request: Request, call_next):
@@ -119,14 +175,40 @@ def create_app(
         why = command_refusal(request, cmd.kind)
         if why is not None:
             raise HTTPException(status_code=403, detail=why)
+        if stopper.done:
+            raise HTTPException(status_code=503, detail="the server is shutting down")
         try:
             op_id = eng.submit(cmd.to_engine())
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         return CommandAccepted(op_id=op_id)
 
+    @app.post(
+        "/api/shutdown",
+        response_model=ShutdownAccepted,
+        responses={403: {"model": ApiError}, 500: {"model": ApiError}},
+        tags=["server"],
+    )
+    def shutdown(body: ShutdownIn, request: Request, tasks: BackgroundTasks) -> ShutdownAccepted:
+        """Stop the engine (lights off with readback, abort, finish records), then exit. The
+        launcher calls this before any hard kill. Microscope PC only, no D13 exception."""
+        why = command_refusal(request)
+        if why is not None:
+            raise HTTPException(status_code=403, detail=why)
+        request_exit = app.state.request_exit
+        try:
+            stopped = stopper(body.reason)
+        except Exception as e:
+            log.exception("engine shutdown failed")
+            if request_exit is not None:
+                request_exit()  # exit anyway; the atexit hook tries the engine once more
+            raise HTTPException(status_code=500, detail=f"engine shutdown failed: {e}") from e
+        if request_exit is not None:
+            tasks.add_task(request_exit)  # after the response has gone out
+        return ShutdownAccepted(reason=stopper.reason or body.reason, already=not stopped)
+
     include_area_routers(app)
-    ws.install(app, engine, refuse=command_refusal)
+    ws.install(app, engine, refuse=command_refusal, stopped=lambda: stopper.done)
     static.mount_web(app, web_dist)
 
     def openapi() -> dict:
