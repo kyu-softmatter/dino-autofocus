@@ -79,3 +79,9 @@
 - Status bar: user name and role, a "remote · read only" badge, the control holder with Take / Release, and a
   user menu (Log out, Lock, Approve accounts for admins).
 - Activity hook for the idle lock: `POST /api/auth/activity` on input, throttled to once per 30 s.
+
+## Verdict source (from T-104)
+
+- `FocusVerdict` gets a `source` prop: "model" | "computed". The 100x focus result is "computed", not "model".
+  The shell owns the label words; use "computed" everywhere (matches the grade vocabulary
+  measured / computed / model).

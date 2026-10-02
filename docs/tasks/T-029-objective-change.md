@@ -32,3 +32,4 @@
 
 - `approach(clearance=None)` runs without a clearance check. `objective_change` always passes a real clearance
   callback, and on bench backends (mm-real) the op refuses in preflight without one. Mock/demo may pass a stub.
+- Progress key for the step-7 approach: `step_index` (the approach step number; `step` is the F5 step).

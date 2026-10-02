@@ -76,3 +76,6 @@
 
 - In `operation()`'s error branch, `rec.sink(ev)` runs outside the try, so a failing record writer (disk full)
   still replaces the original exception. Move it inside, keep the original, test it.
+- Same fix in the `finally` loop (reviewer, 5006a4a merge).
+- SAFETY (reviewer, before M3/M4): `approach()` refuses on a non-mock backend when `clearance` is None. This is
+  defence in depth next to the T-011 runner check. Test with a bench-flagged FakeBackend.
