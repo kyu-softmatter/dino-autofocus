@@ -64,3 +64,10 @@
 
 - `boundary_mark`, `boundary_undo`, `boundary_reset` are sample events too (no hardware), so they live here.
   They are record-only ops that run beside a hardware op (T-011). They need an open session.
+
+## One fold, one projection (manager decision, from T-106)
+
+- `records.events.fold()` (T-019) is the only fold. It stays generic and keeps unknown kinds in `.other`.
+- `engine/sample.py` calls it and projects the result into one named view (geometry, loading steps, boundary,
+  flags, candidates, awaiting_return, last session). The sample, map and sessions screens all read that view
+  through the server. `records/*` is not edited for engine kinds.
