@@ -22,14 +22,21 @@
 
 - PLAN 2 F5 seven steps, the guards from T-002 (large XY only with Z retracted, stepwise Z approach),
   `awaiting_return` on interruption after escape or rotation.
-- `escape_dy_um` has no default (preflight refuses). `approach_step_um` comes from the per-objective guards
+- `escape_dy_um` = +15000 µm (guards table, provisional). `approach_step_um` comes from the per-objective guards
   table column (T-002-4, 10 µm, "unmeasured provisional"). Approach: one move 0 → 2800 µm, then steps up
   with the clearance check live at every step.
-- The F5 Y step-out sign is still open with the user. Until it is set, the step-out refuses in preflight
-  (no default sign). Take it from the guards table, not a literal.
+- F5 step-out (PLAN v1.3, fbc1e08): +Y, 15 mm, both "unmeasured provisional", from the guards table, not a
+  literal. Preflight reads the stage Y limit and refuses if the step-out would exceed it. Confirm on the bench
+  before M4.
 
 ## Clearance callback required (from T-002-4 pre-review)
 
 - `approach(clearance=None)` runs without a clearance check. `objective_change` always passes a real clearance
   callback, and on bench backends (mm-real) the op refuses in preflight without one. Mock/demo may pass a stub.
 - Progress key for the step-7 approach: `step_index` (the approach step number; `step` is the F5 step).
+
+## plan() shape for the screen (from T-104, 7ae3bdc)
+
+- `plan(cmd)` for `objective_change` returns `escape = {allowed, reason, sign, dy_um, mark, default}`: `mark` is
+  "unmeasured provisional"; `default` is true for an immersion target and false for dry-to-dry (ui-spec 7.5);
+  `allowed`/`reason` come from `step_out_target` (stage Y limit). The screen reads the refusal from the plan.
