@@ -15,6 +15,7 @@ import threading
 import pytest
 
 from dino_autofocus.engine import Command, Event
+from dino_autofocus.engine.backend import GUARD_TOKEN  # test fakes stand in for the guards
 from dino_autofocus.engine.runner import (
     PERMISSIONS,
     AllowAll,
@@ -84,7 +85,7 @@ class Steps(Operation):
         return {"n": self.args.get("n", 3)}
 
     def run(self) -> dict:
-        self.ctx.backend.lamp_on()
+        self.ctx.backend.lamp_on(token=GUARD_TOKEN)
         for i in range(self.args.get("n", 3)):
             self.ctx.check()
             self.ctx.progress(f"step {i}", step=i, n_steps=self.args.get("n", 3))
@@ -97,7 +98,7 @@ class Hold(Operation):
     name = "hold"
 
     def run(self) -> dict:
-        self.ctx.backend.lamp_on()
+        self.ctx.backend.lamp_on(token=GUARD_TOKEN)
         self.ctx.progress("holding")
         self.ctx.sleep(60)
         return {}
@@ -112,7 +113,7 @@ class Boom(Operation):
     name = "boom"
 
     def run(self) -> dict:
-        self.ctx.backend.lamp_on()
+        self.ctx.backend.lamp_on(token=GUARD_TOKEN)
         raise RuntimeError("stage lost")
 
 
@@ -213,7 +214,7 @@ class LightSet(Operation):
     keep_lights_on_finish = True
 
     def run(self) -> dict:
-        self.ctx.backend.lamp_on()
+        self.ctx.backend.lamp_on(token=GUARD_TOKEN)
         return {}
 
 
@@ -357,6 +358,10 @@ def test_lights_off_is_a_command_kind_and_reports_an_unverified_readback(make, f
     assert fin.data["summary"]["verified"] is False
     assert sink.wait("error", op_id).data["where"] == "readback"
     fake.stuck.clear()
+    fake.all_off = lambda: []  # an empty readback proves nothing
+    empty = r.submit(Command("lights_off"))
+    assert sink.wait("finished", empty).data["summary"]["verified"] is False
+    del fake.all_off
 
 
 # -- confirm, ownership, exits
@@ -756,7 +761,7 @@ def test_last_shutdown_lights_are_shown_at_the_next_start(fake, tmp_path):
     first = Runner(fake, registry=REG, control=AllowAll(), config=QUIET, state_dir=tmp_path)
     first.start()
     assert first.snapshot()["last_shutdown_lights"] is None
-    fake.lamp_on()
+    fake.lamp_on(token=GUARD_TOKEN)
     saved = first.shutdown("end of day", timeout=T)
     again = Runner(fake, registry=REG, config=QUIET, state_dir=tmp_path).start()
     try:
@@ -770,7 +775,7 @@ def test_last_shutdown_lights_are_shown_at_the_next_start(fake, tmp_path):
 def test_unclean_shutdown_is_reported_before_any_command(fake, tmp_path):
     crashed = Runner(fake, registry=REG, control=AllowAll(), config=QUIET, state_dir=tmp_path)
     crashed.start()  # never shut down: the running mark stays, as after a crash
-    fake.lamp_on()
+    fake.lamp_on(token=GUARD_TOKEN)
     nxt = Runner(fake, registry=REG, control=AllowAll(), config=QUIET, state_dir=tmp_path)
     sink = Collect()
     nxt.subscribe(sink)

@@ -342,7 +342,7 @@ class LightsOff(Operation):
 
     def run(self) -> dict:
         records = self.ctx.runner._switch_off(self.ctx._op)
-        verified = all(r["verified"] for r in records)
+        verified = _verified(records)
         if not verified:
             self.ctx.emit("error", op=LIGHTS_OFF, message="lights off not verified",
                           where="readback")
@@ -974,7 +974,7 @@ class Runner:
             elif touched and not keep:
                 try:
                     recs = self._switch_off(op)
-                    end["lights"] = {"off": True, "verified": all(r["verified"] for r in recs),
+                    end["lights"] = {"off": True, "verified": _verified(recs),
                                      "records": recs}
                 except Exception as e:
                     self._emit_op(op, "error", {"op": op.op, "where": "exit",
@@ -1078,7 +1078,7 @@ class Runner:
                                                "wanted": r["wanted"], "read": r["read"],
                                                "verified": r["verified"]})
         lights = {"state": {r["device"]: r["read"] for r in recs},
-                  "verified": all(r["verified"] for r in recs), "records": recs}
+                  "verified": _verified(recs), "records": recs}
         self._last_lights = self._last_off = lights
         self._emit_op(op, "light_changed", lights)
         return recs
@@ -1219,3 +1219,7 @@ def _is_yes(args: dict) -> bool:
 def _where(e: BaseException) -> str:
     tb = traceback.extract_tb(e.__traceback__)
     return f"{tb[-1].filename}:{tb[-1].lineno}" if tb else ""
+
+
+def _verified(recs: list[dict]) -> bool:
+    return bool(recs) and all(r["verified"] for r in recs)  # an empty readback proves nothing
