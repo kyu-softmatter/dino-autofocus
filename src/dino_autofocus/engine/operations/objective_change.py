@@ -57,6 +57,8 @@ from ..guards import (
     GuardError,
     XYAxis,
     XYBox,
+    bench_approach_state,
+    bench_ascent_refusal,
     check_lights,
     limits_for,
     registry_key,
@@ -321,6 +323,10 @@ class ObjectiveChange(Operation):
                 checks.append(_check("step_out", False, "inside the stage Y travel",
                                      p.y_um, str(e)))
         zt = self._approach_target()
+        # T-029d second layer: the approach after the turn climbs 0 -> zt on the target lens
+        why = bench_ascent_refusal(info, target_key, zt)
+        checks.append(_check("bench_approach", why is None, bench_approach_state(), zt,
+                             why or ""))
         cap, cap_why = approach_cap_um(target_key)
         okz = SAMPLE_Z_WINDOW_UM[0] <= zt <= cap
         checks.append(_check("approach_target", okz, [SAMPLE_Z_WINDOW_UM[0], cap], zt,

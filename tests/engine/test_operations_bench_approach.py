@@ -1,0 +1,49 @@
+"""T-029d second layer: objective_change (escape true and false) and focus_100x refuse in
+preflight on the bench while BENCH_APPROACH is locked, before anything moves; the mock is
+unaffected. The guards layer itself is tested in test_contract_guards.py."""
+
+from __future__ import annotations
+
+import pytest
+from test_operations_focus_100x import fake100, run
+from test_operations_objective_change import make, start  # noqa: F401 - make is a fixture
+from test_operations_scan_4x import make_sample
+
+
+def bench(backend):
+    real = backend.info
+
+    def info():
+        i = real()
+        i.bench = True
+        return i
+    backend.info = info
+    return backend
+
+
+@pytest.mark.parametrize("escape", [True, False])
+def test_objective_change_to_the_100x_is_refused_on_the_bench(make, escape):  # noqa: F811
+    r, sink, be = make()
+    bench(be)
+    z0 = be.world.z_um
+    op_id = r.submit(start(target_state=5, escape=escape))
+    failed = sink.wait("preflight_failed", op_id)
+    check = next(c for c in failed.data["checks"] if c["name"] == "bench_approach")
+    assert not check["ok"] and "T-029d" in check["why"] and "Q13" in check["why"]
+    assert be.world.z_um == pytest.approx(z0)  # nothing moved
+
+
+def test_objective_change_on_the_mock_has_no_bench_refusal(make):  # noqa: F811
+    r, sink, be = make()
+    op_id = r.submit(start(target_state=5, approach_target_um=3200.0))  # refused for WD only
+    failed = sink.wait("preflight_failed", op_id)
+    check = next(c for c in failed.data["checks"] if c["name"] == "bench_approach")
+    assert check["ok"]
+
+
+def test_focus_100x_is_refused_on_the_bench(tmp_path):
+    b = bench(fake100())
+    out, _ = run(b, make_sample(tmp_path))
+    assert out["status"] == "preflight_failed"
+    assert any("T-029d" in why for why in out["reasons"])
+    assert not any(c[0] == "move_z" for c in b.calls)
