@@ -54,6 +54,43 @@ describe("map screen", () => {
     expect(screen.getByRole("checkbox", { name: "Mosaic" })).toHaveProperty("disabled", false);
   });
 
+  it("shows a viewer's D16 403 next to the flag action without locking the screen", async () => {
+    const w = await mount(
+      {},
+      {
+        postAnswer: (path) =>
+          path.endsWith("/flags")
+            ? { status: 403, body: { detail: { code: "forbidden", message: "Needs the operator role on the microscope PC" } } }
+            : null,
+      },
+    );
+    const panel = screen.getByRole("region", { name: "Flags" });
+    await waitFor(() => expect(within(panel).getByLabelText("Flag name")).toHaveProperty("disabled", false));
+    fireEvent.change(within(panel).getByLabelText("Flag name"), { target: { value: "edge" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Flag current position" }));
+    await within(panel).findByText("Needs the operator role on the microscope PC");
+    // no global read-only: other actions stay on, the map still takes clicks
+    expect(screen.queryByTestId("move-reason")).toBeNull();
+    expect(screen.getByRole("button", { name: "Start tracing" })).toHaveProperty("disabled", false);
+    fireEvent.click(screen.getByTestId("map-canvas"), { clientX: 200, clientY: 200 });
+    await waitFor(() => expect(w.sent.map((s) => s.body.op)).toEqual(["goto_xy"]));
+  });
+
+  it("goes read-only only on a remote_view 403", async () => {
+    await mount(
+      {},
+      {
+        postAnswer: (path) =>
+          path.endsWith("/flags") ? { status: 403, body: { detail: { code: "remote_view", message: "remote view" } } } : null,
+      },
+    );
+    const panel = screen.getByRole("region", { name: "Flags" });
+    await waitFor(() => expect(within(panel).getByLabelText("Flag name")).toHaveProperty("disabled", false));
+    fireEvent.change(within(panel).getByLabelText("Flag name"), { target: { value: "edge" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Flag current position" }));
+    await waitFor(() => expect(screen.getByTestId("move-reason").textContent).toBe("Click-to-move: Read-only: remote view"));
+  });
+
   it("disables every control when the permission check cannot be read, map stays viewable", async () => {
     const w = await mount({ permissionsFail: true });
     await waitFor(() =>

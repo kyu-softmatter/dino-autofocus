@@ -58,13 +58,20 @@ function answer(data: FakeData, path: string): { status: number; body?: unknown 
 
 export async function mountMap(
   over: Partial<FakeData> = {},
-  opts: { hostname?: string; permissionsGate?: Promise<void>; wait?: boolean } = {},
+  opts: {
+    hostname?: string;
+    permissionsGate?: Promise<void>;
+    /** answer a POST to this path instead of accepting it */
+    postAnswer?: (path: string) => { status: number; body?: unknown } | null;
+  } = {},
 ): Promise<World> {
   const data = fixture(over);
   const sent: Sent[] = [];
   let n = 0;
   const route = (path: string): Route => (init) => {
     if (init?.method === "POST") {
+      const forced = opts.postAnswer?.(path);
+      if (forced) return forced;
       sent.push({ route: path, body: init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {} });
       n += 1;
       return { status: 200, body: { op_id: `op-${n}` } };

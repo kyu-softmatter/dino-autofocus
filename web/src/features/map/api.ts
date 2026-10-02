@@ -168,8 +168,9 @@ export const PATHS = {
 
 /**
  * POST to a map route (D16 writes). Stopgap with the signature of the shell's coming
- * useClient().post<T>(path, body?) (T-010 stage 3): null for 204, a 403 switches the app to
- * read-only. Swap to client.post once it is on main.
+ * useClient().post<T>(path, body?) (T-010 stage 3): null for 204. Only a 403 whose detail.code is
+ * "remote_view" (T-009b) switches the app to read-only; any other 403 (e.g. a viewer refused by
+ * D16) is that action's reason and changes no global state. Swap to client.post once it is on main.
  */
 async function post<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
   const r = await client.transport.fetch(path, {
@@ -179,15 +180,22 @@ async function post<T>(client: Client, path: string, body?: unknown): Promise<T 
   });
   if (r.status === 204) return null;
   let detail = `HTTP ${r.status}`;
+  let code: string | null = null;
   let parsed: unknown = null;
   try {
     parsed = await r.json();
     const d = (parsed as { detail?: unknown } | null)?.detail;
     if (typeof d === "string") detail = d;
+    else if (d && typeof d === "object") {
+      const o = d as { code?: unknown; message?: unknown; reason?: unknown };
+      code = typeof o.code === "string" ? o.code : null;
+      const msg = o.message ?? o.reason;
+      if (typeof msg === "string") detail = msg;
+    }
   } catch {
     // no body
   }
-  if (r.status === 403) client.readOnly.refuse(detail);
+  if (r.status === 403 && code === "remote_view") client.readOnly.refuse(detail);
   if (!r.ok) throw new CommandRefused(r.status, detail);
   return parsed as T;
 }
