@@ -151,8 +151,12 @@ export function StatusBarView({
           </>
         )}
       </span>
-      <span className="sb-item" data-testid="sb-running">
-        {status.running.length === 0 ? "idle" : `running: ${status.running.map((o) => o.op).join(", ")}`}
+      <span className={`sb-item${stale ? " stale" : ""}`} data-testid="sb-running" data-stale={stale || undefined}>
+        {stale
+          ? "operation: unknown"
+          : status.running.length === 0
+            ? "idle"
+            : `running: ${status.running.map((o) => o.op).join(", ")}`}
       </span>
       <AssistantPart a={assistant} />
       {status.error && <span className="sb-item warn">state: {status.error}</span>}
