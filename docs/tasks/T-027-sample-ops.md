@@ -85,3 +85,6 @@
   `fitted_at`, so the re-trace rule and scan_4x can tell a partial arc from a full fit.
 - `hole_loop()` prefers `hole["closed_loop"]` when present (T-032 adds it); the text match and the
   FULL_LOOP_ARC_DEG = 330 (unmeasured provisional) rule stay only for older fits.
+- guards `registry_key`: the regex `(\d+)x\b` fails on the real 40x label "4-Apo LmbdS 40xC WI", so it falls to
+  the strictest row. Match `(\d+)x` followed by a letter or boundary; add tests with every lens label in
+  `configs/ti2_*.yaml` and the mock world, including "40xC WI" → "40x-WI".
