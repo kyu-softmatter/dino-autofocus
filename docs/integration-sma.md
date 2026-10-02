@@ -47,7 +47,7 @@ PLAN.md 8절 M6 "soft-matter-agents 어댑터 설계" 의 출발점. 근거는 s
 
 | # | 일 | 이유 | 소유 |
 |---|---|---|---|
-| P1 | `pyproject.toml` 을 가벼운 core (numpy, scipy) + 선택 의존성 `ml` (torch, torchvision, sklearn, skimage), `hw` (pymmcore-plus), `server`, `plot` 으로 나눈다 | check 82 와 pixi `mic` 에 선언할 것을 최소로. PLAN 4절 방침과 같다 | pyproject 권한 순서 (BACKLOG) |
+| P1 (완료, 802284e) | `pyproject.toml` 을 가벼운 core (numpy, scipy) + 선택 의존성 `ml` (torch, torchvision, sklearn, skimage), `hw` (pymmcore-plus), `server`, `plot` 으로 나눈다 | check 82 와 pixi `mic` 에 선언할 것을 최소로. PLAN 4절 방침과 같다 | pyproject 권한 순서 (BACKLOG) |
 | P2 | 판정 제공자 공개 표면 고정: `focus.verdict` 의 입력·출력을 JSON 계약으로 적고, numpy 만으로 import 되는지 계약 테스트 | 접점 A. 그쪽은 파일 하나로 복사하거나 의존성으로 받는다 | WP-E |
 | P3 | `FocusVerdict.as_record()` 를 그쪽 run_log 이벤트 모양으로 바꾸는 변환기와, 그쪽 `contracts/schemas/run_log.schema.json` 을 (읽기만) 써서 검증하는 테스트 (그 저장소가 없으면 skip) | 기록 형식을 미리 맞춘다. `model` grade 는 E6 로 대응, 카드에는 안 들어감 | WP-E |
 | P4 | `guards.py` 의 모든 숫자 표 (FREE_WD_UM, BENCH_FREE_WD_UM, 큰 XY 문턱, Y 이탈 15 mm 등) 의 출처·등급 목록 | 라이브러리언과 envelope 로 넘길 목록. 그쪽에서는 사람이 값을 쓴다 | 가드 소유자 |
@@ -64,7 +64,7 @@ P1–P3 은 서로 독립이라 바로 카드로 만들 수 있다. P5 는 공�
 | b. 공개된 dino-autofocus 를 git 의존성 (커밋 고정) | 사본 없음 | 아키텍처 좌석이 pixi 를 고친다. 지금 core 가 무거워 P1 이 먼저 |
 | c. 경로 의존성 | 쉬움 | `microscope_agent/` + `contracts/` 를 현미경 PC 로 떼어 가는 규칙을 깬다. 비권고 |
 
-권고: **첫 단계는 a** (고전 판정만, DINO 없음). 결정론적 지표 최대값 대체 경로가 먼저라는 과제 026 §9 와 맞는다.
+결정 (Q2): **a 를 폴더 단위로** (소스를 그쪽 폴더로 옮긴다). 첫 단계는 고전 판정만, DINO 없음. 결정론적 지표 최대값 대체 경로가 먼저라는 과제 026 §9 와 맞는다.
 DINO 점수는 그다음에 shadow mode (§13.1) 로, b 방식과 `ml` 선택 의존성으로.
 
 ## 6. 바꿀 수 없는 그쪽 규칙 (설계가 지켜야 할 것)
@@ -77,17 +77,22 @@ DINO 점수는 그다음에 shadow mode (§13.1) 로, b 방식과 `ml` 선택 �
 - 의존성 파일 (`pyproject.toml`, `uv.lock`, `pixi.lock`) 은 아키텍처 좌석만.
 - 이 저장소는 그쪽 저장소에 쓰지 않는다 (PLAN 5절).
 
-## 7. 사람 결정이 필요한 것
+## 7. 사람 결정 (사용자, 2026-10-02)
 
-| # | 질문 | 누구 |
+| # | 질문 | 결정 |
 |---|---|---|
-| Q1 | 그쪽에 autofocus 좌석을 만들지 (만들면 architecture 가 `seats.json` 에 등록), 과제 026 을 누구에게 줄지 | 사용자 |
-| Q2 | 5절 의존 방식 (권고 a → 나중에 b) | 사용자 |
-| Q3 | dino-autofocus 를 그쪽의 "열어도 되는 출처" 로 인정할지 (`rulings.jsonl` 에 기록) | 사용자 |
-| Q4 | envelope 에 넣을 ZDrive 위치·스텝·탐색 범위 한계 값 (스키마는 manager-microscope) | 사용자 (값), 그쪽 매니저 (스키마) |
-| Q5 | 기권 문턱 (§9 UNDECIDED) | 사용자 |
-| Q6 | 이 앱의 Claude 연동 (X2) 을 그쪽 기록에 어떻게 남길지. 과제 026 은 외부 서비스를 "미승인" 으로 둔다. D7 (텍스트만) 은 §13.1 "텍스트만 기계 밖으로" 와 맞다 | 사용자 |
-| Q7 | 공개 시점 (D5). P1·P5 가 끝난 뒤 | 사용자 |
+| Q1 | 초점을 누가 맡나 | **그쪽 하드웨어 엔진이 맡는다.** 하드웨어 오케스트레이션의 일부 (microscope_agent) |
+| Q2 | 의존 방식 | **지금은 따로 개발하고, 합칠 것을 생각해 폴더 구조를 미리 고친다.** 개발이 끝나면 소스를 그쪽 해당 폴더로 옮긴다. 그래서 5절의 b (의존성) 는 쓰지 않고, a (옮겨 넣기) 를 폴더 단위로 한다. 대응표와 단계는 9절 |
+| Q3 | 이 저장소의 값을 그쪽 출처로 인정할지 | **합칠 때 정한다.** 사람이 쓰거나 잰 값인지는 사용자가 직접 확인한다. 이 저장소는 값마다 카드로 묻는다 (대부분 이미 공유되어 있을 것). 라이브러리언에게 줄 정보는 `docs/librarian-handoff.md` 에 따로 모은다 |
+| Q4 | Z 한계 | **액침액이 필요한 대물렌즈 (40x WI, 60x Oil, 100x Oil) 만 한계를 두고, 나머지 (건식) 는 푼다.** soft-matter-agents 규칙을 따른다 (`objective_clearance_min` 이 렌즈 위치별 작동 거리에서 풀리는 방식). 이 저장소의 가드 변경은 별도 카드로 |
+| Q5 | 기권 문턱 | **지금의 임시값으로 진행한다** (`MAX_SIGMA_DOF = 3.0`, `MIN_CURVE_CONTRAST = 0.05`, `MIN_DYNAMIC_RANGE_ADU = 20`, 모두 `unmeasured provisional`). 벤치에서 사람이 맞춘 초점과 비교한 기록으로 나중에 정한다 |
+| Q6 | Claude 연동의 위치 | **이 저장소는 인터페이스 (프론트엔드 일부) 와 자동 초점 (백엔드) 을 맡는다. 에이전트 자체는 모두 백엔드가 된다.** 화면의 Claude 연동은 통합 뒤 그쪽 에이전트 쪽으로 간다 |
+| Q7 | 공개 시점 | **3주 안 (2026-10-23 까지).** P5 를 그 전에 끝낸다 |
+
+Q5 설명: 판정기는 확신이 낮으면 `step_up` / `step_down` 대신 `unsure` (기권) 를 낸다. "얼마나 낮으면 기권하나" 가
+기권 문턱이다. 지금 이 저장소의 값은 `focus/verdict.py` 의 `MAX_SIGMA_DOF = 3.0` (모델 불확실도가 피사계 심도의
+3 배를 넘으면 기권), `MIN_CURVE_CONTRAST = 0.05`, `MIN_DYNAMIC_RANGE_ADU = 20` 이고 모두 임시값이다. 그쪽 과제 026
+§9 는 이 문턱을 "미정" 으로 둔다. 권고: 임시값으로 시작하고, 벤치에서 사람이 맞춘 초점과 비교한 기록으로 정한다.
 
 ## 8. 측정이 먼저인 것 (현미경 PC)
 
@@ -95,3 +100,61 @@ DINO 점수는 그다음에 shadow mode (§13.1) 로, b 방식과 `ml` 선택 �
 픽셀 크기, 방식별 through-focus 곡선, 계면 오프셋, PFS 오프셋 부호, 동초점 잔차 (4x→100x 약 −60 µm, 재측정 필요),
 40x WI 0.17 mm 칼라에서의 작동 거리, Q13 (접근 스텝), Q20 (Z 후퇴가 필요한 XY 이동), 재물대 한계, 무명령 Z 표류
 (485.16 → 483.62 µm). 결과는 이 저장소 `docs/runs/` 와 그쪽 라이브러리언에 각각 들어간다.
+
+## 9. 폴더 구조 (Q2, 초안 2026-10-02)
+
+추가 결정 (사용자, 2026-10-02, 이 절의 초안을 본 뒤):
+- **동작은 plan 으로만.** 합친 뒤 화면은 plan 초안을 만들고, 사람이 승인하면 그쪽 operator/orchestrator 가 실행한다.
+  화면이 직접 장비를 움직이지 않는다. S5 의 `hw_port` 는 이 모양 (plan 제출, run 읽기) 을 목표로 한다.
+- **화면 (server, web, launcher) 은 이 저장소에 남는다.** 그쪽으로 옮기는 것은 `microscope_agent/` 쪽 (초점·맵 핵심) 뿐이다.
+  아래의 `console/` 은 이 저장소 안의 위치이고, 그쪽에 새 최상위 폴더를 만들지 않는다 (ALLOWED_PATHS 승인 불필요).
+- **기록은 모두 그쪽 `runs/` 로.** 그쪽 `runs/` 는 공개되므로, 넘기기 전에 이메일·이름 같은 개인 정보를 빼야 한다
+  (사용자 id 를 불투명한 값으로 바꾸는 설계가 필요, 새 과제). 관리자 이메일은 지금처럼 git 밖에 둔다.
+- **scipy 는 numpy 로 바꾼다** (`separated_peaks`). 초점 핵심은 numpy 만 쓴다.
+
+
+그쪽 규칙에서 나오는 제약 (soft-matter-agents `baf6f1e`, `contracts/validate.py`):
+- check 13: 에이전트 `src/` 는 평평한 파일 또는 `src/devices/<file>` 만. `tests/` 는 평평한 `*.py` 만 (fixture 폴더 없음).
+- 그쪽 모듈은 패키지 import 가 아니라 **경로로 형제 파일을 불러온다** (`spec_from_file_location`, 예 `axis_a1_snr.py:44`).
+  테스트는 `unittest`, conftest 없음.
+- check 82: 함수 안 import 까지 본다. `scipy` 는 `sim` 기능에만 있어 검사는 통과하지만 현미경 PC 의 `mic` 환경에는 없다.
+  `focus/classical.py` 의 `separated_peaks` (`scipy.signal.find_peaks`) 는 그 환경에서 실행 중 실패한다.
+- 그쪽에는 UI·서버 폴더가 없다. 새 최상위 폴더는 architecture (ALLOWED_PATHS, pixi) 와 manager (AGENT_OF_PATH) 승인이 먼저다.
+
+대응표 (요약):
+
+| 이 저장소 | 그쪽 위치 | 처리 |
+|---|---|---|
+| `focus/classical.py`, `verdict.py`, `sma_event.py` | `microscope_agent/src/focus_classical.py`, `focus_verdict.py` | 옮김 (경로 로더, scipy 제거) |
+| `focus/dino.py`, `live.py`, `backbone.py` | 나중에 `focus_dino.py` (shadow mode, torch 는 `mic` 에) | 2단계 |
+| `guards.py` 의 Z 규칙 (상향 스윕, 읽기 확인, PFS 먼저 끔, 후퇴 0, 큰 XY 전 후퇴) | `focus_step_rules.py` (순수 함수, 한계는 envelope 에서 인자로) | 순수 부분만 |
+| `focus_100x.py` 의 단계 생성 | `focus_search.py` (단계마다 `from`) | 나눔 |
+| `mosaic.py`, `sample.py`·`scan_4x.py`·`sample_map.py` 의 순수 부분, `edge_trace.py` 검출부 | `map_mosaic.py`, `map_geometry.py`, `map_tiles.py`, `map_edge.py` | 나눔 |
+| `runner`, `backend`, `events`, `records`, `gates`, 나머지 가드와 숫자 표, `objective_change`, `z_retract`, `light_set` | orchestrator, operator, envelope, `runs/<run_id>/` | 이 저장소에만 남음 (단독 실행용) |
+| `mm_real.py`, `mm_demo*.py` | `devices/micromanager.py` 에 흡수 | 합칠 때 버림 |
+| `server/`, `auth/`, `assistant/`, `agents/`, `web/`, `tools/launcher/` | 새 최상위 `console/` (`sma_console` 패키지, `console/web`, `console/launcher`) | 옮김 |
+| `synth/`, 학습·평가 스크립트, `models/`, `configs/ti2_*.yaml` | 옮기지 않음 (모델 제작용으로 이 저장소에 남음) | 남음 |
+
+이 저장소 안의 중간 배치 (그쪽을 그대로 닮게):
+
+```
+microscope_agent/src/        focus_*.py map_*.py   (평평, __init__.py 없음, stdlib + numpy 만)
+microscope_agent/src/devices/
+microscope_agent/tests/      test_focus_*.py ...   (평평, unittest, 경로 로더)
+console/sma_console/         app ws static hw_port api/ schemas/ auth/ assistant/ store/
+console/web/  console/launcher/  console/tests/
+src/dino_autofocus/          단독 실행용 나머지 (engine, backends, operations, records, synth, live, backbone)
+```
+
+배포는 하나로 유지한다 (`uv sync`, editable 설치, pytest 그대로). `dino_autofocus.focus` 는 평평한 파일을 다시 내보내는
+얇은 껍데기로 남겨 기존 import 를 살린다. `tests/test_sma_shape.py` 가 옮길 두 폴더에 check 13·16·82 를 미리 적용한다.
+
+단계 (각 단계 끝에 테스트 통과):
+- S0 (P1 완료) 의존성 나누기. S3 (P3 완료) 판정 → run_log 이벤트.
+- S1 (완료) 초점 핵심을 `microscope_agent/src/` 로 (`focus_classical`, `focus_verdict`, `focus_run_log`), scipy 제거,
+  `tests/test_sma_shape.py`. 옛 이름 `dino_autofocus.focus.{classical,verdict,sma_event}` 은 같은 모듈 객체로 남는다.
+- S2 순수 핵심 파일을 하나씩 (`focus_step_rules`, `focus_search`, `map_*`).
+- S4 `console/` 로 서버·웹·런처 옮기기 (import 약 100 곳, gen:api, 런처 경로).
+- S5 `hw_port.py`: 화면이 엔진을 직접 부르지 않고 포트 하나로 (그 뒤 console 은 `dino_autofocus` 를 import 하지 않는다).
+- S6 합치는 주: 그쪽 승인 순서 (사람: 좌석 → architecture: seats.json, pixi, ALLOWED_PATHS 명세 → manager: validate.py →
+  manager-microscope: 과제 카드, plan.schema, envelope 스키마) 를 마친 뒤 복사. 승인 사슬이 길어 **2주차에 시작**한다.

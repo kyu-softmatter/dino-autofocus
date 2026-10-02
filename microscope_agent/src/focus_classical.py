@@ -317,6 +317,39 @@ def parabola_peak(z: Sequence[float], s: Sequence[float]) -> float | None:
     return None if peak_edge(z, s) != "interior" else parabola_vertex(z, s)
 
 
+def _local_maxima(x: np.ndarray) -> list[int]:
+    """Indices of local maxima, ends excluded; a flat top counts once, at its middle
+    (rounded down). Same rule as ``scipy.signal.find_peaks``, which the soft-matter-agents
+    microscope environment does not have."""
+    peaks, i, last = [], 1, len(x) - 1
+    while i < last:
+        if x[i - 1] < x[i]:
+            ahead = i + 1
+            while ahead < last and x[ahead] == x[i]:
+                ahead += 1
+            if x[ahead] < x[i]:
+                peaks.append((i + ahead - 1) // 2)
+                i = ahead
+        i += 1
+    return peaks
+
+
+def _prominence(x: np.ndarray, peak: int) -> float:
+    """Topographic prominence of ``x[peak]`` (``scipy.signal.peak_prominences``, no window):
+    the height above the higher of the two lowest points reached before a higher sample
+    or the end, on each side."""
+    h = x[peak]
+    i, left = peak, h
+    while i >= 0 and x[i] <= h:
+        left = min(left, x[i])
+        i -= 1
+    i, right = peak, h
+    while i < len(x) and x[i] <= h:
+        right = min(right, x[i])
+        i += 1
+    return float(h - max(left, right))
+
+
 def separated_peaks(z: Sequence[float], s: Sequence[float],
                     prominence: float = DOUBLE_PEAK_PROMINENCE) -> list[float]:
     """z of each separate local maximum, highest score first.
@@ -326,15 +359,14 @@ def separated_peaks(z: Sequence[float], s: Sequence[float],
     ends of the span count too, so a rise at the top end beside a real peak is a second
     peak. A single peak, a monotonic curve or a flat curve gives one entry or none.
     """
-    from scipy.signal import find_peaks
-
     zz, ss = _sorted_curve(z, s)
     span = float(ss.max() - ss.min())
     if len(ss) < 3 or span <= 0 or not np.isfinite(span):
         return []
     padded = np.concatenate([[ss.min() - span], ss, [ss.min() - span]])
-    idx, _ = find_peaks(padded, prominence=prominence * span)
-    peaks = idx - 1
+    idx = [i for i in _local_maxima(padded)
+           if _prominence(padded, i) >= prominence * span]
+    peaks = np.asarray(idx, dtype=np.intp) - 1
     order = np.argsort(-ss[peaks], kind="stable")
     return [float(zz[peaks[k]]) for k in order]
 

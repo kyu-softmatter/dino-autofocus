@@ -16,7 +16,8 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 - Merged after the freeze: T-009g/i/j (server starts the real runner, mock by default, separate mock records root,
   replay start-up, op records into the open session), schema regen 3, T-010-9, T-010-12, T-012-6 (gsd), T-013c,
   T-015e, T-032 stage 2 (sample_map, goto_xy with PFS off first), T-105 login, T-106 sessions.
-- Both safety locks are on: `mm_real.BENCH_MOTION = "LOCKED"` and `guards.BENCH_APPROACH = "UNMEASURED"`.
+- Safety locks: `mm_real.BENCH_MOTION = "LOCKED"` (on). `guards.BENCH_APPROACH` was `"UNMEASURED"` at the freeze;
+  the user unlocked it to `"MEASURED"` on 2026-10-02 (see below).
 - After `git merge main`, run `uv sync` (anthropic and gsd are in the server group).
 - All seats are archived except the director, AF 검토 and the manager.
 
@@ -52,7 +53,7 @@ configs/micromanager/*.cfg (byte-exact; `.gitattributes` keeps them `-text`).
 - DONE FREE_WD (T-027b): catalog values from the librarian (E3): 10x 4 mm, 20x 0.8 mm, 40x WI 0.17 mm (user, 2026-10-02;
   catalog range 0.16–0.20, the 0.17-collar value is not in the catalog), 60x Oil 0.15 mm. Candidates for `guards.FREE_WD_UM` and
   `BENCH_FREE_WD_UM` (states 1–4). Effect: 10x and 20x may now approach above 2800 µm (WD ≥ the 400 µm window),
-  40x-WI/60x-Oil get sweep ceilings and become F5 targets. Still blocked on the bench by `BENCH_APPROACH`.
+  40x-WI/60x-Oil get sweep ceilings and become F5 targets. On the bench, `BENCH_APPROACH` blocked it until the user unlocked it the same day.
 - Stage Y limit is at least 20498.8 µm (one +Y 15 mm step-out, readback within 5 µm, < 30 s at 25 mm/s).
   X/Y limits are not readable as properties; mm-real still reports "unknown".
 - Core.Focus is empty in the bench cfg (`getFocusDevice()` = ""). mm-real names `ZDrive`, so fine; anything using
@@ -70,8 +71,10 @@ configs/micromanager/*.cfg (byte-exact; `.gitattributes` keeps them `-text`).
 - T-036 unlock: the one-line `BENCH_MOTION = "UNLOCKED"` in engine/backends/mm_real.py was refused by the seat's
   permission check, so it is the user's (branch exec12/T-036-unlock parked at ebfff88). All eleven code prerequisites
   are on main (b1d5a1d). Director: do it when the user is at the microscope PC for runbook step 1.
-- Second lock: `guards.BENCH_APPROACH = "UNMEASURED"` (T-029d) stays until the bench measurements below, then its own
-  reviewed flip with the director's confirmation.
+- PARTIAL (user, 2026-10-02, "2800 제한 해제", before the measurements): `guards.BENCH_APPROACH = "MEASURED"`.
+  On the bench, `bench_ascent_refusal` now refuses every upward move (approach, sweeps, move_to) above the lens's
+  `approach_ceiling_um`: 3200 for 4x/10x/20x, 2800 for 40x-WI/60x-Oil/100x-Oil/unknown. focus_100x stays refused
+  on the bench. Full unlock of the high-mag lenses waits for Q13/Q20 (a sweep's first move has no clearance check).
 - Microscope PC measurements and checks (see "현미경 PC" items below and docs/microscope-pc-checklist.md):
   ~~cfg passes `check_load_settings` with BENCH_DEVICES~~ (OK, 2026-10-02); ~~whether System/Shutdown applies at
   unload~~ (the bench cfg has no Shutdown preset); stage limits (Y ≥ 20498.8 µm; the +Y 15 mm step-out ran once
