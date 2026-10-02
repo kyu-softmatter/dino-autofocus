@@ -21,12 +21,18 @@ Dev seats send `[검토요청 T-NNN]` to the assistant for their task. One branc
 
 | Assistant | Tasks |
 |---|---|
-| AF 검토보조1 | T-002 (all stages), T-008 (already started), T-011, T-015 |
-| AF 검토보조2 | T-007, T-012, T-021, T-023, T-024 |
+| AF 검토보조1 | T-002 (all stages), T-008 (done), T-011, T-015, T-025, T-027, T-028 |
+| AF 검토보조2 | T-007, T-012, T-021, T-023, T-024, T-030, T-031 |
 | AF 검토보조3 | T-004, T-009, T-013, T-018, T-019 |
 | AF 검토보조4 | T-010, T-014, T-016, T-020, T-022 |
 
 New tasks get an assistant in their card. Unlisted tasks go to the least loaded assistant.
+
+## Manager to-do on events
+
+- T-009 and T-010 first skeletons merged → tell AF 업무분배보조 (screen stage B starts).
+- 실행14 (T-020) or 실행5 (T-004) review cleared → offer the seat to AF 업무분배보조 for T-103 / T-104.
+- T-018 merged → 실행13 starts T-105 (screen manager). T-019 merged → 실행2 starts T-106.
 
 ## 후속 과제 후보
 
@@ -57,8 +63,27 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   - WP-G: `hardware_confirm` for human-confirmed profile items (ui-spec 7.2).
   - Server/web: first-screen notice of the last shutdown's light readback (ui-spec 5.2).
   - Piezo keys f / w / W stay disabled until M5 (operations-spec 9.2).
+- **ui-spec nit (next touch of docs/ui-spec.md):** 4.0 transport row still calls abort open; D13 decided it. `update` stays in the command table (T-011 adds it to COMMAND_KINDS).
 - **Waiting on the director/user:** real `light_set`/`lights_off` at M3 instead of M4; whether viewers
   may submit questions to the mock store and write flags (default: local operator only).
+
+## Engine requirements promised to the screens (for WP-C, G, I cards)
+
+- Op names are fixed by the screen contracts (list in T-011). Engine cards must use them.
+- **Sample state storage (manager decision):** boundary points, flags and candidates are append-only events
+  in the open experiment session's `records/sample_events.jsonl` (PLAN 5, T-019). The engine has one
+  reader that folds them into the current state. Legacy `sample.json` / `map.json` are derived views for
+  the old tools. Flag and candidate writes need an open session. The engine assigns `flag_id` and
+  `candidate_id`, and a reject is a new entry with source `person_rejected`.
+- WP-G: HardwareProfile gets host, config, per-device type/library/properties/write_verified, objective rows,
+  camera, piezo, positions/pfs/lights (ops-spec 5). Confirmed items are `{value, by, at}`, and profile history
+  keeps a diff. This is not added to T-002-2; it goes into the WP-G card.
+- WP-C: `light_set{mode, line, percent}` op. WP-C/WP-I: `scan_4x` writes `mosaic.npy` and `mosaic.json`
+  (orientation "stage", `M_px_per_um`, objective, `n_tiles`); `goto_xy` event payloads; `scan_box_um`
+  and `allowed_box_um` in `summary.json`.
+- 4x focus plane at the current XY (default centre for focus_100x, T-104 gap 6): owner WP-C focus port.
+- Lens table: engine data inside guards (fa2bdcd). Q8 only asks where FocusAxis keeps its WD values, so the
+  provisional rows can cite their source. Moves to the person-owned envelope at integration.
 
 ## 현미경 PC 확인 항목 (총괄에 넘김)
 

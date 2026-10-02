@@ -62,3 +62,15 @@
 - **승인 대기 계정은 로그인할 수 없다.** 로그인 시도에 "승인 대기" 안내를 돌려준다 (총괄 권고대로).
 - 생성 시각과 승인한 관리자, 정한 역할은 `audit.jsonl` 에 남긴다.
 - 첫 관리자 계정은 위의 설정/환경변수 경로로 만들어지며 승인 절차를 거치지 않는다.
+
+## D16 (PLAN v1.1, 6beb85a)
+
+- Viewers may not submit questions or write map flags. Only an operator on the microscope PC (loopback) may.
+- Expose this as named permissions in `roles.py` (for example `SUBMIT_QUESTION`, `WRITE_MAP_FLAG`, both
+  operator-only, local-only) so the server routes check them. The UI hiding a button is not enough.
+- Tests: viewer and remote operator are refused, local operator allowed.
+
+## From the screen contracts
+
+- An audit kind for question submit (`QUESTION_SUBMITTED`), and confirm that `COMMAND_PROPOSED` and
+  `COMMAND_REJECTED` exist. `SUBMIT_QUESTION` covers both the console F1.1 submit and the prompt box.

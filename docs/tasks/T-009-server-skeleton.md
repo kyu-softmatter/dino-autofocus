@@ -71,3 +71,44 @@
   커밋 메시지 끝 `Session: AF 실행7`)
 - `uv run python -m dino_autofocus.server --dump-openapi out.json` 이 동작
 - 끝나면 `[검토요청 T-009]` 를 검토 세션에. 의존성 변경이 있다는 것을 첫 줄에 적는다
+
+## Graceful shutdown route (from the T-016 merge review)
+
+- `POST /api/shutdown`, loopback only (refused for remote viewers, including under D13). It asks the engine to
+  stop: abort the running operation, lights off with readback, finish records, then the server exits.
+  The launcher (T-026) calls it before any hard kill. Test with the fake engine.
+
+## Shutdown safety (director)
+
+- Hardware must not depend on the graceful route alone. The server's own exit hooks (signal handlers and
+  `atexit`) call the engine's all-off as well, so Ctrl+C or a normal process exit still turns lights off.
+
+## From the screen contracts (T-100/101/102 stage A, 업무분배보조)
+
+- `create_app(engine, *, agent_store=..., remote_view=...)` keeps the AgentStore on `app.state`, with an
+  `AgentStoreDep` in `server/api/__init__.py`. The dev default is `MockStore`.
+- An auth dependency that yields `(login token or None, is_local)` from the cookie plus loopback. The T-018
+  control object lives on `app.state` (a stub until T-018 merges).
+- `/api/commands` consults the engine's permission table (T-011, op -> action, needs control, needs session).
+  The server does not keep its own copy.
+- `/api/commands` refuses `map_flag`, `map_flag_retire`, `candidate_confirm`, `candidate_reject`. Those go only
+  through `server/api/map.py`, which checks `WRITE_MAP_FLAG` (D16). The common endpoint must not bypass it.
+- D13: remote POSTs stay refused except `abort`.
+
+## From the login screen contract (T-105 stage A, db0a4d1)
+
+- Remote viewers must be able to log in (PLAN 5). Exempt exactly `POST /api/auth/{login, logout, unlock,
+  activity, signup}` from the loopback-only write rule. None of them reaches the engine.
+- Export the loopback rule as a dependency (e.g. `IsLocal`) so `server/api/auth.py` reuses it.
+- A cookie check on `/ws/*` and every other `/api/*` router. Abort and the stop path stay open (D13/D2).
+- The control token never reaches the browser. The server attaches the operator's grant to the engine
+  Command, and the browser sees only `has_control`.
+
+## Split (manager, 2026-10-01): T-009 now, T-009b after T-011 and T-018
+
+- T-009 (review now): everything independent of unmerged work, plus AgentStoreDep, IsLocal, the auth POST
+  exemptions and the D16 refusal on `/api/commands`.
+- T-009b (same branch or `exec7/T-009b`, after T-011 and T-018 merge): cookie check on `/ws/*` and `/api/*`,
+  attaching the control grant to the engine Command, and reading the T-011 permission table.
+- Dependencies: `pillow` for JPEG. `httpx2` instead of `httpx`, only if it is the package Starlette's own docs
+  name for TestClient. State the source and the package's maintainer in the review request.

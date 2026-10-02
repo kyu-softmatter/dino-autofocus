@@ -77,3 +77,24 @@ D6 은 권고안으로 진행, D7 은 텍스트만, D8 은 우선 제한 없음�
 - 연결 상태 API (`GET /api/assistant/status`) 가 공급자 (`fake` | `anthropic`), 연결 여부, **현재 데이터
   단계**를 돌려준다. 화면 상단 표시는 T-010 상태 표시줄이 이 값을 읽어 한다.
 - D8: 비용 한도는 없지만 사용 토큰은 답변마다 표시하고 기록한다. 모델 `claude-opus-5-5`.
+
+## Own loop accepted (PLAN 9ebf488, section 5 "Claude 연동", D6). Conditions the loop must meet
+
+1. Read `stop_reason` first. On `refusal` or `max_tokens`, run no tools.
+2. When one response has several `tool_use` blocks, run all of them and return every `tool_result` in ONE
+   user message. Failed tools come back with `is_error: true`.
+3. Append-only history: resend the assistant response content blocks unchanged, thinking blocks included.
+4. No forced `tool_choice` (`any` / `tool` returns 400 on claude-opus-5-5). Use `auto`, a prompt instruction,
+   and `strict: true` on tool definitions.
+5. Set `output_config.effort` explicitly (this model defaults to medium). Do not send a thinking config
+   that disables thinking.
+6. Server-side refusal fallbacks on by default.
+7. Validate tool input against its schema before running the tool.
+8. Keep the system prompt and tool list byte-stable so prompt caching works (test: identical bytes across calls).
+
+The review assistant checks each condition against the branch before passing it to the reviewer.
+
+## From the screen contracts (D16)
+
+- The proposal-confirm path checks `WRITE_MAP_FLAG` for `map_flag`, `map_flag_retire`, `candidate_confirm` and
+  `candidate_reject`, the same as the map routes. Claude proposals must not bypass D16.

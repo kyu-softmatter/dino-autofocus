@@ -40,3 +40,36 @@
 - Add an optional `notes: dict[str, str]` (default empty) to `Readback` and `BackendInfo`. Backends use it
   for markings such as `"unmeasured provisional"` and demo substitutions, so they never go into device or
   property names.
+
+## Required safety fix (reviewer, T-002-1 merge 7f62722)
+
+`Backend.set_property(device, prop, value)` takes no `MotionToken`, so code could write ZDrive / XYStage
+position, Nosepiece State or PFS through it and bypass `require_token` (PLAN 6절: safety is decided by code).
+
+- `set_property` refuses motion devices (ZDrive, XYStage, Nosepiece, PFS, and their demo names) with an
+  `UnguardedMotion` error. Keep the list in one constant next to the protocol.
+- Test it on `FakeBackend` here, and make the contract test parametrised so T-021 (mock) and T-023 (mm-demo)
+  run the same refusal test.
+- This is the first thing in T-015; send it for review on its own if the rest is not ready.
+
+## D15 (PLAN v1.1, 6beb85a)
+
+- Light methods that switch something on or change intensity take the control token like motion methods.
+  `all_off` takes none (it is a stop). The light allow-list (Aura lines; DiaLamp State and Intensity) lives in
+  one constant next to the protocol, and `set_property` refuses light properties outside it.
+
+## set_property is an allow-list (manager decision, 2026-10-01; answers 실행11)
+
+`set_property(device, prop, value, *, token=None)` writes only properties that are listed. Everything else
+is refused. Three groups, kept as data in one place next to the protocol:
+
+1. **Motion devices, always refused** with `UnguardedMotion`: bench ZDrive, XYStage, Nosepiece, PFS,
+   PFSOffset; demo Z, XY, Objective, Autofocus, Core. Motion goes only through the guarded methods.
+2. **Light properties, token required**: bench Aura `<LINE>`, `<LINE>_Intensity`, `State`; DiaLamp `State`,
+   `Intensity`; demo White Light Shutter, LED, LED Shutter equivalents.
+3. **Camera properties, no token**: an explicit short list (exposure, ROI, pixel type or readout mode, and
+   any others the scripts set today). Prefer the dedicated methods (`set_exposure`, `set_roi`) where they exist.
+
+Any device or property not in groups 2 or 3 is refused with a clear error naming the allow-list.
+Light methods: `lamp_on(*, token)` and `aura_line_on(line, percent, *, token)` raise `UnguardedMotion`
+without a token; `lamp_off`, `aura_off`, `all_off` take none.
