@@ -24,6 +24,7 @@ from dino_autofocus.engine.runner import (
     Registry,
     Runner,
     RunnerConfig,
+    folder_records,
     permission,
 )
 
@@ -193,7 +194,9 @@ class SampleOpen(Operation):
     motion = False
 
     def run(self) -> dict:
-        return {"sample_id": self.args.get("sample_id")}
+        sid = self.args.get("sample_id")
+        self.ctx.set_current_sample(sid, reserved=self.ctx.session_started_at is None)
+        return {"sample_id": sid}
 
 
 class Status(Operation):
@@ -791,6 +794,40 @@ def test_snapshot_hardware_and_last_status(make):
     assert hw["last_status"] is None
     sink.wait("finished", r.submit(start("status")))
     assert r.snapshot()["hardware"]["last_status"]["summary"]["objective"] == "4x"
+
+
+def test_snapshot_sample_block(make):
+    r, sink = make(session=None)
+    assert r.snapshot()["sample"] == {"sample_id": None, "reserved": False, "session_id": None}
+    sink.wait("finished", r.submit(start("sample_open", sample_id="20261001_1540_1")))
+    assert r.snapshot()["sample"] == {"sample_id": "20261001_1540_1", "reserved": True,
+                                      "session_id": None}
+    r.set_experiment_session(SESSION, 3000.0)
+    assert r.snapshot()["sample"]["session_id"] == SESSION
+
+
+def test_folder_records_write_log_and_summary(fake, tmp_path):
+    r = Runner(fake, registry=REG, control=AllowAll(), config=QUIET,
+               records=folder_records(lambda meta: tmp_path / "samples" / "s1"))
+    r.start()
+    r.set_experiment_session(SESSION, 1000.0)
+    sink = Collect()
+    r.subscribe(sink)
+    try:
+        fin = sink.wait("finished", r.submit(start("steps", n=1)))
+        folder = tmp_path / "samples" / "s1"
+        (rec_dir,) = [p for p in folder.iterdir() if p.name.startswith("steps_")]
+        assert fin.data["record_dir"] == str(rec_dir)
+        summary = json.loads((rec_dir / "summary.json").read_text(encoding="utf-8"))
+        assert summary["status"] == "finished" and summary["session_id"] == SESSION
+        assert summary["lights_off"]["verified"] is True
+        assert summary["result"]["op_id"] == fin.op_id
+        assert summary["result"]["summary"] == {"done": True}
+        kinds = [json.loads(line)["kind"] for line in
+                 (rec_dir / "log.jsonl").read_text(encoding="utf-8").splitlines()]
+        assert kinds[0] == "planned" and kinds[-1] == "finished"
+    finally:
+        r.shutdown("test", timeout=T)
 
 
 # -- misc

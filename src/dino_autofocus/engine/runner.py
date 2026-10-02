@@ -53,6 +53,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
+from . import records as op_records
 from .backend import Frame, Positions
 from .events import Command, Event, EventSink
 
@@ -206,6 +207,35 @@ class NoRecord:
 
 
 RecordFactory = Callable[[dict], OpRecord]  # gets the op's meta (op, op_id, origin, ids)
+
+
+class _FolderRecord:
+    """`records.OpRecord` (T-002) behind the runner's record seat."""
+
+    def __init__(self, parent: Path, meta: dict):
+        self._rec = op_records.OpRecord(parent, meta["op"], prefix=meta["record_prefix"],
+                                        user_id=meta["user_id"],
+                                        session_id=meta["session_id"])
+        self.dir = str(self._rec.dir)
+
+    def event(self, ev: Event) -> None:
+        self._rec.sink(ev)
+
+    def close(self, end: dict) -> None:
+        state = end["state"]
+        end_state = dict(end.get("end_state") or {})
+        lights = end_state.pop("lights", None) or {}
+        result = {k: end.get(k) for k in ("op_id", "origin", "proposal_id", "conversation_id",
+                                          "confirmed_by", "confirmed_at", "summary",
+                                          "manual_steps", "why")}
+        self._rec.finish(state, lights=lights, end_state=end_state, result=result,
+                         error=end.get("message"))
+
+
+def folder_records(parent_for: Callable[[dict], str | Path]) -> RecordFactory:
+    """Record seat writing `<parent>/<prefix or op>_<stamp>/{log.jsonl,summary.json}`.
+    `parent_for(meta)` picks the folder, e.g. the open sample's or the session's records."""
+    return lambda meta: _FolderRecord(Path(parent_for(meta)), meta)
 
 
 @dataclass
@@ -405,6 +435,9 @@ class OpContext:
     user_id = property(lambda self: self._op.user_id)
     session_id = property(lambda self: self._op.session_id)
 
+    def set_current_sample(self, sample_id: str | None, *, reserved: bool = False) -> None:
+        self.runner.set_current_sample(sample_id, reserved=reserved)
+
     @property
     def session_started_at(self) -> float | None:
         """Start of the open experiment session: the "re-trace every session" check."""
@@ -500,6 +533,7 @@ class Runner:
         self._owner: _Op | None = None
         self._ids = itertools.count(1)
         self._session: dict | None = None  # {"session_id", "started_at"} from the server
+        self._sample: dict = {"sample_id": None, "reserved": False}  # set by sample ops
         self._last_pos: dict | None = None
         self._last_lights: dict | None = None  # last state seen (readback or read)
         self._last_off: dict | None = None  # last all_off: records, verified, error
@@ -611,6 +645,8 @@ class Runner:
                 "pending_confirms": pending,
                 "awaiting_return": self._awaiting,
                 "session": self._session,
+                "sample": {**self._sample,
+                           "session_id": (self._session or {}).get("session_id")},
                 "last_shutdown_lights": self._last_shutdown,
                 "unclean_shutdown": self._unclean,
                 "hardware": self._hardware_state(),
@@ -649,6 +685,12 @@ class Runner:
         self._emit(Event("session_changed", data={
             "session_id": sid, "started_at": started_at if session_id else None,
             "state": "open" if session_id else "closed"}, session_id=session_id))
+
+    def set_current_sample(self, sample_id: str | None, *, reserved: bool = False) -> None:
+        """The sample on the stage (`sample_open` / `sample_new` call it through their
+        context). `reserved`: picked with no session open, for the next session (T-019)."""
+        with self._lock:
+            self._sample = {"sample_id": sample_id, "reserved": bool(reserved and sample_id)}
 
     def set_local_viewers(self, count: int) -> None:
         """The server reports how many loopback browser connections are open (D14). At zero
@@ -966,11 +1008,14 @@ class Runner:
             message, where = err or ("error", "")
             data = {"op": op.op, "message": message, "where": where, "end_state": end,
                     "record_dir": record_dir}
-        self._emit_op(op, state, data)
+        # the record is complete before anyone hears the operation ended
+        ev = Event(state, op.op_id, data, user_id=op.user_id, session_id=op.session_id)
         try:
+            op.record.event(ev)
             op.record.close({**op.meta(), "state": state, **data})
         except Exception:
             log.exception("record close of %s failed", op.op_id)
+        self._emit(ev)
 
     def _runner_checks(self, op: _Op) -> list[dict]:
         aw = self._awaiting
