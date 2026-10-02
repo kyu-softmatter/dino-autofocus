@@ -81,3 +81,5 @@
   defence in depth next to the T-011 runner check. Test with a bench-flagged FakeBackend.
 - guards table (PLAN v1.3, fbc1e08): add the F5 step-out as data, `escape_dy_um = +15000` (sign +Y, 15 mm), marked
   "unmeasured provisional", plus a check that refuses a step-out beyond the stage Y limit read from the backend.
+- Reader: expose whether the current hole fit came from a closed loop (`trace_stop`, `arc_deg`), next to
+  `fitted_at`, so the re-trace rule and scan_4x can tell a partial arc from a full fit.

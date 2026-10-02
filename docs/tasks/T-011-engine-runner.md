@@ -205,3 +205,10 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 | edge_trace, scan_4x, sample_map, goto_xy, focus_100x, objective_change | motion | yes | yes |
 | unknown op | motion (strictest) | yes | yes |
 | abort, lights_off | stop | no (D13: remote abort only) | no |
+
+## Exit-path lights (manager decision, from T-030 review)
+
+- A normal op exit (finished or error) restores the lights to their state before the op: it turns off what that
+  op turned on and leaves a light set by `light_set` alone. `abort`, `lights_off`, `shutdown`, D14 auto-abort and
+  closing the experiment session turn everything off. Record which rule applied. Test: `light_set` then
+  `status` keeps the light on; `light_set` then `abort` turns it off.
