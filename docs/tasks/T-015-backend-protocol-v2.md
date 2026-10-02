@@ -1,15 +1,16 @@
 # T-015 WP-A 백엔드 프로토콜 확장 (T-006 명세의 읽기와 상대 이동)
 
-- 담당: 미정
+- 담당: AF 실행12 · 개발 (새 세션). MockBackend 과제 T-021 과 이어서
 - 묶음: WP-A
-- 선행: T-002 병합. MockBackend 과제와 WP-G (hardware_scan) 가 이것을 쓴다
+- 선행: T-002-1 병합. MockBackend 과제와 WP-G (hardware_scan) 가 이것을 쓴다
 - 배정: 2026-10-01 작성
 - 브랜치: `execN/T-015-backend-protocol-v2`
 
 ## 소유 경로
 
 - `src/dino_autofocus/engine/backend.py` (T-002 병합 뒤 소유 이전)
-- `tests/engine/conftest.py` 의 `FakeBackend` 확장 (T-002 병합 뒤 소유 이전)
+- `tests/engine/conftest.py` 의 `FakeBackend` 확장 (T-002-1 병합 뒤 소유 이전. 실행1 의 2·3단계가 conftest 를
+  고쳐야 하면 매니저에게 먼저 알린다)
 - `tests/engine/test_contract_backend_v2.py`
 
 ## 내용 (이름은 `docs/operations-spec.md` 0.1절의 가칭. 다르게 정하면 명세도 고친다)
@@ -21,7 +22,7 @@
 3. 연속 취득: `start_stream()` / `next_frame()` / `stop_stream()`. 라이브 뷰와 edge_trace 가 같은
    스트림을 쓴다. 프레임 메타는 `snap()` 과 같다.
 
-## 매니저가 정한 상수 (현미경 PC 측정 전 임시값, docstring 에 "provisional" 표시)
+## 매니저가 정한 상수 (총괄 승인. 현미경 PC 측정 전 임시값, 코드와 기록에 "unmeasured provisional" 표시)
 
 - **큰 XY 이동 문턱** = min(현재 렌즈 시야 1 배, 1 mm). 4x 에서는 1 mm 라 edge_trace 걸음 200 µm 보다
   크다. 100x 에서는 약 156 µm 라 더 작은 이동도 Z 후퇴를 요구한다. 의도된 보수적 값이다.
@@ -33,3 +34,42 @@
 
 - 공통 조건, `FakeBackend` 가 새 메서드를 모두 구현
 - 끝나면 `[검토요청 T-015]`
+
+## Addition (from T-023, 실행11)
+
+- Add an optional `notes: dict[str, str]` (default empty) to `Readback` and `BackendInfo`. Backends use it
+  for markings such as `"unmeasured provisional"` and demo substitutions, so they never go into device or
+  property names.
+
+## Required safety fix (reviewer, T-002-1 merge 7f62722)
+
+`Backend.set_property(device, prop, value)` takes no `MotionToken`, so code could write ZDrive / XYStage
+position, Nosepiece State or PFS through it and bypass `require_token` (PLAN 6절: safety is decided by code).
+
+- `set_property` refuses motion devices (ZDrive, XYStage, Nosepiece, PFS, and their demo names) with an
+  `UnguardedMotion` error. Keep the list in one constant next to the protocol.
+- Test it on `FakeBackend` here, and make the contract test parametrised so T-021 (mock) and T-023 (mm-demo)
+  run the same refusal test.
+- This is the first thing in T-015; send it for review on its own if the rest is not ready.
+
+## D15 (PLAN v1.1, 6beb85a)
+
+- Light methods that switch something on or change intensity take the control token like motion methods.
+  `all_off` takes none (it is a stop). The light allow-list (Aura lines; DiaLamp State and Intensity) lives in
+  one constant next to the protocol, and `set_property` refuses light properties outside it.
+
+## set_property is an allow-list (manager decision, 2026-10-01; answers 실행11)
+
+`set_property(device, prop, value, *, token=None)` writes only properties that are listed. Everything else
+is refused. Three groups, kept as data in one place next to the protocol:
+
+1. **Motion devices, always refused** with `UnguardedMotion`: bench ZDrive, XYStage, Nosepiece, PFS,
+   PFSOffset; demo Z, XY, Objective, Autofocus, Core. Motion goes only through the guarded methods.
+2. **Light properties, token required**: bench Aura `<LINE>`, `<LINE>_Intensity`, `State`; DiaLamp `State`,
+   `Intensity`; demo White Light Shutter, LED, LED Shutter equivalents.
+3. **Camera properties, no token**: an explicit short list (exposure, ROI, pixel type or readout mode, and
+   any others the scripts set today). Prefer the dedicated methods (`set_exposure`, `set_roi`) where they exist.
+
+Any device or property not in groups 2 or 3 is refused with a clear error naming the allow-list.
+Light methods: `lamp_on(*, token)` and `aura_line_on(line, percent, *, token)` raise `UnguardedMotion`
+without a token; `lamp_off`, `aura_off`, `all_off` take none.

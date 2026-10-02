@@ -9,8 +9,22 @@
 |---|---|---|---|
 | AF 총괄 · 방향 설계 | 사용자와 방향 결정, 계획서 관리, 문제 최종 정리 | `docs/PLAN.md`, `docs/sessions.md` | 코드 구현, 실행 세션에 직접 배정 |
 | AF 매니저 · 업무 분배 | 계획을 과제로 쪼개 실행 세션에 배정. 파일 소유가 겹치지 않게 관리 | `docs/tasks/` | 코드 구현, 병합, 푸시 |
+| AF 업무분배보조 · <영역> | 매니저와 영역을 나눠 맡는 두 번째 분배 세션. **화면 영역** (web/src/features/*, web/src/app/assistant·login, 각 영역의 server/api/<영역>.py) 의 과제를 쪼개고 배정하고 추적한다. 과제 번호는 **T-100–T-199** 대역만 쓴다 | `docs/tasks/T-1NN-*.md` | 매니저 영역의 과제 수정, 공유 파일 순서 결정 (`pyproject.toml`, `web/package.json` 은 매니저가 정한다), 병합, 푸시, 코드 구현 |
 | AF 검토 · 병합/푸시 | 실행 브랜치를 검토하고 `main` 에 병합, 테스트 후 푸시 | `main` 브랜치 (병합 커밋) | 기능 구현. 큰 수정은 실행 세션에 반려 |
-| AF 실행N · 개발 (실행1–7, 늘어나면 같은 규칙) | 배정된 과제를 자기 worktree 브랜치에서 구현하고 커밋 | 배정된 소유 경로만 | 소유 밖 파일 수정, `main` 직접 커밋, 푸시, 하드웨어 명령 |
+| AF 검토보조N · <T-NNN 또는 대기> (여러 개 가능) | 검토요청 브랜치를 자기 worktree 에서 먼저 확인 (테스트, 소유 범위, PLAN 규칙). 통과한 것만 검토 세션에 넘기고 실패는 실행 세션에 반려 | 자기 worktree (읽기, 테스트 실행) | 병합, 푸시, 공유 폴더 쓰기 |
+| AF 실행N · 개발 (늘어나면 같은 규칙) | 배정된 과제를 자기 worktree 브랜치에서 구현하고 커밋 | 배정된 소유 경로만 | 소유 밖 파일 수정, `main` 직접 커밋, 푸시, 하드웨어 명령 |
+
+## Language (2026-10-01)
+
+To save tokens, **sessions talk to each other in English**: cross-session messages, task cards in
+`docs/tasks/`, review notes, commit messages, code, comments and new docs. Only the director session
+talks to the user in Korean. `docs/PLAN.md` stays Korean for the user; quote its section numbers
+instead of restating it. Older Korean task cards stay as they are; write new ones in English.
+
+**The user reads only the director session.** Every other session writes its own window output in
+English and keeps it minimal: no end-of-turn summaries for the user, at most one or two lines of status.
+Anything that matters goes into a commit, a task card or a message to the right seat. Questions for
+the user go to the manager, who sends them to the director; never ask the user in your own window.
 
 ## 세션 이름: 지금 하는 일을 보이게
 
@@ -41,7 +55,7 @@ git -C D:\codes\github\dino-autofocus worktree add ..\dino-autofocus-wt\execN -b
 
 ```
 총괄 --(방향, 우선순위)--> 매니저 --(과제 T-NNN)--> 실행N
-실행N --(검토 요청)--> 검토 --(병합, 푸시)--> 매니저에게 보고
+실행N --(검토 요청)--> 검토보조 --(1차 통과)--> 검토 --(병합, 푸시)--> 매니저에게 보고
 검토 --(충돌/문제: 반려)--> 실행N,  매니저에게 보고
 매니저 --(방향 수준의 문제만)--> 총괄 --> 사용자
 ```
@@ -69,7 +83,23 @@ uv run ruff check src tests
 
 ## 공통 금지 사항
 
+- **사용자 화면에 창을 띄우지 않는다.** 브라우저 열기, 확인 대화상자, tkinter 창, exe 실행은 테스트에서
+  끄거나 대체하고 호출 기록만 확인한다. 시험용 서버는 끝나면 직접 정리한다.
+  실제 창을 띄워 봐야 하는 확인은 매니저를 거쳐 "사용자 확인 필요" 로 올린다 (2026-10-01, 8799 포트 사건).
 - 하드웨어 스크립트 실행 금지. 이 데스크톱에는 현미경이 없고, 벤치 실행은 사용자가 현미경 PC 에서 한다.
 - 데이터셋 생성과 DINO 학습은 현미경 PC 에서만 한다. 데스크톱에서 돌리지 않는다.
 - `pyproject.toml`, `uv.lock` 변경은 매니저를 통해 한 세션만 한다.
 - 모델 출력으로 모션 한계나 안전 판단을 정하지 않는다 (PLAN.md 5절).
+
+## 병목이 생기면 세션을 늘린다
+
+사용자는 매니저나 검토가 병목이면 세션을 더 띄울 수 있다 (2026-10-01).
+
+- 검토가 밀리면 검토보조를 늘린다. **병합과 푸시는 언제나 검토 세션 하나만 한다.**
+  공유 폴더에서 `main` 을 바꾸는 세션이 하나여야 충돌이 없다.
+- 매니저가 밀리면 매니저에게 `[이슈]` 를 받아 총괄이 사용자에게 추가를 요청한다.
+  매니저를 늘릴 때는 영역을 나눠 맡긴다. 지금은 매니저가 엔진·백엔드·서버 골격·공유 파일 순서를,
+  업무분배보조가 화면 영역을 맡는다 (2026-10-01). 과제 번호는 대역으로 나눠 충돌을 막는다:
+  매니저 T-001–T-099, 업무분배보조 T-100–T-199. 실행 세션은 매니저가 두 쪽에 나눠 준다.
+  `docs/tasks/BACKLOG.md` 는 매니저 것이고, 업무분배보조는 요청만 보낸다.
+- 새 세션은 이 파일을 읽고 스스로 이름을 정한 뒤 매니저에게 자리를 알린다.
