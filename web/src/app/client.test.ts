@@ -125,13 +125,36 @@ describe("post", () => {
     expect(client.readOnly.get().readOnly).toBe(false);
   });
 
-  it("reads a plain-string detail too (T-009 ApiError)", async () => {
-    const { transport } = fakeTransport({ "/api/x": () => ({ status: 409, body: { detail: "held by Bea" } }) });
-    await expect(new Client(transport, "127.0.0.1").post("/api/x")).rejects.toMatchObject({
+  it("reads the server's ApiError {detail: {code, message}}", async () => {
+    const { transport } = fakeTransport({
+      "/api/auth/control/acquire": () => ({
+        status: 409,
+        body: { detail: { code: "control_held", message: "held by Bea" } },
+      }),
+    });
+    await expect(new Client(transport, "127.0.0.1").post("/api/auth/control/acquire")).rejects.toMatchObject({
       status: 409,
-      code: null,
+      code: "control_held",
       detail: "held by Bea",
     });
+  });
+
+  it("reads FastAPI's own errors: a plain string (404) and a validation list (422), with no code", async () => {
+    const { transport } = fakeTransport({
+      "/api/x": () => ({ status: 404, body: { detail: "Not Found" } }),
+      "/api/commands": () => ({
+        status: 422,
+        body: { detail: [{ loc: ["body", "kind"], msg: "Input should be 'start' or 'abort'", type: "literal_error" }] },
+      }),
+    });
+    const client = new Client(transport, "127.0.0.1");
+    await expect(client.post("/api/x")).rejects.toMatchObject({ status: 404, code: null, detail: "Not Found" });
+    await expect(client.command({ kind: "start" })).rejects.toMatchObject({
+      status: 422,
+      code: null,
+      detail: "Input should be 'start' or 'abort'",
+    });
+    expect(client.readOnly.get().readOnly).toBe(false);
   });
 });
 
@@ -168,5 +191,27 @@ describe("EventStream", () => {
     expect(sockets[1].closed).toBe(true);
     vi.advanceTimersByTime(5000);
     expect(sockets).toHaveLength(2);
+  });
+
+  it("delivers lock messages to onLock listeners, not to event handlers (T-009c)", () => {
+    const { transport, sockets } = fakeTransport({});
+    const es = new EventStream(transport);
+    const events = vi.fn();
+    const lock = vi.fn();
+    es.on(events);
+    const off = es.onLock(lock);
+    es.start();
+    sockets[0].open();
+    expect(es.locked).toBeNull();
+    sockets[0].send({ type: "lock", locked: true });
+    sockets[0].send({ type: "lock", locked: "yes" }); // not a boolean: ignored
+    sockets[0].send({ type: "lock", locked: false });
+    expect(lock.mock.calls.map((c) => c[0])).toEqual([true, false]);
+    expect(es.locked).toBe(false);
+    expect(events).not.toHaveBeenCalled();
+    off();
+    sockets[0].send({ type: "lock", locked: true });
+    expect(lock).toHaveBeenCalledTimes(2);
+    expect(es.locked).toBe(true);
   });
 });

@@ -14,13 +14,16 @@ Dependencies for handlers (`Annotated`, so `def handler(eng: Engine, me: Login):
   login, not from a foreign page). Area writes that move nothing but must stay local use it.
 
 Access (PLAN.md 5, D13, D16; manager's T-009b contract), one place for REST and WebSocket:
-- Without a live login only these work: `GET /api/health`, the login routes, `POST
+- Without a live login only these work: `GET /api/health` and `/api/auth/setup`, the login
+  routes, first-run `POST /api/auth/setup/admin` (loopback, own page only), `POST
   /api/shutdown` (loopback), and the stops `abort` / `lights_off` from loopback. Everything
   else under `/api/*` and `/ws/*` is 401 `login_required`; a locked login gets 423 `locked`
   except for stops and the login routes.
 - A remote viewer reads, and may send `abort` (logged in, D13) and nothing else: 403
   `remote_view`, the one code that switches the web client to read-only.
 - Refusals carry `detail = {code, message}` and the header `X-DinoAF-Refusal: <code>`.
+- Writes and WebSocket handshakes from a browser are accepted only from this server's own
+  origin or a `--dev-origin` (403 `foreign_origin`), see `origin_refusal`.
 """
 
 from __future__ import annotations
@@ -220,16 +223,47 @@ def login_state(conn: HTTPConnection) -> LoginState:
     return LoginState(token, conn.app.state.auth.login(token), is_local(conn))
 
 
-def origin_refusal(conn: HTTPConnection) -> Refusal | None:
-    """A browser page from another site may not write (CSRF). Pages served by this server and
-    loopback dev servers may; non-browser clients send no Origin."""
+def normalize_origin(value: str) -> str:
+    """`scheme://host:port` in lower case, for comparing origins. Raises ValueError for
+    anything that is not a plain http(s) origin (a path, `null`, no host)."""
+    o = urlsplit(value.strip())
+    if o.scheme not in ("http", "https") or not o.netloc or o.path not in ("", "/") \
+            or o.query or o.fragment:
+        raise ValueError(f"not an http(s) origin: {value!r}")
+    return f"{o.scheme}://{o.netloc}".lower()
+
+
+def own_origin(conn: HTTPConnection) -> str:
+    """This server's origin as the browser sees it: the request's scheme and Host header."""
+    scheme = {"ws": "http", "wss": "https"}.get(conn.url.scheme, conn.url.scheme)
+    return f"{scheme}://{conn.headers.get('host', '')}".lower()
+
+
+def origin_refusal(conn: HTTPConnection, *, required: bool = False) -> Refusal | None:
+    """A browser page may write (and open a WebSocket) only if it was served by this server,
+    or by a dev server named with `--dev-origin` (T-009c). The comparison is exact: scheme,
+    host and port, so a page on another loopback port of this PC is refused even though
+    SameSite lets it carry the login cookie, and `localhost` is not `127.0.0.1`.
+    Non-browser clients send no Origin and pass, unless `required` (first-run setup)."""
     origin = conn.headers.get("origin")
-    if origin is None:
+    if origin is None and not required:
         return None
-    o = urlsplit(origin)
-    if o.netloc == conn.headers.get("host", "") or is_loopback_host(o.hostname):
-        return None
-    return Refusal(403, "foreign_origin", f"writes are not accepted from pages served by {origin}")
+    if origin is not None:
+        try:
+            value = normalize_origin(origin)
+        except ValueError:
+            value = None
+        if value is not None and (value == own_origin(conn)
+                                  or value in getattr(conn.app.state, "dev_origins", ())):
+            return None
+    return Refusal(403, "foreign_origin",
+                   f"not accepted from a page served by {origin or 'nothing (no Origin)'}; "
+                   f"only this server's own page")
+
+
+def own_origin_refusal(conn: HTTPConnection) -> Refusal | None:
+    """First-run setup (T-009d): the same rule, and an Origin is required."""
+    return origin_refusal(conn, required=True)
 
 
 def logged_in_refusal(me: LoginState, *, locked_ok: bool = False) -> Refusal | None:
@@ -267,9 +301,10 @@ def command_why(me: LoginState, kind: str | None, op: str = "", *,
 
 
 def command_refusal(conn: HTTPConnection, kind: str | None = None, op: str = "") -> Refusal | None:
+    """The origin first (a foreign page learns nothing about the login), then the rules."""
     remote_abort = getattr(conn.app.state, "remote_abort", True)
-    return (command_why(login_state(conn), kind, op, remote_abort=remote_abort)
-            or origin_refusal(conn))
+    return (origin_refusal(conn)
+            or command_why(login_state(conn), kind, op, remote_abort=remote_abort))
 
 
 def server_action_why(me: LoginState, action: str) -> Refusal | None:

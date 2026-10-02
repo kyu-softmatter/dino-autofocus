@@ -51,7 +51,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .backend import GUARD_TOKEN, Backend, BackendInfo, PfsState, Readback
+from .backend import GUARD_TOKEN, Backend, BackendInfo, PfsState, Readback, is_bench
 from .events import Event, EventSink, fan_out, null_sink
 from .records import GRADE_MODEL, Graded, OpRecord
 
@@ -62,15 +62,43 @@ RETRACT_Z_UM, RETURN_Z_UM = 0.0, 2800.0  # change_objective.py
 WD_FRACTION = 0.4
 FREE_WD_UM = {"4x": 20000.0, "100x-Oil": 130.0}  # lens spec; add a lens only once known
 XY_BOX_MARGIN_UM = 1000.0
-# Backends with no real stage. Any other kind (mm-real, or one this file does not know) is
-# a bench: approach() there refuses to run without a clearance check.
-SIMULATED_KINDS = frozenset({"mock", "fake", "replay", "mm-demo"})
 
 # unmeasured provisional (checklist Q20 / Q12); every use is marked in the record
 Z_SAFE_UM = 0.0  # z_safe: full retract, for every lens
 RETRACTED_MAX_Z_UM = Z_SAFE_UM + 1.0  # "Z retracted" for nosepiece turns and long XY moves
 # F5 immersion-loading step-out: +Y by 15 mm (user, PLAN v1.3). Stage-level, not per lens.
 ESCAPE_DY_UM: float = +15000.0
+
+# SAFETY (T-029d, director): no Z approach on the real stand until it is measured. Anything
+# but the exact value "MEASURED" is locked; flipping it is its own reviewed commit after the
+# user's bench measurements and the director's confirmation. Read only by
+# bench_approach_state(); no argument, environment variable or setting reaches it.
+BENCH_APPROACH = "UNMEASURED"
+BENCH_APPROACH_REASON = (
+    "bench Z approach is locked until it is measured on the stand: checklist Q13 (a safe "
+    "approach step from 0 to 2800 um), Q20 (how far Z must retract before XY moves) and the "
+    "stage travel limits (T-029d)")
+
+
+def bench_approach_state() -> str:
+    """Fail-safe: "MEASURED" only for the exact value, else "LOCKED: <reason>"."""
+    return "MEASURED" if BENCH_APPROACH == "MEASURED" else f"LOCKED: {BENCH_APPROACH_REASON}"
+
+
+def bench_ascent_refusal(info: Any, lens_key: str | None, target_um: float) -> str | None:
+    """Why an upward Z move to `target_um` with `lens_key` in place is refused, or None.
+    Only on the bench (`is_bench(info)`) while BENCH_APPROACH is locked: refused above
+    RETURN_Z_UM (2800) on every lens, and at any height on a lens other than the 4x.
+    Callers apply it to upward moves only; downward moves and retract() are never refused."""
+    if not is_bench(info) or bench_approach_state() == "MEASURED":
+        return None
+    if target_um > RETURN_Z_UM:
+        return (f"upward Z move to {target_um:.2f} um refused: above {RETURN_Z_UM:.0f} um on "
+                f"the bench. {BENCH_APPROACH_REASON}")
+    if lens_key != "4x":
+        return (f"upward Z move on {lens_key or 'an unreadable lens'} refused on the bench "
+                f"(only the 4x may climb, up to {RETURN_Z_UM:.0f} um). {BENCH_APPROACH_REASON}")
+    return None
 Z_TOL_UM = 0.25
 XY_TOL_UM = 5.0
 
@@ -272,7 +300,26 @@ class FocusAxis:
         n = int(math.floor((hi - lo) / s + 1e-9)) + 1
         return SweepPlan(self.key, c, h, s, top, [round(lo + i * s, 4) for i in range(n)])
 
+    def _check_bench_ascent(self, z: float) -> None:
+        """T-029d: every Z move goes through _send, so this covers approach, move_to, the
+        sweeps and any other caller. The lens is read back, not taken from the caller."""
+        if z <= self.position_um() + self.tol:
+            return  # down or flat: always allowed
+        try:
+            info = self.b.info()
+        except Exception:  # noqa: BLE001 - unreadable info: is_bench counts it as the bench
+            info = None
+        try:
+            key: str | None = registry_key(self.b.nosepiece())
+        except Exception:  # noqa: BLE001 - an unreadable lens is not the 4x
+            key = None
+        why = bench_ascent_refusal(info, key, z)
+        if why:
+            raise GuardError(why)
+
     def _send(self, z: float, how: str, basis: dict | None = None) -> float:
+        if not self.dry_run:
+            self._check_bench_ascent(z)
         if self.dry_run:
             read, sent = z, False
             self._z_dry = z
@@ -305,6 +352,25 @@ class FocusAxis:
         if z > self.position_um() + self.tol:
             raise GuardError("park_at only descends")
         return self._send(z, "park_at")
+
+    def retract(self) -> dict:
+        """Z to z_safe (Z_SAFE_UM, 0 um; unmeasured provisional): away from the sample, so
+        no clearance check. Read back within the Z tolerance (a mismatch raises GuardError
+        with the commanded and read values). Already at z_safe: no move, the readback is
+        still recorded. Returns {commanded_um, readback_um, verified, moved, from_um}."""
+        here = self.position_um()
+        basis = {"z_safe_um": PROVISIONAL}
+        if here <= Z_SAFE_UM + self.tol:
+            rec = {"axis": "z", "how": "retract", "target_um": Z_SAFE_UM, "read_um": here,
+                   "sent": False, "why": "already at z_safe",
+                   "basis": {"tol_um": PROVISIONAL, **basis}}
+            self.motions.append(rec)
+            self.emit(Event("motion", self.op_id, rec))
+            return {"commanded_um": Z_SAFE_UM, "readback_um": here, "verified": True,
+                    "moved": False, "from_um": here}
+        read = self._send(Z_SAFE_UM, "retract", basis)
+        return {"commanded_um": Z_SAFE_UM, "readback_um": read, "verified": True,
+                "moved": True, "from_um": here}
 
     def require_pfs_quiet(self, disable: bool = True) -> PfsState:
         s = self.b.pfs()
@@ -344,16 +410,13 @@ class FocusAxis:
                            k is not None and k == len(pts) - 1 and len(pts) > 1)
 
     def _simulated(self) -> bool:
-        """BackendInfo.bench decides (T-033: True on mm-real). Before that field exists the
-        kind is checked instead, strictly: a kind not in SIMULATED_KINDS is a bench."""
+        """Not the real stand, by the one shared rule `backend.is_bench` (T-015b). A failed
+        info() read is passed on as None, which is_bench counts as the bench."""
         try:
             info = self.b.info()
-        except Exception:  # noqa: BLE001 - an unreadable backend counts as a bench
-            return False
-        bench = getattr(info, "bench", None)
-        if isinstance(bench, bool):
-            return not bench
-        return info.kind in SIMULATED_KINDS
+        except Exception:  # noqa: BLE001 - an unreadable backend counts as the bench
+            info = None
+        return not is_bench(info)
 
     def _check_plan(self, plan: SweepPlan) -> None:
         """A plan is re-checked here, so a hand-built one cannot pass the ceiling."""
@@ -379,7 +442,7 @@ class FocusAxis:
         then steps of at most the objective's `approach_step_um` (a smaller `step_um` may
         be asked for, never a larger one). After every move the readback must match and
         rise, and `clearance(z_read)` must return True, or the approach stops with
-        GuardError. On a bench backend (kind not in SIMULATED_KINDS) `clearance` is
+        GuardError. On the bench (`backend.is_bench`) `clearance` is
         required. Above the target it descends straight there."""
         z = plain(target_um, "approach target")
         if not self.window[0] <= z <= self.window[1]:

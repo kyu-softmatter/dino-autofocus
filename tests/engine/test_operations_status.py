@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from conftest import FakeBackend
+from engine_fakes import FakeBackend
 
 from dino_autofocus.engine.backend import Positions
 from dino_autofocus.engine.operations.status import read_status, run_status

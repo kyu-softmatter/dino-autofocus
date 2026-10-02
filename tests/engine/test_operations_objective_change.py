@@ -24,6 +24,7 @@ from dino_autofocus.engine.operations.objective_change import (
     step_out_target,
 )
 from dino_autofocus.engine.runner import AllowAll, Registry, Runner, RunnerConfig
+from dino_autofocus.engine.sample import OBJECTIVE_CHANGED, STEPPED_BACK, STEPPED_OUT
 
 T = 10.0
 USER, SESSION = "op@example.test", "20261001_1540_1"
@@ -369,9 +370,37 @@ def test_rotation_writes_objective_changed_to_the_open_session(make):
     sink.wait("confirm_required", op_id)
     r.submit(confirm(op_id))
     fin = sink.wait("finished", op_id)
-    assert session.events == [("objective_changed", {
-        "from_key": "4x", "to_key": "100x-Oil", "label": "6-Plan Apo LmbdD0.13 100x Oil"})]
-    assert fin.data["summary"]["sample_event"]["written"] is True
+    kinds = [k for k, _ in session.events]
+    assert kinds == [STEPPED_OUT, OBJECTIVE_CHANGED, STEPPED_BACK]  # away, rotated, back
+    assert session.events[1][1] == {
+        "from_key": "4x", "to_key": "100x-Oil", "label": "6-Plan Apo LmbdD0.13 100x Oil"}
+    out = session.events[0][1]
+    assert out["return_xy"] == pytest.approx(list(HOLE))
+    assert out["step_out_xy"][1] == pytest.approx(HOLE[1] + 15000.0)
+    s = fin.data["summary"]
+    assert s["sample_event"]["written"] and s["stepped_out"]["written"]
+    assert s["stepped_back"]["written"]
+
+
+def test_abort_away_leaves_the_step_out_open_until_resume_closes_it(make):
+    r, sink, _ = make()
+    session = FakeSession()
+    r.sample_seat = SimpleNamespace(session_for=lambda sid: session)
+    op_id = r.submit(start(target_state=5))
+    sink.wait("confirm_required", op_id)
+    r.submit(Command("abort", op_id=op_id, user_id=USER, session_id=SESSION))
+    sink.wait("aborted", op_id)
+    assert [k for k, _ in session.events] == [STEPPED_OUT, OBJECTIVE_CHANGED]  # still away
+    sink.wait("finished", r.submit(start(resume=True)))
+    assert [k for k, _ in session.events][-1] == STEPPED_BACK
+
+
+def test_dry_change_writes_no_step_events(make):
+    r, sink, _ = make(nosepiece=5, z_um=2989.4)
+    session = FakeSession()
+    r.sample_seat = SimpleNamespace(session_for=lambda sid: session)
+    sink.wait("finished", r.submit(start(target_state=0)))
+    assert [k for k, _ in session.events] == [OBJECTIVE_CHANGED]
 
 
 def test_no_session_logs_and_still_completes(make):
@@ -390,3 +419,78 @@ def test_unmeasured_working_distance_reason(make):
     failed = sink.wait("preflight_failed", r.submit(start(target_state=1)))
     wd = next(c for c in failed.data["checks"] if c["name"] == "target_working_distance")
     assert wd["why"].startswith("free working distance not measured")
+
+
+# ---------------------------------------------------------------- T-029c: intent first
+
+
+SAMPLE_ID = "20261002_0900_1"
+
+
+@pytest.fixture
+def records(tmp_path):
+    """A real T-019 records store and an open session, as the sample seat hands them out."""
+    from dino_autofocus.records import ExperimentSession, FolderStore, RecordsConfig
+
+    store = FolderStore(RecordsConfig(records_root=tmp_path / "records",
+                                      data_root=tmp_path / "data"))
+    session = ExperimentSession.open(store, USER, SAMPLE_ID)
+    yield store, session, tmp_path / "samples"
+    if session.writable:
+        session.close()
+
+
+def away(records) -> bool:
+    from dino_autofocus.engine.sample import read_sample
+
+    store, _, root = records
+    return read_sample(store, SAMPLE_ID, root).awaiting_return
+
+
+def seat(r, records) -> None:
+    r.sample_seat = SimpleNamespace(session_for=lambda sid: records[1])
+
+
+def test_a_step_out_that_fails_part_way_still_reads_as_away(make, records):
+    r, sink, be = make()
+    seat(r, records)
+    real = be.move_xy
+
+    def stalls(x, y, *, token, timeout_s=None):
+        if y > HOLE[1] + 1000:  # the step-out: the stage gets half way, then the wait fails
+            be.world.move_xy(x, (y + be.world.y_um) / 2)
+            raise TimeoutError("XY move did not finish")
+        return real(x, y, token=token, timeout_s=timeout_s)
+
+    be.move_xy = stalls
+    op_id = r.submit(start(target_state=5))
+    sink.wait("error", op_id)
+    assert be.world.y_um > HOLE[1] + 1000  # off the sample
+    assert away(records) is True  # written before the move
+    assert r.snapshot()["awaiting_return"]["return_xy"] == pytest.approx(list(HOLE))
+
+
+def test_a_full_change_ends_with_the_sample_not_away(make, records):
+    r, sink, _ = make()
+    seat(r, records)
+    op_id = r.submit(start(target_state=5))
+    sink.wait("confirm_required", op_id)
+    assert away(records) is True  # stepped out, waiting for oil
+    r.submit(confirm(op_id))
+    sink.wait("finished", op_id)
+    assert away(records) is False
+
+
+def test_stepped_back_needs_a_confirmed_readback(make, records):
+    r, sink, be = make()
+    seat(r, records)
+    op_id = r.submit(start(target_state=5))
+    sink.wait("confirm_required", op_id)
+    r.submit(Command("abort", op_id=op_id, user_id=USER, session_id=SESSION))
+    sink.wait("aborted", op_id)
+    be.inject_faults(xy_readback_error_um=(20.0, 0.0))  # the stage reads 20 um off
+    back = r.submit(start(resume=True))
+    sink.wait("error", back)
+    assert away(records) is True  # no stepped_back without a confirmed return
+    kinds = [e.kind for e in records[1].events()]
+    assert kinds.count(STEPPED_OUT) == 1 and STEPPED_BACK not in kinds

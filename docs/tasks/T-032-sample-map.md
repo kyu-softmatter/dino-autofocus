@@ -30,3 +30,23 @@
 
 - edge_trace writes a stable `hole["closed_loop"] = True | False` at finish, so `sample.hole_loop()` (T-027) need
   not match the stop text. Keep `trace_stop` and `arc_deg` as they are.
+
+## From T-027c (b602da5)
+
+- The fold now keeps retired flags and per-id history. Stage 2 uses `active_flags()` / `open_candidates()` for what
+  is in play; never treat every entry in `flags` as active.
+
+## T-032b (AF 실행10, before T-026 stage 2; review AF 검토보조2) — every op registers in the running server
+
+- `server/app.py` imports only `engine.operations.sample_ops`, so status, light_set, edge_trace, scan_4x,
+  focus_100x and objective_change never register in the server (the registry fills on import). Add
+  `engine/operations/__init__.py` that imports every op module (manager decision, option b). Because importing
+  `engine.operations.sample_ops` runs the package `__init__`, `app.py` needs no change. Hardware ops register through
+  `register_hardware` (T-028/T-009g); importing their module must stay side-effect-free. Test: a server built by
+  `create_app` lists every op name from the operations spec in its runner registry.
+
+## Stage 2 note (manager): edge_trace writes sample events
+
+- Use the fold's existing kinds: `boundary_clear` on replace, `boundary_point` per point, and `hole_fit` for the fit
+  (`records.events.fold` already sets `state.hole` from it). No new kind needed. Stop writing map.json / sample.json
+  directly; they are derived views.

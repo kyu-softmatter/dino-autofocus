@@ -25,7 +25,15 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.requests import HTTPConnection
 
-from .api import Refusal, command_refusal, logged_in_refusal, login_state
+from .api import (
+    LOGIN_REQUIRED,
+    LoginState,
+    Refusal,
+    command_refusal,
+    logged_in_refusal,
+    login_state,
+    origin_refusal,
+)
 from .schemas import (
     EngineAPI,
     Event,
@@ -36,6 +44,7 @@ from .schemas import (
     WsError,
     WsEvent,
     WsFrame,
+    WsLock,
 )
 
 log = logging.getLogger(__name__)
@@ -43,22 +52,51 @@ log = logging.getLogger(__name__)
 EVENT_QUEUE_MAX = 1000  # a client this far behind is closed (1013) and should reload /api/state
 CLOSE_TRY_AGAIN = 1013
 CLOSE_UNSUPPORTED = 1003
-CLOSE_REFUSED = 4000  # + the HTTP status: 4401 login_required, 4423 locked
+CLOSE_REFUSED = 4000  # + the HTTP status: 4401 login_required, 4423 locked, 4403 origin
+LOCK_POLL_S = 1.0  # how soon an open socket notices a lock or unlock with no events flowing
 
 
 def _ws_error(why: Refusal) -> str:
     return WsError(status=why.status, detail=why.message, code=why.code).model_dump_json()
 
 
-async def _admitted(websocket: WebSocket) -> bool:
-    """Accept, then require a live unlocked login (the cookie travels with the upgrade). A
-    refusal is sent as a WsError before the close, so the browser can read the reason."""
+async def _refuse(websocket: WebSocket, why: Refusal) -> None:
+    await websocket.send_text(_ws_error(why))
+    await websocket.close(CLOSE_REFUSED + why.status, why.code)
+
+
+async def _admitted(websocket: WebSocket, *, locked_ok: bool = False) -> LoginState | None:
+    """Accept, then require a page from this server's own origin (or a `--dev-origin`; a
+    cross-site page can open a WebSocket to 127.0.0.1) and a live login, unlocked unless
+    `locked_ok` and the socket is local (D14: a locked microscope-PC page still counts as a
+    viewer). A refusal is sent as a WsError before the close, so the browser can read it."""
     await websocket.accept()
-    if why := logged_in_refusal(login_state(websocket)):
-        await websocket.send_text(_ws_error(why))
-        await websocket.close(CLOSE_REFUSED + why.status, why.code)
-        return False
-    return True
+    if why := origin_refusal(websocket):
+        await _refuse(websocket, why)
+        return None
+    me = login_state(websocket)
+    if why := logged_in_refusal(me, locked_ok=locked_ok and me.local):
+        await _refuse(websocket, why)
+        return None
+    return me
+
+
+def _drop_events(out: asyncio.Queue, item: Any) -> Any:
+    """Drop the queued `event` messages (and `item`, if it is one); keep replies and an
+    overflow mark in order. Returns what to handle instead of `item`."""
+    kept = []
+    while not out.empty():
+        queued = out.get_nowait()
+        if queued is None or queued[0] != "event":
+            kept.append(queued)
+    for queued in kept:
+        out.put_nowait(queued)
+    return () if item and item[0] == "event" else item
+
+
+def _login_now(conn: HTTPConnection, me: LoginState):
+    """The socket's login as it is now (lock state changes; logout or expiry ends it)."""
+    return conn.app.state.auth.login(me.token)
 
 
 class LocalViewers:
@@ -94,14 +132,18 @@ def install(
 
     @app.websocket("/ws/events")
     async def events(websocket: WebSocket) -> None:
-        if not await _admitted(websocket):
+        """Events out, commands in. A locked login (local only) gets its lock state and the
+        replies to its commands, never event payloads (T-009c, D14)."""
+        me = await _admitted(websocket, locked_ok=True)
+        if me is None:
             return
         loop = asyncio.get_running_loop()
-        out: asyncio.Queue[str | None] = asyncio.Queue(maxsize=EVENT_QUEUE_MAX)
+        # ("event" | "reply", text); None closes the socket (overflow)
+        out: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue(maxsize=EVENT_QUEUE_MAX)
 
-        def push(text: str) -> None:
+        def push(item: tuple[str, str]) -> None:
             try:
-                out.put_nowait(text)
+                out.put_nowait(item)
             except asyncio.QueueFull:
                 while not out.empty():
                     out.get_nowait()
@@ -110,21 +152,40 @@ def install(
         def sink(ev: Event) -> None:
             try:
                 text = WsEvent(event=EventOut.from_engine(ev)).model_dump_json()
-                loop.call_soon_threadsafe(push, text)
+                loop.call_soon_threadsafe(push, ("event", text))
             except RuntimeError:
                 pass  # loop already closed: the client has gone
             except Exception:
                 log.exception("event %r could not be forwarded", getattr(ev, "kind", ev))
 
         async def send() -> None:
-            while (text := await out.get()) is not None:
-                await websocket.send_text(text)
-            await websocket.close(CLOSE_TRY_AGAIN, "event queue overflow; reload state")
+            locked = bool(me.info and me.info.locked)
+            await websocket.send_text(WsLock(locked=locked).model_dump_json())
+            while True:
+                try:
+                    item = await asyncio.wait_for(out.get(), LOCK_POLL_S)
+                except TimeoutError:
+                    item = ()  # no message: only look at the lock
+                info = _login_now(websocket, me)
+                if info is None:  # logged out or expired while connected
+                    await _refuse(websocket, LOGIN_REQUIRED)
+                    return
+                if info.locked != locked:
+                    locked = info.locked
+                    if not locked:  # events queued while locked are stale: the client
+                        item = _drop_events(out, item)  # reloads /api/state on unlock
+                    await websocket.send_text(WsLock(locked=locked).model_dump_json())
+                if item is None:
+                    await websocket.close(CLOSE_TRY_AGAIN, "event queue overflow; reload state")
+                    return
+                if not item or (locked and item[0] == "event"):
+                    continue  # a locked page never shows data
+                await websocket.send_text(item[1])
 
         async def receive() -> None:
             while True:
                 reply = await _command_reply(await websocket.receive_text(), websocket)
-                push(reply.model_dump_json())
+                push(("reply", reply.model_dump_json()))
 
         async def _command_reply(text: str, conn: HTTPConnection) -> WsAccepted | WsError:
             try:
@@ -146,7 +207,7 @@ def install(
                 return WsError(status=400, detail=str(e), code="refused")
             return WsAccepted(op_id=op_id)
 
-        local = login_state(websocket).local
+        local = me.local
         unsubscribe = engine.subscribe(sink)
         if local:
             viewers.joined()
@@ -159,7 +220,8 @@ def install(
 
     @app.websocket("/ws/frames")
     async def live_frames(websocket: WebSocket) -> None:
-        if not await _admitted(websocket):
+        me = await _admitted(websocket)
+        if me is None:
             return
         if not isinstance(engine, FrameSource):
             await websocket.send_text(WsError(status=501, detail="this engine provides no frames",
@@ -171,6 +233,12 @@ def install(
         async def send() -> None:
             while True:
                 meta, jpeg = await slot.get()
+                info = _login_now(websocket, me)
+                if info is None:
+                    await _refuse(websocket, LOGIN_REQUIRED)
+                    return
+                if info.locked:
+                    continue  # a locked page never shows data; frames resume on unlock
                 await websocket.send_text(meta)
                 await websocket.send_bytes(jpeg)
 

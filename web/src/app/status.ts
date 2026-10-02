@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { components } from "../api/schema";
 import { type EventOut, useClient, useEngineEvents, useEventsConnected } from "./client";
 
 /**
- * Reading the engine's state for the status bar. `GET /api/state` is untyped in
- * the OpenAPI (the engine snapshot is a dict), so these readers accept what the
- * engine sends today (T-011 runner) and the ui-spec 4.4 event shapes, and treat
- * anything else as unknown rather than guessing.
+ * Reading the engine's state for the status bar. `GET /api/state` returns the
+ * generated `Snapshot` (T-009b), and lights have one shape everywhere (snapshot,
+ * light_changed, records): `Lights`. The readers still check at run time and show
+ * anything unexpected as unknown rather than guessing.
  */
 
-export interface Positions {
-  x_um?: number | null;
-  y_um?: number | null;
-  z_um?: number | null;
-  errors?: Record<string, string>;
-  [k: string]: unknown;
-}
+export type Snapshot = components["schemas"]["Snapshot"];
+export type Lights = components["schemas"]["Lights"];
+export type Positions = components["schemas"]["Positions"];
+type OpSummary = components["schemas"]["OpSummary"];
 
 export interface Light {
   name: string;
@@ -69,37 +67,31 @@ export function lightIsOn(v: unknown): boolean | null {
   return null;
 }
 
-/** Lights from a snapshot `lights` value or a `light_changed` event's data. */
-export function readLights(data: unknown): LightsView | null {
+/**
+ * Lights from a snapshot `lights` value or a `light_changed` event's data: the one
+ * shape `{dialamp: {state, intensity}, aura: {state, lines}, verified, records, error}`.
+ * A missing lamp is left out; a state other than on/off reads as unknown.
+ */
+export function readLights(data: Lights | null | undefined | Record<string, unknown>): LightsView | null {
   if (!data || typeof data !== "object") return null;
-  const d = data as Record<string, unknown>;
+  const d = data as Lights;
   const verified = typeof d.verified === "boolean" ? d.verified : null;
   const error = typeof d.error === "string" ? d.error : null;
-  let lights: Light[] = [];
-  if (d.state && typeof d.state === "object") {
-    // runner: {state: {device: read}, verified, records}
-    lights = Object.entries(d.state as Record<string, unknown>).map(([name, raw]) => ({
-      name,
-      on: lightIsOn(raw),
-      raw,
-    }));
-  } else if ("dialamp" in d || "aura" in d) {
-    // ui-spec 4.4: {dialamp: "on"|"off"|"unknown", aura: {state, line, intensity_permille}}
-    if ("dialamp" in d) lights.push({ name: "DiaLamp", on: lightIsOn(d.dialamp), raw: d.dialamp });
-    if ("aura" in d) lights.push({ name: "Aura", on: lightIsOn(d.aura), raw: d.aura });
-  }
+  const lights: Light[] = [];
+  if (d.dialamp) lights.push({ name: "DiaLamp", on: lightIsOn(d.dialamp.state), raw: d.dialamp });
+  if (d.aura) lights.push({ name: "Aura", on: lightIsOn(d.aura.state), raw: d.aura });
   return { lights, verified, error };
 }
 
-function readPositions(data: unknown): Positions | null {
+function readPositions(data: Positions | null | undefined | Record<string, unknown>): Positions | null {
   return data && typeof data === "object" ? (data as Positions) : null;
 }
 
-function readRunning(data: unknown): RunningOp[] {
+function readRunning(data: OpSummary[] | undefined): RunningOp[] {
   if (!Array.isArray(data)) return [];
   return data
-    .filter((o): o is Record<string, unknown> => !!o && typeof o === "object")
-    .map((o) => ({ op_id: String(o.op_id ?? ""), op: String(o.op ?? ""), state: o.state as string }));
+    .filter((o) => !!o && typeof o === "object")
+    .map((o) => ({ op_id: String(o.op_id ?? ""), op: String(o.op ?? ""), state: o.state }));
 }
 
 function readLastShutdown(data: unknown): LastShutdown | null {
@@ -112,7 +104,12 @@ const LIFECYCLE = new Set([
   "approved", "rejected", "updated",
 ]);
 
-export function useEngineStatus(): EngineStatus {
+/**
+ * The engine state for the status bar. `resumed` is `useAuth().resumed` (T-105):
+ * it changes after an unlock, and since the server sends no events while locked,
+ * the state is re-read from GET /api/state then.
+ */
+export function useEngineStatus(resumed?: number): EngineStatus {
   const client = useClient();
   const connected = useEventsConnected();
   const [s, setS] = useState<Omit<EngineStatus, "connected">>({
@@ -129,7 +126,7 @@ export function useEngineStatus(): EngineStatus {
 
   const reload = useCallback(async () => {
     try {
-      const snap = await client.get<Record<string, unknown>>("/api/state");
+      const snap = await client.get<Snapshot>("/api/state");
       if (!alive.current) return;
       const t = Date.now();
       setS({
@@ -159,6 +156,14 @@ export function useEngineStatus(): EngineStatus {
   useEffect(() => {
     if (connected) void reload();
   }, [connected, reload]);
+
+  // ...and after an unlock: no events came while the login was locked
+  const lastResumed = useRef(resumed);
+  useEffect(() => {
+    if (resumed === lastResumed.current) return;
+    lastResumed.current = resumed;
+    void reload();
+  }, [resumed, reload]);
 
   const onEvent = useCallback(
     (ev: EventOut) => {

@@ -12,6 +12,7 @@ from dino_autofocus.server.api import SESSION_COOKIE
 OTTO, OLGA, VERA, ADA = ("otto@example.test", "olga@example.test", "vera@example.test",
                          "admin@example.test")
 DEV_ORIGIN = {"origin": "http://localhost:5173"}  # another loopback origin (a dev server)
+OWN_ORIGIN = {"origin": "http://127.0.0.1:8765"}  # the page this server served
 
 
 def detail(r):
@@ -22,6 +23,10 @@ def detail(r):
 
 
 def test_cookieless_loopback_page_gets_nothing_but_login_and_stops(engine, make_client):
+    """Another loopback origin (not listed as a dev origin) with no cookie reads nothing, opens
+    no socket and writes nothing, stops included (T-009c). From this PC without a browser
+    Origin (the launcher, a script) the stops still work with no login; the login routes and
+    health stay open to this server's own page."""
     c = make_client(engine, login=None)
     for path in ("/api/state", "/api/permissions?ops=status", "/api/anything"):
         r = c.get(path, headers=DEV_ORIGIN)
@@ -30,16 +35,20 @@ def test_cookieless_loopback_page_gets_nothing_but_login_and_stops(engine, make_
     for path in ("/ws/events", "/ws/frames"):
         with c.websocket_connect(path, headers=DEV_ORIGIN) as ws:
             msg = json.loads(ws.receive_text())
-            assert (msg["type"], msg["status"], msg["code"]) == ("error", 401, "login_required")
+            assert (msg["type"], msg["status"], msg["code"]) == ("error", 403, "foreign_origin")
     assert engine.sinks == []  # no events were subscribed
-    start = c.post("/api/commands", json={"kind": "start", "op": "status"}, headers=DEV_ORIGIN)
-    assert start.status_code == 401
-    assert c.put("/api/anything", json={}, headers=DEV_ORIGIN).status_code == 401
+    for body in ({"kind": "start", "op": "status"}, {"kind": "abort"}, {"kind": "lights_off"}):
+        r = c.post("/api/commands", json=body, headers=DEV_ORIGIN)
+        assert (r.status_code, detail(r)["code"]) == (403, "foreign_origin"), body
+    assert detail(c.put("/api/anything", json={}, headers=DEV_ORIGIN))["code"] == "foreign_origin"
+    assert detail(c.post("/api/auth/login", json={}, headers=DEV_ORIGIN))["code"] == \
+        "foreign_origin"
     # what stays open: the stops from this PC (PLAN.md 5), the login routes, health
     for kind in ("abort", "lights_off"):
-        r = c.post("/api/commands", json={"kind": kind}, headers=DEV_ORIGIN)
-        assert r.status_code == 200, kind
-    assert c.post("/api/auth/login", json={}, headers=DEV_ORIGIN).status_code == 404  # T-105
+        assert c.post("/api/commands", json={"kind": kind}).status_code == 200, kind
+    # open path: whatever T-105's handler answers (404 before it exists), never a login refusal
+    login = c.post("/api/auth/login", json={}, headers=OWN_ORIGIN)
+    assert login.status_code not in (401, 403, 423)
     assert c.get("/api/health").status_code == 200
     assert [(x.kind, x.user_id) for x in engine.commands] == [("abort", None),
                                                                ("lights_off", None)]
@@ -61,8 +70,8 @@ def test_locked_login_reads_nothing_but_may_stop(engine, make_client, seat):
     assert (r.status_code, detail(r)["code"]) == (423, "locked")
     assert c.post("/api/commands", json={"kind": "start", "op": "status"}).status_code == 423
     assert c.post("/api/commands", json={"kind": "abort"}).status_code == 200
-    with c.websocket_connect("/ws/events") as ws:
-        assert json.loads(ws.receive_text())["status"] == 423
+    with c.websocket_connect("/ws/events") as ws:  # admitted, lock state only (T-009c)
+        assert ws.lock == {"type": "lock", "locked": True}
 
 
 # -- refusal marks --------------------------------------------------------------------------

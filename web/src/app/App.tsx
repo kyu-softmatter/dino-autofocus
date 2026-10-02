@@ -9,7 +9,7 @@ import { ShutdownNoticeView, StatusBarView, UserPart } from "./StatusBar";
 function Connected() {
   const client = useClient();
   const auth = useAuth();
-  const status = useEngineStatus();
+  const status = useEngineStatus(auth?.resumed);
   const assistant = useAssistantStatus();
   const readOnly = useReadOnly();
   const [dismissed, setDismissed] = useState(false);

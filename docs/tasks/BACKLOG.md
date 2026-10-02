@@ -11,6 +11,10 @@
 
 권한은 앞 과제가 main 에 병합된 뒤 넘긴다.
 
+`web/src/api/schema.ts` (generated): only T-010 (실행4) commits it. Screen-router branches keep their wire types in
+their own `api.ts`; after each router merges, 실행4 reruns `gen:api` and the area swaps to the generated types in a
+small follow-up (screen manager rule, 2026-10-02).
+
 요청 접수:
 - T-022 (실행16): `dependencies` 에 `three`, `devDependencies` 에 `@types/three`. 래퍼 (@react-three/fiber 등) 없음.
   T-010 1차 골격 병합 뒤 package.json 권한자가 넣는다.
@@ -30,6 +34,8 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 ## Manager to-do on events
 
+- Done (de89198): T-038b sent to 실행11. T-032 stage 2 merged → tell 실행11 to unblock 2c.
+
 - **Quota pause (director, after the 19:20 outage):** active 실행1, 3, 4, 6, 7, 10, 11, 12, 15, 17 + AF 검토,
   검토보조1, 2. Paused: 실행2, 5, 8, 9, 13, 14, 16 (after T-037 commit), 18, 19, 20, 검토보조3, 4, 업무분배보조.
   Resume all when T-009b and T-010 stage 4 merge, then tell the director. No broadcasts.
@@ -45,7 +51,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 - Merge order: T-009b (remote_view mark) and T-010 stage 4 (client rule) before any screen router (T-100..T-106 stage B).
 
-- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag, T-027b's per-lens approach ceiling (37f5c6c), the two is_bench follow-ups (guards: T-027b item 3; runner: 실행15), T-015c (is_bench never raises) and T-036d (preset check on configured device labels) are all on main. Tell the director when they are.
+- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag, T-027b's per-lens approach ceiling (37f5c6c), the two is_bench follow-ups (guards: T-027b item 3; runner: 실행15), T-015c (is_bench never raises), T-029c (step-out intent written first), T-029d (no bench approach until measured) and T-036d (preset check on configured device labels) are all on main. Tell the director when they are.
 
 - On resume of the screen routers: T-106 (실행2) calls `ensure_sample_created(session, store)` on session open (T-027 seam).
 - T-015b merged → one bench rule: 실행1 switches `FocusAxis._simulated` and the guards to `is_bench(info)` (T-027b item 3,
@@ -120,3 +126,30 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - 임시 가드 값 (T-015): 큰 XY 이동 문턱 min(렌즈 시야, 1 mm), z_safe 0 µm, F5 이탈 거리 기본값 없음
 - Microscope PC: free working distance (`FREE_WD_UM`) for 10x, 20x, 40x WI, 60x before they become rotation targets (T-029).
 - Microscope PC (T-036b, b7c8c98): the bench cfg passes `check_load_settings` (no motion device in System/Startup, System/Shutdown or post-init Property lines), and whether the core applies System/Shutdown at unload.
+- Watch (2026-10-02): a native crash / hang in the full pytest run under heavy parallel load, seen three times
+  (실행5, 검토보조2 hang at 25%, AF 검토 Windows fatal exception); reruns pass. No test or native frame captured yet.
+  Reviewers keep the full pytest log (faulthandler on). When a frame names a module, card a fix.
+  Diagnosed (AF 검토, full log on d544ea9 + T-029b): three crashes in one run at unrelated places (platform WMI
+  query 0x8007000e, a .pyc read 0xc000070a, pure Python in engine/sample.py 0xc000070a) = machine-wide memory /
+  commit-charge exhaustion, not a code bug (same code as docs/integration-notes.md). 0xc000070a / 0x8007000e in a
+  test run means "rerun when the machine is quieter", not a failure. Run-limit rule proposed to the director.
+  Measured (AF 검토, after T-031b's run): commit charge 9.0 GB free of 81.9 GB, while physical RAM had 25.7 GB free.
+  The limit is commit (mostly the ~30 open sessions), so a full suite needs commit headroom; pausing does not free
+  it, closing a session or a bigger pagefile does (both are the user's).
+  Hangs (two, at 22-25 %): in collection order that band is tests/e2e, then test_backends_mm_demo / mm_demo_core
+  (native pymmcore demo adapters). Both hung only while other full suites ran; a lone run with
+  faulthandler_timeout=180 passed in 7 min (검토보조2, 13b75b3 + T-037). Unnamed until a dump is captured.
+- User (T-012 txt reader, 실행9): three small `trajectory.txt` samples from the WSL run folders, one per layout:
+  run-20260924-001-smoke-g2k2 (2D, 98 kB), run-20260923-201-v5-k3-o3 (3D, 134 kB), and the first ~2000 lines of an
+  ABP run with theta (e.g. run-20260923-042-small-s2). Put them outside both repos (soft-matter-agents stays
+  read-only), e.g. `D:\AutoFocus\sim_samples\<run_id>\trajectory.txt`, and give the WSL source path for
+  `DINO_AF_SIM_TRAJECTORY_ROOTS`.
+- User (T-026 stage 2, b2f3952): the Desktop "DINO Autofocus.exe" is the user's old tkinter build. Copy it aside before
+  running `build.ps1 -Force` (the script also keeps it as `.prev.exe`).
+- Microscope PC (T-029d): the bench ascent check reads `info()` and `nosepiece()` on every upward Z step (two core
+  reads per step, uncached on purpose so a lens change is never missed). Measure the per-step latency on the stand
+  before the BENCH_APPROACH flip.
+- T-036 unlock (2026-10-02): every code prerequisite is on main (b1d5a1d). The flip of `BENCH_MOTION` was refused by
+  실행12's own permission check, so it is the user's: approve it in 실행12's window or make the one-line edit. Director
+  recommends holding it until the user is at the microscope PC for runbook step 1. `exec12/T-036-unlock` is parked
+  at ebfff88; no other seat makes the edit.

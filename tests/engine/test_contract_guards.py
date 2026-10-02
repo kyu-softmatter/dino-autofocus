@@ -242,9 +242,9 @@ def test_approach_on_a_bench_needs_a_clearance_check(fake, flagged):
     fake.z = 0.0
     a = axis(fake)
     with pytest.raises(GuardError, match="needs a clearance check"):
-        a.approach(2840)
+        a.approach(2800)
     assert not any(c[0] == "move_z" for c in fake.calls)
-    assert a.approach(2840, clearance=lambda z: True) == 2840
+    assert a.approach(2800, clearance=lambda z: True) == 2800  # 4x up to 2800 (T-029d)
 
 
 def test_the_step_out_is_plus_y_and_stays_inside_the_stage_travel(fake):
@@ -337,7 +337,6 @@ def test_approach_ceiling_per_lens(fake, key):
         with pytest.raises(GuardError, match="is above 2800 um"):
             a.approach(2850)
         assert fake.z == 2800  # refused before any move: no clamp
-    assert key != UNKNOWN_OBJECTIVE
 
 
 def test_100x_oil_approach_to_3200_is_refused_not_clamped(fake):
@@ -365,3 +364,124 @@ def test_an_unreadable_objective_caps_the_approach_at_2800(fake, how):
     assert a.approach(2800) == 2800
     with pytest.raises(GuardError, match="working distance"):
         a.plan(2900, 10, 5)  # no sweep plan for an unknown lens either
+
+
+
+def test_an_unreadable_info_counts_as_the_bench(fake):
+    def broken():
+        raise OSError("core not answering")
+    fake.info = broken
+    fake.z = 0.0
+    with pytest.raises(GuardError, match="needs a clearance check"):
+        axis(fake).approach(2810)
+
+
+
+# -- T-029d: no bench approach until measured -------------------------------------------
+def _bench(fake):
+    real = fake.info
+
+    def info():
+        i = real()
+        i.bench = True
+        return i
+    fake.info = info
+    return fake
+
+
+def test_bench_approach_ships_locked_and_is_read_in_one_place():
+    import ast
+    from pathlib import Path
+
+    from dino_autofocus.engine import guards
+
+    assert guards.BENCH_APPROACH == "UNMEASURED"
+    assert guards.bench_approach_state().startswith("LOCKED: ")
+    root = Path(__file__).resolve().parents[2]
+    hits = [p for d in ("src", "scripts") for p in (root / d).rglob("*.py")
+            if "BENCH_APPROACH" in p.read_text(encoding="utf-8") and p.name != "guards.py"]
+    assert hits == []
+    path = root / "src/dino_autofocus/engine/guards.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    stores = [n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id == "BENCH_APPROACH"
+              and isinstance(n.ctx, ast.Store)]
+    assert len(stores) == 1 and stores[0].col_offset == 0
+    readers = {f.name for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
+               for n in ast.walk(f) if isinstance(n, ast.Name) and n.id == "BENCH_APPROACH"}
+    assert readers == {"bench_approach_state"}
+    assert not any(isinstance(n, ast.Global) for n in ast.walk(tree))
+    fn = next(f for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
+              and f.name == "bench_approach_state")
+    src = ast.get_source_segment(path.read_text(encoding="utf-8"), fn)
+    assert "environ" not in src and "getenv" not in src and "settings" not in src
+
+
+def test_environment_and_config_do_not_unlock_it():
+    """A fresh interpreter with every plausible variable set still reads LOCKED."""
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "BENCH_APPROACH": "MEASURED", "DINO_BENCH_APPROACH": "MEASURED",
+           "DINO_AUTOFOCUS_BENCH_APPROACH": "MEASURED"}
+    code = ("from dino_autofocus.engine import guards; "
+            "assert guards.BENCH_APPROACH == 'UNMEASURED'; "
+            "assert guards.bench_approach_state().startswith('LOCKED')")
+    subprocess.run([sys.executable, "-c", code], check=True, env=env)
+
+
+@pytest.mark.parametrize("state, how", [
+    (0, "4x above 2800 (approach)"), (0, "4x above 2800 (move_to)"),
+    (0, "4x sweep above 2800"), (5, "100x Oil up to 2800"), (5, "100x Oil sweep"),
+    (2, "20x up to 2800"), ("unreadable", "unreadable lens up to 2800")])
+def test_bench_upward_moves_are_refused_before_any_move(fake, state, how):
+    _bench(fake)
+    if state == "unreadable":
+        def broken():
+            raise OSError("Nosepiece not answering")
+        fake.nosepiece = broken
+    else:
+        fake.state = state
+    key = {0: "4x", 5: OIL, 2: "3-Plan Apo 20x"}.get(state)
+    if "sweep" in how:
+        fake.z = 2850.0
+    else:
+        fake.z = 0.0 if "up to 2800" in how else 2800.0
+    a = FocusAxis(fake, key, allow_motion=True, sleep=lambda s: None)
+    calls = {
+        "4x above 2800 (approach)": lambda: a.approach(2810, clearance=lambda z: True),
+        "4x above 2800 (move_to)": lambda: a.move_to(2810, allow_ascent_um=20),
+        "4x sweep above 2800": lambda: a.sweep(a.plan(2900, 20, 10), fake.snap,
+                                               score=lambda f: 0.0),
+        "100x Oil up to 2800": lambda: a.approach(2800, clearance=lambda z: True),
+        "100x Oil sweep": lambda: a.sweep(a.plan(2985, 20, 5), fake.snap, score=lambda f: 0.0),
+        "20x up to 2800": lambda: a.approach(2800, clearance=lambda z: True),
+        "unreadable lens up to 2800": lambda: a.approach(2800, clearance=lambda z: True),
+    }
+    before = [c for c in fake.calls if c[0] == "move_z"]
+    with pytest.raises(GuardError, match="T-029d"):
+        calls[how]()
+    moved = [c for c in fake.calls if c[0] == "move_z"][len(before):]
+    if "sweep" in how:  # the sweep may first descend to its start; nothing goes up
+        assert all(c[1] <= 2850.0 for c in moved)
+    else:
+        assert moved == []
+    assert fake.z <= 2850.0
+
+
+def test_bench_still_allows_the_4x_up_to_2800_and_every_downward_move(fake):
+    _bench(fake).z = 0.0
+    a = axis(fake)  # 4x
+    assert a.approach(2800, clearance=lambda z: True) == 2800
+    fake.state = 5  # 100x Oil in place: down moves and retract stay allowed
+    oil = FocusAxis(fake, OIL, allow_motion=True, sleep=lambda s: None)
+    assert oil.park_at(1000.0) == 1000.0
+    assert oil.park_at(0.0) == 0.0  # the full retract (FocusAxis.retract() comes with T-039)
+
+
+def test_mock_and_demo_kinds_are_not_affected(fake):
+    fake.z = 0.0  # FakeBackend is simulated (bench False): the T-029d lock does not apply
+    oil = axis(fake, OIL)
+    assert oil.approach(2800) == 2800
+    a = axis(fake)
+    assert a.approach(2850) == 2850

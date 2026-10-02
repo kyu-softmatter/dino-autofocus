@@ -49,12 +49,12 @@ import time
 import traceback
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from . import records as op_records
-from .backend import AURA_LINES, Frame, Positions
+from .backend import AURA_LINES, Frame, Positions, is_bench
 from .events import Command, Event, EventSink
 
 log = logging.getLogger(__name__)
@@ -572,7 +572,9 @@ class Runner:
         self._stream = stream or NoStream()
         self.config = config or RunnerConfig()
         self._state_dir = Path(state_dir) if state_dir else None
-        self._hardware = hardware  # gates and profile (T-002 gates), for snapshot()
+        # snapshot()["hardware"] provider; with a `check(op, args)` it also gates preflight
+        # (T-028 register_hardware returns one)
+        self._hardware = hardware
         self._awaiting = awaiting_return  # from the sample record at engine start
         self._on_awaiting = on_awaiting_return
         self._lock = threading.RLock()  # ops, owner, awaiting, session, life
@@ -1088,14 +1090,16 @@ class Runner:
           light_set survives a following status;
         - `keep`: light_set (`keep_lights_on_finish`) finishing leaves its light as set;
         - `all_off`: abort, error, lights_off, shutdown, D14 and session close;
-        - `untouched`: the operation never started, so nothing was commanded."""
+        - `untouched`: the operation never started, so nothing was commanded.
+        Every rule ends with a readback of the end state (`records`, `verified`), also when
+        nothing was switched here, e.g. scan_4x switching off in its own finally."""
         cls = op.cls
         if cls is LightsOff and state == "finished":
             return {**(self._last_off or {}), "off": True, "rule": "all_off"}
         if not touched:
-            return {**self._read_lights(), "rule": "untouched"}
+            return {**self._read_back([], set()), "rule": "untouched"}
         if state == "finished" and cls.keep_lights_on_finish:
-            return {**self._read_lights(), "rule": "keep"}
+            return {**self._read_back([], set()), "rule": "keep"}
         if state == "finished":
             try:
                 return {**self._restore_lights(op), "rule": "restore"}
@@ -1123,10 +1127,34 @@ class Runner:
             self._emit_op(op, "property_set", {"device": r["device"], "property": r["prop"],
                                                "wanted": r["wanted"], "read": r["read"],
                                                "verified": r["verified"]})
-        lights = self._light_payload(recs, _verified(recs) if recs else None)
-        self._last_lights = lights
+        off_wanted = {d for d in ("Aura", "DiaLamp")
+                      if (before.get(d.lower()) or {}).get("state") != "on"}
+        lights = self._read_back(recs, off_wanted)
         if recs:
             self._emit_op(op, "light_changed", lights)
+        return lights
+
+    def _read_back(self, switched: list[dict], off_wanted: set[str]) -> dict:
+        """The end state as read: one State record per light (`source: end_read`), wanted
+        off for the lights in `off_wanted` and as found for the others, after the readbacks
+        of anything switched here. `verified` is True only if every record verifies; a
+        failed read is False with the error."""
+        try:
+            now = dict(self._backend.light_state())
+        except Exception as e:
+            payload = self._light_payload(switched, False)
+            return {**payload, "error": payload.get("error") or str(e)}
+        reads = []
+        for device in ("Aura", "DiaLamp"):
+            read = str(now.get(device, ""))
+            off = device in off_wanted
+            ok = _on_off(read) == "off" if off else _on_off(read) != "unknown"
+            reads.append({"device": device, "prop": "State", "wanted": "0" if off else read,
+                          "read": read, "verified": ok, "t": time.time(),
+                          "source": "end_read"})
+        recs = switched + reads
+        lights = self._light_payload(recs, _verified(recs))
+        self._last_lights = lights
         return lights
 
     def _runner_checks(self, op: _Op) -> list[dict]:
@@ -1135,20 +1163,40 @@ class Runner:
         if aw and op.cls.motion and not op.instance.returns_to_sample():
             checks.append({"name": "awaiting_return", "ok": False, "want": "sample returned",
                            "read": aw.get("op_id"), "why": AWAITING_WHY})
-        if op.cls.approaches and op.instance.clearance() is None:
-            bench = self._on_bench()
-            if bench is not False:
-                checks.append({"name": "approach_clearance", "ok": False,
-                               "want": "a clearance callback", "read": {"bench": bench},
-                               "why": "on the bench an approach needs a clearance check"})
+        if op.cls.approaches and op.instance.clearance() is None and self._on_bench():
+            checks.append({"name": "approach_clearance", "ok": False,
+                           "want": "a clearance callback", "read": {"bench": True},
+                           "why": "on the bench an approach needs a clearance check"})
+        gate = self._gate_check(op)
+        if gate is not None:
+            checks.append(gate)
         return checks
 
-    def _on_bench(self) -> bool | None:
-        """`BackendInfo.bench` (T-033: True on mm-real), from the start() read or, if that
-        failed, a fresh one. None when unknown, which the clearance check treats as the
-        bench: the strict side."""
-        info = self._info or self._read_info()
-        return None if info is None else bool(info.bench)
+    def _gate_check(self, op: _Op) -> dict | None:
+        """The hardware gates (T-028): the `hardware` provider's `check(op, args) -> (ok,
+        reasons)`. No provider, or one without `check` (tests, mock without a profile), keeps
+        the runner as it was. A provider that raises or answers nonsense fails closed with
+        the error as the reason. lights_off is a stop and is never gated."""
+        check = getattr(self._hardware, "check", None)
+        if check is None or op.cls is LightsOff:
+            return None
+        try:
+            ok, reasons = check(op.op, dict(op.args))
+            reasons = [str(r) for r in (reasons or [])]
+        except Exception as e:
+            return {"name": "hardware_gate", "ok": False, "want": "the gate's answer",
+                    "read": f"{type(e).__name__}: {e}",
+                    "why": f"hardware gate check failed ({type(e).__name__}: {e}); refused"}
+        if ok is True:
+            return None
+        return {"name": "hardware_gate", "ok": False, "want": "gate open", "read": reasons,
+                "why": "; ".join(reasons) or f"the hardware gate refuses {op.op}"}
+
+    def _on_bench(self) -> bool:
+        """The shared rule `backend.is_bench` (T-015b) on the start() info or, if that read
+        failed, a fresh one. No info, an unknown kind or a missing flag is the bench: the
+        strict side."""
+        return is_bench(self._info or self._read_info())
 
     def _read_info(self) -> Any:
         try:
@@ -1264,25 +1312,32 @@ class Runner:
         intensity}, aura: {state, lines: {LINE: percent}}, verified, records}`. States are
         "on" / "off" / "unknown"; a read that fails leaves its field None or unknown."""
         state = {r["device"]: r["read"] for r in recs if r.get("prop") == "State"}
-        out = {"dialamp": {"state": "unknown", "intensity": None},
-               "aura": {"state": "unknown", "lines": {}},
-               "verified": verified, "records": recs}
+        error = None
         try:
             state = {**dict(self._backend.light_state()), **state}
         except Exception as e:
-            out["error"] = str(e)
-        out["dialamp"]["state"] = _on_off(state.get("DiaLamp"))
-        out["aura"]["state"] = _on_off(state.get("Aura"))
-        out["dialamp"]["intensity"] = _number(self._prop("DiaLamp", "Intensity"))
-        if out["aura"]["state"] == "off":
-            return out  # lines only matter while Aura is on: 2 reads in the common case
-        for line in AURA_LINES:  # a line counts when its switch reads on, or, where the
-            on = _on_off(self._prop("Aura", line))  # device has no switch, when it has power
-            if on == "off":
-                continue
-            permille = _number(self._prop("Aura", f"{line}_Intensity"))
-            if on == "on" or permille:
-                out["aura"]["lines"][line] = None if permille is None else permille / 10
+            error = str(e)
+        out = _light_shape(state, self._prop, recs, verified)
+        if error is not None:
+            out["error"] = error
+        return out
+
+    def _normalise_light(self, data: dict) -> dict:
+        """Any `light_changed` payload in the one shape (T-011e). guards and light_set emit
+        `{readbacks, verified, error}` or `{switched_off, state, why, ...}`; their readbacks
+        become `records` and the states come from what they read. Nothing is read from the
+        hardware here, so an emit never waits behind a long backend call."""
+        if "dialamp" in data and "aura" in data:
+            return data
+        recs = [dict(r) for r in (data.get("readbacks") or data.get("records") or [])]
+        state = {k: str(v) for k, v in (data.get("state") or {}).items()}
+        state.update({r["device"]: r["read"] for r in recs if r.get("prop") == "State"})
+        props = {(r.get("device"), r.get("prop")): r.get("read") for r in recs}
+        verified = data.get("verified", _verified(recs) if recs else None)
+        out = _light_shape(state, lambda d, p: props.get((d, p)), recs, verified)
+        for key in ("error", "why", "switched_off"):
+            if data.get(key) is not None:
+                out[key] = data[key]
         return out
 
     def _prop(self, device: str, prop: str) -> str | None:
@@ -1402,6 +1457,9 @@ class Runner:
         return ev
 
     def _emit(self, ev: Event, record: Any = None) -> None:
+        if ev.kind == "light_changed":  # one shape on the wire and in the records (T-011e)
+            ev = replace(ev, data=self._normalise_light(ev.data))
+            self._last_lights = ev.data
         with self._emit_lock:
             if record is not None:
                 try:
@@ -1428,6 +1486,27 @@ def _where(e: BaseException) -> str:
 
 def _verified(recs: list[dict]) -> bool:
     return bool(recs) and all(r["verified"] for r in recs)  # an empty readback proves nothing
+
+
+def _light_shape(state: dict, prop: Callable[[str, str], str | None], recs: list[dict],
+                 verified: bool | None) -> dict:
+    """`{dialamp: {state, intensity}, aura: {state, lines: {LINE: percent}}, verified,
+    records}` from device states and a property reader. Aura lines are read only while Aura
+    is not off; a line counts when its switch reads on or, without a switch, has power."""
+    out = {"dialamp": {"state": _on_off(state.get("DiaLamp")),
+                       "intensity": _number(prop("DiaLamp", "Intensity"))},
+           "aura": {"state": _on_off(state.get("Aura")), "lines": {}},
+           "verified": verified, "records": recs}
+    if out["aura"]["state"] == "off":
+        return out
+    for line in AURA_LINES:
+        on = _on_off(prop("Aura", line))
+        if on == "off":
+            continue
+        permille = _number(prop("Aura", f"{line}_Intensity"))
+        if on == "on" or permille:
+            out["aura"]["lines"][line] = None if permille is None else permille / 10
+    return out
 
 
 def _on_off(v: object) -> str:

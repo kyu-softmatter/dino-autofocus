@@ -27,9 +27,31 @@ export interface paths {
         };
         /**
          * State
-         * @description The engine's snapshot: positions, lights, running operation.
+         * @description The engine's snapshot: positions, lights, running operations, session, sample...
          */
         get: operations["state_api_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Permissions
+         * @description `?ops=a,b,c` -> may I do each now, and if not, why. Engine operations and the stops
+         *     come from the engine's `check()` with login, loopback, role and D13 on top; the
+         *     session actions and `submit_question` from the T-018 permissions plus loopback.
+         */
+        get: operations["permissions_api_permissions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -79,14 +101,319 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/console/store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Store Info
+         * @description Which store is behind the console, and whether a question can be submitted to it.
+         */
+        get: operations["store_info_api_console_store_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Questions
+         * @description Both agents' questions, newest first, unless `agent` names one.
+         */
+        get: operations["list_questions_api_console_questions_get"];
+        put?: never;
+        /**
+         * Submit Question
+         * @description Leave a question for a seat. The mock store only; operator on the microscope PC (D16).
+         */
+        post: operations["submit_question_api_console_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/questions/{qid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Question
+         * @description One version of a question (the latest unless `version` is given).
+         */
+        get: operations["get_question_api_console_questions__qid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Runs */
+        get: operations["list_runs_api_console_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/runs/{agent}/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_console_runs__agent___run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Inbox */
+        get: operations["list_inbox_api_console_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Runs
+         * @description Every run, newest first, with its progress and whether its trajectory can be read.
+         */
+        get: operations["list_runs_api_simulation_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_simulation_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs/{run_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress
+         * @description F6.1. State "unknown" when the run's files do not say how far it is.
+         */
+        get: operations["get_progress_api_simulation_runs__run_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs/{run_id}/progress/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Progress
+         * @description Server-sent events: `event: progress` with a ProgressOut whenever it changes, until the
+         *     run is no longer running, the client disconnects, or `limit` events were sent.
+         */
+        get: operations["stream_progress_api_simulation_runs__run_id__progress_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs/{run_id}/series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Series
+         * @description F6.4. The log's progress columns and observables.json, values as read.
+         */
+        get: operations["get_series_api_simulation_runs__run_id__series_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs/{run_id}/frames/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Frame
+         * @description F6.3. One trajectory frame; `index` may be negative (-1 is the newest).
+         *     `?fields=a,b` adds per-particle fields. 404 `trajectory_unavailable` says why there is none.
+         */
+        get: operations["get_frame_api_simulation_runs__run_id__frames__index__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs/{run_id}/zip/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Zip Entries
+         * @description What the zip holds; `optional` files (the trajectory) go in only with `?trajectory=1`.
+         */
+        get: operations["get_zip_entries_api_simulation_runs__run_id__zip_entries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/runs/{run_id}/zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Zip
+         * @description F6.2. The run folder as a zip, streamed; the originals are only read.
+         */
+        get: operations["get_zip_api_simulation_runs__run_id__zip_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /** ApiError */
         ApiError: {
-            /** Detail */
-            detail: string;
+            detail: components["schemas"]["RefusalDetail"];
+        };
+        /** AuraState */
+        AuraState: {
+            /**
+             * State
+             * @default unknown
+             */
+            state: string;
+            /** Lines */
+            lines?: {
+                [key: string]: number | null;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        /** CardOut */
+        CardOut: {
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Version */
+            version: number;
+            /** Status */
+            status: string | null;
+            /** Created At */
+            created_at: string | null;
+            /**
+             * Data
+             * @description the card file's content, untouched
+             */
+            data: unknown;
         };
         /** CommandAccepted */
         CommandAccepted: {
@@ -121,10 +448,85 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** CurveOut */
+        CurveOut: {
+            /** Path */
+            path: string;
+            /** X Name */
+            x_name: string | null;
+            /** X */
+            x: (number | null)[];
+            /** Y */
+            y: (number | null)[];
+            /**
+             * Kind
+             * @default line
+             * @enum {string}
+             */
+            kind: "line" | "histogram";
+        };
+        /** DocumentOut */
+        DocumentOut: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+            /** Text */
+            text: string;
+        };
+        /**
+         * FrameOut
+         * @description The frame both viewers draw (web/src/features/simulation/frame.ts FrameJson).
+         */
+        FrameOut: {
+            /** Index */
+            index: number;
+            /** Step */
+            step: number | null;
+            /** N */
+            n: number;
+            /** Dimensions */
+            dimensions: number;
+            /** Units */
+            units: string;
+            /** Box */
+            box: number[];
+            /** Types */
+            types: string[];
+            /** Typeid */
+            typeid: number[];
+            /** Positions */
+            positions: number[];
+            /** Fields */
+            fields: {
+                [key: string]: unknown;
+            };
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HardwareState */
+        HardwareState: {
+            /** Profile */
+            profile?: {
+                [key: string]: unknown;
+            } | null;
+            /** Profile Path */
+            profile_path?: string | null;
+            /** Gates */
+            gates?: {
+                [key: string]: unknown;
+            };
+            /** Last Status */
+            last_status?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** Health */
         Health: {
@@ -140,6 +542,373 @@ export interface components {
             remote_view: boolean;
             /** Remote Abort */
             remote_abort: boolean;
+        };
+        /** InboxMessageOut */
+        InboxMessageOut: {
+            /** Name */
+            name: string;
+            /** Round */
+            round: number | null;
+            /** Kind */
+            kind: string;
+            /** Card */
+            card: unknown;
+            /** Text */
+            text: string | null;
+        };
+        /** InboxThreadOut */
+        InboxThreadOut: {
+            /** Thread */
+            thread: string;
+            /** Agent */
+            agent: ("microscope" | "simulation") | null;
+            /** State */
+            state: string | null;
+            /** Turn */
+            turn: string | null;
+            /** Round */
+            round: number | null;
+            /** Updated At */
+            updated_at: string | null;
+            /** Status */
+            status: unknown;
+            /** Messages */
+            messages: components["schemas"]["InboxMessageOut"][];
+            /** Source */
+            source: string;
+        };
+        /** LampState */
+        LampState: {
+            /**
+             * State
+             * @default unknown
+             */
+            state: string;
+            /** Intensity */
+            intensity?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * Lights
+         * @description The one light shape (light_changed, snapshot, records).
+         */
+        Lights: {
+            dialamp?: components["schemas"]["LampState"];
+            aura?: components["schemas"]["AuraState"];
+            /** Verified */
+            verified?: boolean | null;
+            /** Records */
+            records?: {
+                [key: string]: unknown;
+            }[];
+            /** Error */
+            error?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** OpSummary */
+        OpSummary: {
+            /** Op Id */
+            op_id: string;
+            /** Op */
+            op: string;
+            /** State */
+            state: string;
+            /**
+             * Origin
+             * @default human
+             */
+            origin: string;
+            /** User Id */
+            user_id?: string | null;
+            /** Session Id */
+            session_id?: string | null;
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /** Confirmed By */
+            confirmed_by?: string | null;
+            /** Confirmed At */
+            confirmed_at?: number | null;
+            /** Record Prefix */
+            record_prefix?: string | null;
+            /** Args */
+            args?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+            /** Last Progress */
+            last_progress?: {
+                [key: string]: unknown;
+            } | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * PermissionOut
+         * @description One entry of `GET /api/permissions`: may the asking person do this now, and if not,
+         *     why (`reason`, shown before the click) and the refusal `code` when the server says no
+         *     (login_required, locked, remote_view, role); None when the engine says no.
+         */
+        PermissionOut: {
+            /** Allowed */
+            allowed: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Code */
+            code?: string | null;
+        };
+        /**
+         * Positions
+         * @description Stage readback in um; None where the read failed, with the reason in `errors`.
+         */
+        Positions: {
+            /** X Um */
+            x_um?: number | null;
+            /** Y Um */
+            y_um?: number | null;
+            /** Z Um */
+            z_um?: number | null;
+            /** Piezo Um */
+            piezo_um?: {
+                [key: string]: number;
+            };
+            /** Errors */
+            errors?: {
+                [key: string]: string;
+            };
+            /** T */
+            t?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProgressOut */
+        ProgressOut: {
+            /** Run Id */
+            run_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "complete" | "fault" | "aborted" | "unknown";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "log" | "trajectory_meta" | "none";
+            /** Steps Taken */
+            steps_taken: number | null;
+            /** Steps Total */
+            steps_total: number | null;
+            /** Fraction */
+            fraction: number | null;
+            /** Frames Saved */
+            frames_saved: number | null;
+            /** Frames Expected */
+            frames_expected: number | null;
+            /** Simulated Time */
+            simulated_time: number | null;
+            /** Started At */
+            started_at: string | null;
+            /** Updated At */
+            updated_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Elapsed S */
+            elapsed_s: number | null;
+            /** Remaining S */
+            remaining_s: number | null;
+            /** Eta */
+            eta: string | null;
+            /** Stopped By */
+            stopped_by?: string | null;
+            /** Failure */
+            failure?: unknown;
+        };
+        /** QuestionDetailOut */
+        QuestionDetailOut: {
+            summary: components["schemas"]["QuestionSummaryOut"];
+            /** Version */
+            version: number;
+            goal: components["schemas"]["CardOut"] | null;
+            /** Axes */
+            axes: components["schemas"]["CardOut"][];
+            plan: components["schemas"]["CardOut"] | null;
+            synthesis: components["schemas"]["CardOut"] | null;
+            /** Refusals */
+            refusals: components["schemas"]["CardOut"][];
+            /** Results */
+            results: components["schemas"]["CardOut"][];
+            /** Others */
+            others: components["schemas"]["CardOut"][];
+            /** Documents */
+            documents: components["schemas"]["DocumentOut"][];
+            /** Files */
+            files: components["schemas"]["dino_autofocus__server__api__console__FileInfoOut"][];
+        };
+        /** QuestionIn */
+        QuestionIn: {
+            /** Text */
+            text: string;
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "microscope" | "simulation";
+            /** Purpose */
+            purpose?: string | null;
+            /** Observable */
+            observable?: string | null;
+        };
+        /** QuestionSummaryOut */
+        QuestionSummaryOut: {
+            /** Qid */
+            qid: string;
+            /**
+             * Agent
+             * @enum {string}
+             */
+            agent: "microscope" | "simulation";
+            /** Title */
+            title: string;
+            /** Status */
+            status: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Updated At */
+            updated_at: string | null;
+            /** Latest Version */
+            latest_version: number;
+            /** Versions */
+            versions: number[];
+            /** Source */
+            source: string;
+            /** Purpose */
+            purpose?: string | null;
+            /** Intent */
+            intent?: string | null;
+            /** Observable Name */
+            observable_name?: string | null;
+        };
+        /**
+         * RefusalDetail
+         * @description Why the server said no. `code` is also in the `X-DinoAF-Refusal` header. Codes:
+         *     login_required (401), locked (423), remote_view (403; the web client turns read-only
+         *     on this one only), foreign_origin, map_route, role (403), refused (400, the engine said
+         *     no), shutting_down (503), shutdown_failed (500).
+         */
+        RefusalDetail: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** RunDetailOut */
+        RunDetailOut: {
+            summary: components["schemas"]["RunSummaryOut"];
+            /**
+             * Records
+             * @description file name -> content, untouched
+             */
+            records: {
+                [key: string]: unknown;
+            };
+            /** Files */
+            files: components["schemas"]["dino_autofocus__server__api__console__FileInfoOut"][];
+            /** Not Opened */
+            not_opened: string[];
+        };
+        /** RunInfoOut */
+        RunInfoOut: {
+            /** Run Id */
+            run_id: string;
+            /** Qid */
+            qid: string | null;
+            /** Backend */
+            backend: string | null;
+            progress: components["schemas"]["ProgressOut"];
+            /** Files */
+            files: components["schemas"]["dino_autofocus__server__api__simulation__FileInfoOut"][];
+            /** Trajectory */
+            trajectory: string | null;
+            /** Trajectory Unavailable */
+            trajectory_unavailable: string | null;
+            /** Source */
+            source: string;
+        };
+        /** RunSummaryOut */
+        RunSummaryOut: {
+            /** Run Id */
+            run_id: string;
+            /**
+             * Agent
+             * @enum {string}
+             */
+            agent: "microscope" | "simulation";
+            /** Qid */
+            qid: string | null;
+            /** Plan Id */
+            plan_id: string | null;
+            /** Status */
+            status: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Backend */
+            backend: string | null;
+            /** Source */
+            source: string;
+            /** Approval Kind */
+            approval_kind?: string | null;
+        };
+        /** SampleRef */
+        SampleRef: {
+            /** Sample Id */
+            sample_id?: string | null;
+            /**
+             * Reserved
+             * @default false
+             */
+            reserved: boolean;
+            /** Session Id */
+            session_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SeriesOut */
+        SeriesOut: {
+            /** Run Id */
+            run_id: string;
+            /** Log */
+            log: {
+                [key: string]: (number | null)[];
+            };
+            /** Observable */
+            observable: string | null;
+            /** Curves */
+            curves: components["schemas"]["CurveOut"][];
+            /** Scalars */
+            scalars: {
+                [key: string]: number;
+            };
+            /** Observables */
+            observables: unknown;
+        };
+        /** SessionRef */
+        SessionRef: {
+            /** Session Id */
+            session_id?: string | null;
+            /** Started At */
+            started_at?: number | null;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * ShutdownAccepted
@@ -160,6 +929,69 @@ export interface components {
              */
             reason: string;
         };
+        /**
+         * Snapshot
+         * @description The engine's current state.
+         */
+        Snapshot: {
+            positions?: components["schemas"]["Positions"] | null;
+            lights?: components["schemas"]["Lights"] | null;
+            /** Owner */
+            owner?: string | null;
+            /** Running */
+            running?: components["schemas"]["OpSummary"][];
+            /** Proposals */
+            proposals?: components["schemas"]["OpSummary"][];
+            /** Pending Confirms */
+            pending_confirms?: {
+                [key: string]: unknown;
+            }[];
+            /** Awaiting Return */
+            awaiting_return?: {
+                [key: string]: unknown;
+            } | null;
+            session?: components["schemas"]["SessionRef"] | null;
+            sample?: components["schemas"]["SampleRef"] | null;
+            /** Last Shutdown Lights */
+            last_shutdown_lights?: {
+                [key: string]: unknown;
+            } | null;
+            /** Unclean Shutdown */
+            unclean_shutdown?: {
+                [key: string]: unknown;
+            } | null;
+            hardware?: components["schemas"]["HardwareState"] | null;
+            /** Stream */
+            stream?: {
+                [key: string]: unknown;
+            } | null;
+            /** Recent */
+            recent?: components["schemas"]["OpSummary"][];
+            /** Operations */
+            operations?: string[];
+            /** Permissions */
+            permissions?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        /** StoreOut */
+        StoreOut: {
+            /**
+             * Store
+             * @description "mock" or "soft-matter-agents"
+             */
+            store: string;
+            /** Writable */
+            writable: boolean;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -172,6 +1004,29 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ZipEntryOut */
+        ZipEntryOut: {
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+            /** Optional */
+            optional: boolean;
+        };
+        /** FileInfoOut */
+        dino_autofocus__server__api__console__FileInfoOut: {
+            /** Name */
+            name: string;
+            /** Size */
+            size: number | null;
+        };
+        /** FileInfoOut */
+        dino_autofocus__server__api__simulation__FileInfoOut: {
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
         };
         /**
          * EventOut
@@ -234,9 +1089,10 @@ export interface components {
         };
         /**
          * WsError
-         * @description `/ws/events`, server -> client: a refused or malformed message. `status` follows HTTP
-         *     (400 refused by the engine, 403 not allowed from here, 422 bad message,
-         *     503 shutting down).
+         * @description `/ws/*`, server -> client: a refused or malformed message. `status` and `code` follow
+         *     the REST refusals (401 login_required, 423 locked, 403 remote_view and others, 400
+         *     refused by the engine, 422 bad message, 503 shutting_down). A 401/423 on connect is
+         *     followed by a close.
          */
         WsError: {
             /**
@@ -249,6 +1105,11 @@ export interface components {
             status: number;
             /** Detail */
             detail: string;
+            /**
+             * Code
+             * @default null
+             */
+            code: string | null;
         };
         /**
          * WsEvent
@@ -345,9 +1206,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["Snapshot"];
+                };
+            };
+        };
+    };
+    permissions_api_permissions_get: {
+        parameters: {
+            query?: {
+                ops?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        [key: string]: components["schemas"]["PermissionOut"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -383,6 +1275,15 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Forbidden */
             403: {
                 headers: {
@@ -399,6 +1300,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -450,6 +1369,595 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    store_info_api_console_store_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoreOut"];
+                };
+            };
+        };
+    };
+    list_questions_api_console_questions_get: {
+        parameters: {
+            query?: {
+                agent?: ("microscope" | "simulation") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSummaryOut"][];
+                };
+            };
+            /** @description no such question, version or run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the store could not read the files */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    submit_question_api_console_questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSummaryOut"];
+                };
+            };
+            /** @description remote view or role (D16) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description the store is read-only */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description empty text, unknown purpose */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_question_api_console_questions__qid__get: {
+        parameters: {
+            query?: {
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                qid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionDetailOut"];
+                };
+            };
+            /** @description no such question, version or run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the store could not read the files */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_runs_api_console_runs_get: {
+        parameters: {
+            query?: {
+                agent?: ("microscope" | "simulation") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunSummaryOut"][];
+                };
+            };
+            /** @description no such question, version or run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the store could not read the files */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_run_api_console_runs__agent___run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: "microscope" | "simulation";
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetailOut"];
+                };
+            };
+            /** @description no such question, version or run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the store could not read the files */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_inbox_api_console_inbox_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxThreadOut"][];
+                };
+            };
+            /** @description no such question, version or run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description the store could not read the files */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_runs_api_simulation_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunInfoOut"][];
+                };
+            };
+        };
+    };
+    get_run_api_simulation_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunInfoOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_progress_api_simulation_runs__run_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgressOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_progress_api_simulation_runs__run_id__progress_stream_get: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_series_api_simulation_runs__run_id__series_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_frame_api_simulation_runs__run_id__frames__index__get: {
+        parameters: {
+            query?: {
+                fields?: string;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrameOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_zip_entries_api_simulation_runs__run_id__zip_entries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZipEntryOut"][];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_zip_api_simulation_runs__run_id__zip_get: {
+        parameters: {
+            query?: {
+                trajectory?: boolean;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": unknown;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

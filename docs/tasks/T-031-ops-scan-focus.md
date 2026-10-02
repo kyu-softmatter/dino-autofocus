@@ -40,3 +40,11 @@
 - `edge_trace` writes `hole.fitted_at` even after an aborted or partial trace (tagged `hole.trace_stop`, with
   `arc_deg`). The scan_4x "fitted this session" preflight also requires a closed loop (trace_stop says complete,
   or arc_deg ≥ the full-loop threshold); a partial arc refuses with a clear reason.
+
+## T-031b (AF 실행11, after e806545; review AF 검토보조2)
+
+- (b) Under the runner, `scan.json` gets no `light_off` readback (only `summary.json` has it). Every record file that
+  carries an end state carries the light readback too; add it to `scan.json` and test it.
+- (c) `focus_100x` default `exposure_ms` = 20 (manager decision): operations-spec 706/782 (9/30 run, no
+  saturation at 20 ms), ui-spec 868 and the T-104 screen contract all name 20; 30 was the old script's default.
+  Mark it "provisional (2026-09-30, one run)" where the default is defined.

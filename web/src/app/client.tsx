@@ -77,11 +77,18 @@ export type EventHandler = (ev: EventOut) => void;
  * One `/ws/events` connection shared by the whole app. Reconnects with backoff;
  * `onStatus` says whether it is open. After a reconnect, screens should re-read
  * state (events in between are lost), so listeners get `connected` again.
+ *
+ * Besides engine events the server sends `{"type": "lock", "locked": bool}` (T-009c)
+ * on connect and whenever the login locks or unlocks; while locked it sends no
+ * events. `onLock` listeners get those (the login gate re-reads /me on them).
  */
 export class EventStream {
   private socket: WebSocket | null = null;
   private handlers = new Set<EventHandler>();
+  private lockListeners = new Set<(locked: boolean) => void>();
   private statusListeners = new Set<(open: boolean) => void>();
+  /** the last lock state the server sent; null before any */
+  locked: boolean | null = null;
   private retry = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
@@ -109,8 +116,14 @@ export class EventStream {
       } catch {
         return;
       }
-      const m = parsed as Partial<WsEvent>;
-      if (m.type === "event" && m.event) this.handlers.forEach((h) => h(m.event as EventOut));
+      const m = parsed as Partial<WsEvent> | { type?: string; locked?: unknown };
+      if (m.type === "event" && "event" in m && m.event) {
+        this.handlers.forEach((h) => h(m.event as EventOut));
+      } else if (m.type === "lock" && "locked" in m && typeof m.locked === "boolean") {
+        const locked = m.locked;
+        this.locked = locked;
+        this.lockListeners.forEach((fn) => fn(locked));
+      }
     };
     ws.onclose = () => {
       this.socket = null;
@@ -130,6 +143,14 @@ export class EventStream {
   on(handler: EventHandler): () => void {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
+  }
+
+  /** Lock / unlock messages from the server (T-009c). Returns the unsubscribe. */
+  onLock(fn: (locked: boolean) => void): () => void {
+    this.lockListeners.add(fn);
+    return () => {
+      this.lockListeners.delete(fn);
+    };
   }
 
   onStatus(fn: (open: boolean) => void): () => void {
@@ -229,23 +250,32 @@ export class Client {
   }
 }
 
+type ApiError = components["schemas"]["ApiError"];
+type ValidationError = components["schemas"]["ValidationError"];
+
 /**
- * The reason and code of a refused request. `detail` may be a string (T-009's
- * ApiError) or an object `{code, message}` (T-009b); the header
- * `X-DinoAF-Refusal` also carries the code.
+ * The reason and code of a refused request. The server's refusals are `ApiError`
+ * with `detail: RefusalDetail` = `{code, message}` (T-009b); the header
+ * `X-DinoAF-Refusal` also carries the code. FastAPI's own answers still use a
+ * plain string (404 "Not Found") or a validation list (422), so those are read
+ * too, with no code.
  */
 export async function refusalOf(r: Response): Promise<CommandRefused> {
   let code = r.headers.get("X-DinoAF-Refusal");
   let text = `HTTP ${r.status}`;
   try {
-    const body = (await r.json()) as { detail?: unknown };
-    const d = body.detail;
-    if (typeof d === "string") text = d;
-    else if (d && typeof d === "object") {
-      const o = d as Record<string, unknown>;
-      if (typeof o.code === "string") code = code ?? o.code;
-      const msg = o.message ?? o.detail ?? o.code;
-      if (typeof msg === "string") text = msg;
+    const body = (await r.json()) as Partial<ApiError> | { detail?: string | ValidationError[] };
+    const d: unknown = body.detail;
+    if (typeof d === "string") {
+      text = d;
+    } else if (Array.isArray(d)) {
+      const first = d[0] as Partial<ValidationError> | undefined;
+      if (first && typeof first.msg === "string") text = first.msg;
+    } else if (d && typeof d === "object") {
+      const rd = d as Partial<components["schemas"]["RefusalDetail"]>;
+      if (typeof rd.code === "string") code = code ?? rd.code;
+      if (typeof rd.message === "string") text = rd.message;
+      else if (typeof rd.code === "string") text = rd.code;
     }
   } catch {
     // no JSON body: keep the status line

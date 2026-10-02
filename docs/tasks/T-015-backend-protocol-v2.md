@@ -88,3 +88,24 @@ without a token; `lamp_off`, `aura_off`, `all_off` take none.
 - `is_bench`: `kind in SIMULATED_KINDS` sits outside the try, so an unhashable kind raises TypeError instead of
   returning True. Move the comparison into the try (any error → True, fail safe) and add that test case.
 - Runs in parallel with the two is_bench follow-ups (they call `is_bench`, not its internals).
+
+## T-015d (AF 실행12; review AF 검토보조2) — test helpers out of conftest
+
+- Since T-035 added `tests/e2e/conftest.py`, two modules are named `conftest`, and `from conftest import FakeBackend`
+  resolves by load order: `pytest tests/engine tests/e2e` fails collection with 12 errors (AF 검토, d544ea9). The full
+  run passes by luck.
+- Move `FakeBackend` and the contract helpers into a uniquely named helper (e.g. `tests/engine/engine_fakes.py`;
+  e2e helpers likewise into `tests/e2e/e2e_helpers.py`). conftest.py keeps fixtures only, plus a re-export for one
+  transition so in-flight branches still pass. Update every `from conftest import` / `import conftest` in tests/;
+  this task may edit those import lines in other tasks' test files, imports only.
+- Done when `uv run pytest`, `pytest tests/engine tests/e2e`, `pytest tests/e2e tests/engine` and each directory
+  alone all collect and pass, and `git grep -nE "(from|import) conftest" -- tests` is empty apart from the re-export.
+
+## T-015e (AF 실행12; review AF 검토보조2) — no test imports from conftest, enforced
+
+- `tests/server/test_api_map.py:15` (T-102, f42f95f) does `from conftest import OPERATOR, VIEWER, FakeEngine`; with
+  `pytest tests/server tests/auth` it resolves to tests/auth/conftest.py and collection stops (검토보조2). Move those
+  helpers into a uniquely named module (e.g. `tests/server/server_fakes.py`) and import by name; conftest keeps a
+  re-export for one transition. This task may edit that import line in T-102's file.
+- Add a guard test (e.g. `tests/test_no_conftest_imports.py`) that fails when any file under tests/ has
+  `from conftest import` or `import conftest`, so the pattern cannot come back.
