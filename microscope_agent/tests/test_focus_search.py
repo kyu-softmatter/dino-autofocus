@@ -1,0 +1,82 @@
+"""focus_search.py, the 100x search as steps: loaded by path, stdlib + numpy only.
+
+Runs with `python -m unittest` from this folder and under pytest."""
+
+import importlib.util
+import sys
+import unittest
+from pathlib import Path
+
+SRC = Path(__file__).resolve().parents[1] / "src"
+
+
+def _load(name, path):
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+fs = _load("_mic_focus_search", SRC / "focus_search.py")
+
+
+class FocusSearch(unittest.TestCase):
+    def test_parse(self):
+        a = fs.parse({"sample_id": "s", "half_um": 30})
+        self.assertEqual((a.half_um, a.step_um, a.metric), (30, 2.0, "peak"))
+        for bad in ({"metric": "dino"}, {"step_um": 0}, {"fine_half_um": float("nan")},
+                    {"nope": 1}):
+            with self.assertRaises(ValueError):
+                fs.parse(bad)
+
+    def test_sweep_z_ascends_and_stays_inside_the_limits(self):
+        z = fs.sweep_z(2930.0, 40.0, 2.0, floor_um=2800.0, ceiling_um=2982.0)
+        self.assertEqual((z[0], z[-1], len(z)), (2890.0, 2970.0, 41))
+        self.assertEqual(z, sorted(z))
+        z = fs.sweep_z(2960.0, 40.0, 2.0, floor_um=2800.0, ceiling_um=2982.0)
+        self.assertEqual(z[-1], 2982.0)  # clipped at the ceiling, never above
+        z = fs.sweep_z(2810.0, 40.0, 3.0, floor_um=2800.0, ceiling_um=3200.0)
+        self.assertEqual((z[0], z[-1]), (2800.0, 2848.0))
+        self.assertEqual(fs.sweep_z(2900.0, 0.6, 0.2, floor_um=0, ceiling_um=3200),
+                         [2899.4, 2899.6, 2899.8, 2900.0, 2900.2, 2900.4, 2900.6])
+        for args in ((2930.0, 40.0, 0.0), (2930.0, -1.0, 2.0), (3300.0, 10.0, 2.0),
+                     (float("inf"), 1.0, 1.0)):
+            with self.assertRaises(ValueError):
+                fs.sweep_z(*args, floor_um=2800.0, ceiling_um=3200.0)
+
+    def test_spans(self):
+        a = fs.FocusArgs()
+        self.assertEqual(fs.coarse_span(2930.0, a), (2930.0, 40.0, 2.0))
+        self.assertEqual(fs.fine_span(2911.3, a), (2911.3, 3.0, 0.2))
+        # one span higher, swept up from the old low end: centre at the old top
+        self.assertEqual(fs.extension_span(2890.0, 2970.0, 2.0), (2970.0, 80.0, 2.0))
+        self.assertTrue(fs.room_above(2982.0, 2970.0))
+        self.assertFalse(fs.room_above(2970.0 + 1e-7, 2970.0))
+
+    def test_reading_the_coarse_peak(self):
+        self.assertEqual(fs.peak_at(True, 40), fs.TOP_END)
+        self.assertEqual(fs.peak_at(False, 0), fs.LOW_END)
+        self.assertEqual(fs.peak_at(False, 12), fs.INTERIOR)
+        self.assertEqual(fs.peak_at(True, 0), fs.TOP_END)
+
+    def test_centre(self):
+        c = fs.centre_from_plane({"z_um": 2990.0, "scan": "scan4x_x"})
+        self.assertEqual((c["centre_um"], c["z_4x_um"], c["grade"]), (2930.0, 2990.0, "computed"))
+        self.assertIn("unmeasured provisional", c["source"])
+        d = fs.centre_from_plane(None)
+        self.assertEqual((d["centre_um"], d["grade"]), (fs.DEFAULT_CENTRE_UM, None))
+        self.assertEqual(fs.centre_grade(c), "computed")
+        self.assertIsNone(fs.centre_grade(d))
+
+    def test_warnings(self):
+        self.assertTrue(fs.at_dark_level(152.0))
+        self.assertFalse(fs.at_dark_level(153.0))
+        self.assertTrue(fs.too_bright([0.0, None, 0.5]))
+        self.assertFalse(fs.too_bright([None, 0.0]))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -153,7 +153,13 @@ src/dino_autofocus/          단독 실행용 나머지 (engine, backends, opera
 - S0 (P1 완료) 의존성 나누기. S3 (P3 완료) 판정 → run_log 이벤트.
 - S1 (완료) 초점 핵심을 `microscope_agent/src/` 로 (`focus_classical`, `focus_verdict`, `focus_run_log`), scipy 제거,
   `tests/test_sma_shape.py`. 옛 이름 `dino_autofocus.focus.{classical,verdict,sma_event}` 은 같은 모듈 객체로 남는다.
-- S2 순수 핵심 파일을 하나씩 (`focus_step_rules`, `focus_search`, `map_*`).
+- S2 순수 핵심 파일을 하나씩 (`focus_step_rules`, `focus_search`, `map_*`). 옛 모듈은 같은 객체를 다시 내보낸다.
+  - `map_geometry` (완료): 픽셀 ↔ 스테이지 (`stage + inv(M) @ (centre - p)`), `calibration_of`, `sample.py` 의 geometry 필드·검증·view, `hole_loop`.
+  - `map_mosaic` (완료): `mosaic.py` 전부 (scipy 필터 → numpy, scipy 와 비트 단위로 같음). `mosaic_from_scan` 은 guards 의 `registry_key` 를 써서 옛 모듈에 남음.
+  - `map_tiles` (완료): 뱀 모양 타일 순서, 스캔 사각형, `fit_plane` / `plane_z`, 카메라 보정 기본값 (`scan_4x.py`, `sample_map.py`). 허용 XY 상자는 guards (`XYBox.around`) 라 남음.
+  - `map_edge` (완료): `edge_trace.py` 의 검출부 (`find_edge`, 원 맞춤, `hole_fit`); `remove_small_regions` 의 scipy label → numpy run 묶기 (같은 영역).
+  - `focus_search` (완료): `focus_100x.py` 의 인자, 중심, coarse·fine·위로 늘리기 구간, 피크 위치, 경고 규칙, `sweep_z` (한계는 인자, guards 의 `FocusAxis.plan` 과 같은 Z). 실제 계획·검사는 guards 에 남음.
+  - `focus_step_rules` (건너뜀): `guards.py` 안에 있고 다른 세션이 고치는 중이라 이번에 손대지 않음.
 - S4 `console/` 로 서버·웹·런처 옮기기 (import 약 100 곳, gen:api, 런처 경로).
 - S5 `hw_port.py`: 화면이 엔진을 직접 부르지 않고 포트 하나로 (그 뒤 console 은 `dino_autofocus` 를 import 하지 않는다).
 - S6 합치는 주: 그쪽 승인 순서 (사람: 좌석 → architecture: seats.json, pixi, ALLOWED_PATHS 명세 → manager: validate.py →

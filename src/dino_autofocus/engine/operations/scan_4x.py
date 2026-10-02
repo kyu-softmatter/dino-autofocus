@@ -12,7 +12,9 @@ Port of `scripts/scan_4x.py` onto the engine. What guards it:
   whose exit path switches everything off with readback.
 - Nosepiece: read only; preflight refuses unless it is the 4x.
 
-Tile order is serpentine (rows alternate direction), as on 2026-09-30. Per tile: coarse
+Tile order is serpentine (rows alternate direction), as on 2026-09-30 (`grid`, with
+`fit_plane` / `plane_z`, is the flat file `microscope_agent/src/map_tiles.py`, the
+soft-matter-agents layout, docs/integration-sma.md section 9). Per tile: coarse
 sweep (first tile +-160 um @ 10, later +-50 @ 6; a failed later tile widens once to the
 first-tile span), a fine sweep +-12 @ 2 around an interior coarse peak, the 2 % light-dropout
 filter, a parabola per 6 x 6 block, then park at the focus and save the frame.
@@ -43,6 +45,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 
+from ..._flat import load
 from ...focus.classical import (
     BLOCKS,
     DROPOUT_TOLERANCE,
@@ -70,6 +73,19 @@ from ..mosaic import Tile, build_mosaic, save_mosaic
 from ..records import GRADE_COMPUTED, GRADE_MEASURED
 from ..runner import Aborted, Operation, register_operation
 from ..sample import SAMPLES_ROOT, Sample, SampleInfo
+
+load("map_tiles", f"{__package__}._map_tiles")
+from ._map_tiles import (  # noqa: E402, F401 - re-exported
+    DEFAULT_M_PX_PER_UM,
+    DEFAULT_UM_PER_PX,
+    camera_calibration,
+    fit_plane,
+    grid,
+    half_side_um,
+    plane_z,
+    square_box_um,
+    tile_list,
+)
 
 try:  # T-027 puts the closed-loop rule next to fitted_at
     from ..sample import hole_loop
@@ -102,10 +118,7 @@ NAME = "scan_4x"
 PREFIX = "scan4x"
 OBJECTIVE_4X = "1-Plan Apo LmbdD20 4x"
 OBJECTIVE_KEY = "4x"
-DEFAULT_UM_PER_PX = 1.625
 DEFAULT_Z_GUESS_UM = 2960.0
-#: 2026-09-30 4x calibration (docs/runs/2026-09-30_substrate-scan.yaml); d_px = M @ d_stage
-DEFAULT_M_PX_PER_UM = ((0.61602, 0.00236), (0.00126, -0.61456))
 COARSE_STEP_FIRST_UM, COARSE_STEP_UM = 10.0, 6.0
 FINE_HALF_UM, FINE_STEP_UM = 12.0, 2.0
 SETTLE_COARSE_S, SETTLE_FINE_S, XY_SETTLE_S = 0.1, 0.2, 0.2
@@ -144,27 +157,9 @@ def parse(args: dict) -> ScanArgs:
     return a
 
 
-def grid(centre: tuple[float, float], half_side_um: float, fov_um: float,
-         overlap: float) -> tuple[list[tuple[float, float, int, int]], float, int]:
-    """Serpentine tile centres covering a square of half-side `half_side_um` (scan_4x.py)."""
-    pitch = fov_um * (1 - overlap)
-    n = max(1, math.ceil((2 * half_side_um - fov_um) / pitch) + 1)
-    offs = (np.arange(n) - (n - 1) / 2) * pitch
-    pts: list[tuple[float, float, int, int]] = []
-    for r, dy in enumerate(offs):
-        row = [(float(centre[0] + dx), float(centre[1] + dy), r, c) for c, dx in enumerate(offs)]
-        pts += row if r % 2 == 0 else row[::-1]
-    return pts, float(pitch), n
-
-
 def calibration(info: SampleInfo) -> tuple[float, list[list[float]], str]:
     """(um_per_px, M_px_per_um, source) from the sample's stage_camera_calibration."""
-    cal = info.stage_camera_calibration or {}
-    um_px = float(cal.get("um_per_px", DEFAULT_UM_PER_PX))
-    m = cal.get("M_px_per_um")
-    if m is None:
-        return um_px, [list(r) for r in DEFAULT_M_PX_PER_UM], "2026-09-30 4x calibration"
-    return um_px, [[float(v) for v in r] for r in m], "sample stage_camera_calibration"
+    return camera_calibration(info.stage_camera_calibration)
 
 
 def plan(info: SampleInfo, sensor: tuple[int, int], args: dict | ScanArgs,
@@ -175,7 +170,7 @@ def plan(info: SampleInfo, sensor: tuple[int, int], args: dict | ScanArgs,
     if not hole or hole.get("centre_um") is None or hole.get("diameter_mm") is None:
         raise ValueError("hole not fitted: run edge_trace")
     centre = (float(hole["centre_um"][0]), float(hole["centre_um"][1]))
-    half = float(hole["diameter_mm"]) * 500 + a.margin_um
+    half = half_side_um(hole["diameter_mm"], a.margin_um)
     um_px, m, cal_src = calibration(info)
     fov = min(sensor) * um_px
     tiles, pitch, n = grid(centre, half, fov, a.overlap)
@@ -185,9 +180,8 @@ def plan(info: SampleInfo, sensor: tuple[int, int], args: dict | ScanArgs,
     return {
         "op": NAME, "centre_um": list(centre), "half_side_um": half, "um_per_px": um_px,
         "M_px_per_um": m, "calibration": cal_src, "fov_um": fov, "pitch_um": pitch,
-        "grid_n": n, "tiles": [{"name": f"tile_r{r}c{c}", "row": r, "col": c, "x_um": x,
-                                "y_um": y} for x, y, r, c in tiles],
-        "scan_box_um": [centre[0] - half, centre[0] + half, centre[1] - half, centre[1] + half],
+        "grid_n": n, "tiles": tile_list(tiles),
+        "scan_box_um": square_box_um(centre, half),
         "allowed_box_um": [box.x_min, box.x_max, box.y_min, box.y_max],
         "z_guess_um": z_guess, "first_sweep": first.describe(),
         "later_sweeps": (f"+-{a.tile_half_um:g} um @ {COARSE_STEP_UM:g}, fine +-{FINE_HALF_UM:g} "
@@ -244,30 +238,6 @@ def _save_mosaic(out: Path, tiles: list[dict], frames: dict[str, np.ndarray],
                                  for t in tiles], m, objective=OBJECTIVE_KEY,
                                 calibration_source=calibration_source)
     save_mosaic(out, mosaic, meta)
-
-
-def fit_plane(points: list[tuple[float, float, float]]) -> dict | None:
-    """z = a + b (x - x0) + c (y - y0) through (x, y, z) points; flat with fewer than 3 or
-    collinear points. Slopes in um per mm. Grade "computed"."""
-    if not points:
-        return None
-    p = np.asarray(points, dtype=np.float64)
-    x0, y0 = float(p[:, 0].mean()), float(p[:, 1].mean())
-    a_mat = np.c_[np.ones(len(p)), p[:, 0] - x0, p[:, 1] - y0]
-    if len(p) >= 3 and np.linalg.matrix_rank(a_mat) == 3:
-        coef, *_ = np.linalg.lstsq(a_mat, p[:, 2], rcond=None)
-        kind = "plane"
-    else:
-        coef, kind = np.array([p[:, 2].mean(), 0.0, 0.0]), "flat (fewer than 3 independent tiles)"
-    rms = float(np.sqrt(np.mean((a_mat @ coef - p[:, 2]) ** 2)))
-    return {"kind": kind, "x0_um": x0, "y0_um": y0, "z0_um": float(coef[0]),
-            "slope_x_um_per_mm": float(coef[1]) * 1000, "slope_y_um_per_mm": float(coef[2]) * 1000,
-            "rms_um": rms, "n_points": len(p), "grade": GRADE_COMPUTED}
-
-
-def plane_z(plane: dict, x_um: float, y_um: float) -> float:
-    return (plane["z0_um"] + plane["slope_x_um_per_mm"] / 1000 * (x_um - plane["x0_um"])
-            + plane["slope_y_um_per_mm"] / 1000 * (y_um - plane["y0_um"]))
 
 
 def focus_plane_4x(sample: Sample, x_um: float, y_um: float) -> dict | None:
