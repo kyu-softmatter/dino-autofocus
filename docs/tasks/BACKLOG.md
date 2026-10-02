@@ -21,7 +21,7 @@ Dev seats send `[검토요청 T-NNN]` to the assistant for their task. One branc
 
 | Assistant | Tasks |
 |---|---|
-| AF 검토보조1 | T-002 (all stages), T-008 (done), T-011, T-015, T-025, T-027, T-028 |
+| AF 검토보조1 | T-002 (all stages), T-008 (done), T-011, T-015, T-025, T-027, T-028, T-035 |
 | AF 검토보조2 | T-007, T-012, T-021, T-023, T-024, T-030, T-031, T-032, T-033, T-034 |
 | AF 검토보조3 | T-004, T-009, T-013, T-018, T-019 |
 | AF 검토보조4 | T-010, T-014, T-016, T-020, T-022 |
