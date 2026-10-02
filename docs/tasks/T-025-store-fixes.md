@@ -25,3 +25,8 @@ Same as T-008: `src/dino_autofocus/agents/{__init__,store,mock_store,sma_files}.
 
 - Add `writable: bool` to the AgentStore protocol (`MockStore` True, `SmaFiles` False), so the console submit
   route need not test the class.
+
+## Summary fields for the console list (from T-100, ui-spec 7.1)
+
+- `QuestionSummary` gains `purpose`, `intent` and `observable_name`; `RunSummary` gains `approval_kind`. Read from
+  the card dicts, None when absent.

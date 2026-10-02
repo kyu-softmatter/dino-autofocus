@@ -92,13 +92,31 @@ def test_a_peak_on_the_top_plane_is_not_climbed(fake):
     assert fake.z == 3005  # stopped at the plan's top
 
 
-def test_approach_climbs_in_read_back_steps(fake):
+def test_approach_keeps_the_bench_procedure(fake):
     fake.z = 0.0
-    a = axis(fake)
+    a = axis(fake, OIL)
     with pytest.raises(GuardError, match="below the sample window"):
         a.sweep(a.plan(2900, 10, 5), fake.snap, score=lambda f: 0.0)
-    assert a.approach(2800, step_um=700) == 2800
-    assert [c[1] for c in fake.calls if c[0] == "move_z"] == [700, 1400, 2100, 2800]
+    assert a.approach(2840) == 2840
+    moves = [c[1] for c in fake.calls if c[0] == "move_z"]
+    assert moves == [2800, 2810, 2820, 2830, 2840]  # one move to 2800, then 10 um steps
+    assert a.motions[-1]["basis"]["approach_step_um"] == (
+        "OBJECTIVE_LIMITS[100x-Oil].approach_step_um, unmeasured provisional")
+    with pytest.raises(GuardError, match="larger than"):
+        a.approach(2900, step_um=700)
+
+
+def test_the_clearance_check_runs_at_every_step(fake):
+    fake.z = 0.0
+    seen = []
+
+    def clearance(z):
+        seen.append(z)
+        return z < 2825
+
+    with pytest.raises(GuardError, match="clearance check stopped the approach at 2830"):
+        axis(fake, OIL).approach(2900, clearance=clearance)
+    assert seen == [2800, 2810, 2820, 2830] and fake.z == 2830
 
 
 def test_xy_long_moves_follow_the_objective_table(fake):
@@ -107,7 +125,8 @@ def test_xy_long_moves_follow_the_objective_table(fake):
     with pytest.raises(GuardError, match="outside the box"):
         xy.goto(20000, 0)
     assert xy.goto(9683.7, -1086.0) == (9683.7, -1086.0)  # 4x: one tile at sample Z
-    assert xy.motions[-1]["basis"]["long_move_um"] == "LONG_XY_UM[4x], unmeasured provisional"
+    assert xy.motions[-1]["basis"]["long_move_um"] == (
+        "OBJECTIVE_LIMITS[4x].long_xy_um, unmeasured provisional")
     fake.state = 5  # 100x Oil read back from the nosepiece
     assert xy.goto(9783.7, -1086.0)  # 100 um, under one 100x field
     with pytest.raises(GuardError, match=r"over 156 um \(100x-Oil\) needs Z retracted"):
@@ -130,7 +149,7 @@ def test_unknown_objective_means_retract_before_any_move(fake, why):
         xy.goto(8030.0, 571.6)  # even 4 um
     fake.z = 0.0
     assert xy.goto(8030.0, 571.6) == (8030.0, 571.6)
-    assert xy.motions[-1]["basis"]["long_move_um"].startswith("LONG_XY_UM[strictest")
+    assert xy.motions[-1]["basis"]["long_move_um"].startswith("OBJECTIVE_LIMITS[strictest")
 
 
 def test_xy_readback_mismatch_stops(fake):
@@ -172,8 +191,11 @@ def test_approach_stops_when_the_stage_stalls(fake):
         a.approach(2900, step_um=0.1)
     fake.move_z = lambda z_um, *, token: fake.z  # stage does not move
     with pytest.raises(GuardError):
-        a.approach(2900, step_um=500)
+        a.approach(2900)
     assert len(a.motions) == 1
+    fake.z = 2800.0  # already in the window: the first table step must rise
+    with pytest.raises(GuardError):
+        a.approach(2900)
 
 
 def test_pfs_is_not_touched_without_allow_motion(fake):
@@ -183,3 +205,15 @@ def test_pfs_is_not_touched_without_allow_motion(fake):
     with pytest.raises(GuardError, match="allow_motion"):
         FocusAxis(fake, "4x").require_pfs_quiet()
     assert fake.pfs_enabled
+
+
+def test_relative_xy_moves_go_through_the_absolute_guard(fake):
+    xy = XYAxis(fake, XYBox.around((8026.0, 571.6), 3572), allow_motion=True)
+    assert xy.goto_rel(200.0, 0.0) == (8226.0, 571.6)  # an edge_trace step
+    assert xy.motions[-1]["target_um"] == [8226.0, 571.6]
+    with pytest.raises(GuardError, match="outside the box"):
+        xy.goto_rel(5000.0, 0.0)
+    fake.state = 5  # 100x Oil: 200 um is over its 156 um row
+    with pytest.raises(GuardError, match="needs Z retracted"):
+        xy.goto_rel(200.0, 0.0)
+    assert not any(c[0] == "move_xy_rel" for c in fake.calls)
