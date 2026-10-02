@@ -12,7 +12,8 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 
 - Server: T-009g hardware wiring, T-009i real runner at start-up (mock default, separate mock records root,
   records + committer wired), T-009j replay start-up + op records into the open session. Stacked g → i → j.
-- Web: T-010-9 (401 code, locked = stale, WsLock types, `--dev-origin`), schema regen 3.
+- Web: T-010-9 (401 code, locked = stale, WsLock types, `--dev-origin`), schema regen 3, T-010-12 (0c1f3de, vitest
+  maxWorkers 2 + 15 s timeouts; committed before the freeze).
 - Assistant: T-013c (proposal reject needs confirm's permission).
 - Tests: T-015e (server helpers out of conftest + guard test).
 - Simulation: T-012-6 (`gsd` dependency).
@@ -22,7 +23,6 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 
 ### Carded but not started (unassigned; pick up from the card)
 
-- T-010-12 vitest `maxWorkers` cap + 15 s App-level timeouts (T-010 card).
 - T-035d import torch only inside torch tests: tests/test_backbone.py and tests/test_live.py (T-035 card).
 - T-106b session.json carries backend kind/bench; T-106c records/librarian_mock.py skips bench:false sessions in the
   real root (T-106 card).
