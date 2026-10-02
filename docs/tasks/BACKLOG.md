@@ -93,6 +93,10 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - Lens table: engine data inside guards (fa2bdcd). Q8 only asks where FocusAxis keeps its WD values, so the
   provisional rows can cite their source. Moves to the person-owned envelope at integration.
 
+- **T-107 (screen manager, later):** browser M1 walk-through in `web/e2e/` (not tests/e2e/, which is T-035). Needs a
+  headless browser package decision (downloads binaries) with the director, then T-010's package.json order.
+- **Free seat:** 실행16 after T-022b.
+
 ## 현미경 PC 확인 항목 (총괄에 넘김)
 
 - `docs/operations-spec.md` 10절 Q1–Q21 (실행4, T-006)
