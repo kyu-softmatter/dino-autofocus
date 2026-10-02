@@ -45,6 +45,8 @@ const MAP_OPS = [
   "goto_xy", "map_flag", "map_flag_retire", "candidate_confirm", "candidate_reject",
 ] as const;
 type MapOp = (typeof MAP_OPS)[number];
+/** one fallback for every screen: no answer from /api/permissions disables the controls */
+const PERMISSION_UNAVAILABLE = "Permission check unavailable";
 /** events after which the shared permission answer may have changed */
 const RECHECK_ON = new Set(["started", "finished", "aborted", "error", "sample_opened", "confirm_required"]);
 const SPEED_MIN = 10;
@@ -138,7 +140,7 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
     api
       .permissions(MAP_OPS)
       .then(setPerms)
-      .catch(() => setPerms(Object.fromEntries(MAP_OPS.map((op) => [op, { allowed: false, reason: "Server not reachable" }]))));
+      .catch(() => setPerms(Object.fromEntries(MAP_OPS.map((op) => [op, { allowed: false, reason: PERMISSION_UNAVAILABLE }]))));
   }, [api]);
 
   useEffect(recheck, [recheck]);
@@ -517,7 +519,7 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
         </div>
 
         <aside className="map-side">
-          <SequencePanel fit={fit} />
+          <SequencePanel fit={fit} scanReason={reasonFor("scan_4x") ?? refusal.scan ?? null} />
           <HolePanel state={mapState} fit={fit} />
           <TracePanel
             disabled={reasonFor("edge_trace")}
@@ -622,8 +624,10 @@ function ClickMoveBanner({
   );
 }
 
-function SequencePanel({ fit }: { fit: ReturnType<typeof holeFitStatus> }) {
+/** step 2 shows the engine's reason (e.g. a partial trace); the screen does not judge the fit itself */
+function SequencePanel({ fit, scanReason }: { fit: ReturnType<typeof holeFitStatus>; scanReason: string | null }) {
   const traced = fit === "this_session";
+  const reason = scanReason ?? (traced ? null : "Trace the hole edge in brightfield first");
   return (
     <section className="map-panel" aria-label="Sequence">
       <h3>Sequence</h3>
@@ -631,7 +635,7 @@ function SequencePanel({ fit }: { fit: ReturnType<typeof holeFitStatus> }) {
         <li data-done={traced ? "true" : undefined}>Trace the hole edge (brightfield){traced ? " · done" : ""}</li>
         <li>
           Scan (particle light)
-          {!traced && <Reason text="Trace the hole edge in brightfield first" />}
+          <Reason text={reason} />
         </li>
       </ol>
     </section>

@@ -206,10 +206,6 @@ async function json<T>(res: Response): Promise<T> {
 
 const enc = encodeURIComponent;
 
-function isLoopbackHost(host: string): boolean {
-  return host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1";
-}
-
 export function httpMapApi(base = ""): MapApi {
   const get = <T,>(path: string) => fetch(`${base}${path}`).then((r) => json<T>(r));
   const post = <T,>(path: string, body: unknown) =>
@@ -232,18 +228,8 @@ export function httpMapApi(base = ""): MapApi {
         running: typeof s.running === "string" ? s.running : null,
       };
     },
-    permissions: async (ops) => {
-      try {
-        return await get<Permissions>(`/api/permissions?ops=${ops.map(enc).join(",")}`);
-      } catch (e) {
-        // until T-009b serves /api/permissions: allow on this PC, read-only elsewhere.
-        // The server refuses anything not allowed either way.
-        if (!(e instanceof ApiError && e.status === 404)) throw e;
-        const local = isLoopbackHost(window.location.hostname);
-        const reason = local ? null : "Read-only: remote view";
-        return Object.fromEntries(ops.map((op) => [op, { allowed: local, reason }]));
-      }
-    },
+    // a failure here disables the controls on screen ("Permission check unavailable")
+    permissions: (ops) => get<Permissions>(`/api/permissions?ops=${ops.map(enc).join(",")}`),
     mapState: (id) => get<MapState>(m(id)),
     results: (id) => get<ResultSummary[]>(`${m(id)}/results`),
     result: (id, rid) => get<ResultDetail>(`${m(id)}/results/${enc(rid)}`),
@@ -276,6 +262,8 @@ export interface FakeData {
   snapshot: Snapshot;
   /** ops not listed here are allowed */
   permissions: Permissions;
+  /** make GET /api/permissions fail */
+  permissionsFail?: boolean;
   maps: Record<string, MapState>;
   results: Record<string, ResultSummary[]>;
   details: Record<string, ResultDetail>;
@@ -309,7 +297,9 @@ export function fakeMapApi(data: FakeData): FakeMapApi {
     emit: (ev) => subs.forEach((s) => s(ev)),
     snapshot: () => Promise.resolve(data.snapshot),
     permissions: (ops) =>
-      Promise.resolve(Object.fromEntries(ops.map((op) => [op, data.permissions[op] ?? { allowed: true, reason: null }]))),
+      data.permissionsFail
+        ? Promise.reject(new ApiError(503, "permission check failed"))
+        : Promise.resolve(Object.fromEntries(ops.map((op) => [op, data.permissions[op] ?? { allowed: true, reason: null }]))),
     mapState: (id) => need(data.maps[id], `sample ${id}`),
     results: (id) => Promise.resolve(data.results[id] ?? []),
     result: (_id, rid) => need(data.details[rid], `result ${rid}`),

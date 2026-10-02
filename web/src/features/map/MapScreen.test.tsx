@@ -71,6 +71,28 @@ describe("map screen", () => {
     expect(screen.getByRole("checkbox", { name: "Mosaic" })).toHaveProperty("disabled", false);
   });
 
+  it("disables every control when the permission check cannot be read, map stays viewable", async () => {
+    const api = await mount({ permissionsFail: true });
+    await screen.findByTestId("move-reason");
+    expect(screen.getByTestId("move-reason").textContent).toBe("Click-to-move: Permission check unavailable");
+    for (const name of ["Start tracing", "Start scan", "Confirm", "Retire", "Mark edge here"]) {
+      for (const b of screen.getAllByRole("button", { name })) expect(b).toHaveProperty("disabled", true);
+    }
+    within(screen.getByRole("region", { name: "Flags" })).getByText("Permission check unavailable");
+    expect(screen.getByRole("checkbox", { name: "Mosaic" })).toHaveProperty("disabled", false);
+    fireEvent.click(screen.getAllByRole("radio")[0]);
+    expect(screen.getAllByRole("radio")[0]).toHaveProperty("checked", true);
+    fireEvent.click(screen.getByTestId("map-canvas"), { clientX: 200, clientY: 200 });
+    expect(api.sent).toEqual([]);
+  });
+
+  it("shows the engine's reason on the scan step for a partial trace", async () => {
+    await mount({ permissions: deny("partial trace: the hole fit is not a closed loop", ["scan_4x"]) });
+    const seq = screen.getByRole("region", { name: "Sequence" });
+    await within(seq).findByText("partial trace: the hole fit is not a closed loop");
+    expect(screen.getByRole("button", { name: "Start scan" })).toHaveProperty("disabled", true);
+  });
+
   it("lists candidates by source and sends a decision to the map route", async () => {
     const api = await mount();
     const panel = screen.getByRole("region", { name: "Candidates" });
