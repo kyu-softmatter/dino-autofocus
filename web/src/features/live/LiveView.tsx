@@ -93,7 +93,14 @@ export function LiveView({ now = performanceNow }: { now?: () => number }) {
             display {meta.display_min.toFixed(0)}–{meta.display_max.toFixed(0)} counts
           </span>
         )}
-        {z !== null && <EncoderZ readbackUm={z} />}
+        {z !== null && (
+          <span
+            data-testid="live-z"
+            title="ZDrive encoder read when the frame was taken from the camera buffer; it can lag the exposure"
+          >
+            <EncoderZ readbackUm={z} />
+          </span>
+        )}
       </div>
       {detail && conn === "unsupported" && <p className="muted">{detail}</p>}
       {url ? (

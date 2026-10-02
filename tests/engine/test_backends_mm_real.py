@@ -2,6 +2,8 @@
 on Micro-Manager's demo config (`DEMO_DEVICES`), skipped without the demo adapters, and
 the bench light order runs on a stub core with the bench device names. Each test releases
 the core it opened; nothing opens a window.
+
+The T-036 bench motion lock is in tests/engine/test_backends_mm_real_lock.py.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from dino_autofocus.engine.backends import mm_real
 from dino_autofocus.engine.backends.mm_real import (
     BENCH_CONFIG,
     DEMO_DEVICES,
+    BenchMotionLocked,
     MmRealBackend,
     MmUnavailable,
     config_path,
@@ -57,6 +60,13 @@ class TestMmRealOnDemoContract(BackendContract):
     @pytest.fixture
     def backend(self, real):
         return real
+
+    def test_move_xy_rel_needs_the_token_and_moves_by_the_step(self, backend):
+        """T-036: on mm-real the shared relative-move check becomes a refusal while locked."""
+        p0 = backend.positions()
+        with pytest.raises(BenchMotionLocked, match="T-027, T-011"):
+            backend.move_xy_rel(10.0, -5.0, token=GUARD_TOKEN)
+        assert (backend.positions().x_um, backend.positions().y_um) == (p0.x_um, p0.y_um)
 
 
 # -- no hardware needed
@@ -182,7 +192,10 @@ def test_config_record_shows_autoshutter_off_and_the_startup_preset(real):
     assert c.changed_during_load is False
 
 
-def test_motion_on_the_demo_reads_back(real):
+def test_motion_code_reads_back_on_the_demo_once_unlocked(real, monkeypatch):
+    """The code that runs after a reviewed commit lifts the T-036 lock. Unlocking here is a
+    test-only monkeypatch; the shipped constant stays LOCKED (test_backends_mm_real_lock)."""
+    monkeypatch.setattr(mm_real, "BENCH_MOTION", "UNLOCKED")
     assert real.move_z(12.5, token=T) == pytest.approx(12.5, abs=0.01)
     x, y = real.move_xy(100.0, -50.0, token=T, timeout_s=10)
     assert (x, y) == pytest.approx((100.0, -50.0), abs=0.5)

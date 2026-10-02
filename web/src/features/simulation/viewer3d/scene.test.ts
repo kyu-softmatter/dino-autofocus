@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { frameFromJson } from "../frame";
 import { boxEdges, defaultRadius, LARGE_N, lengthScale, TrajectoryScene, typeColor } from "./scene";
@@ -116,6 +116,30 @@ describe("TrajectoryScene", () => {
     s.particles.getMatrixAt(1, m);
     scale.setFromMatrixScale(m);
     expect(scale.x).toBeCloseTo(2 / 10);
+    s.dispose();
+  });
+
+  it("keeps one box buffer across frames instead of a new one per frame", () => {
+    const s = new TrajectoryScene();
+    s.update(frameFromJson(frameJson({ n: 5, index: 0 })));
+    const attr = s.box.geometry.getAttribute("position");
+    const version = (attr as THREE.BufferAttribute).version;
+    s.update(frameFromJson(frameJson({ n: 5, index: 1 })));
+    expect(s.box.geometry.getAttribute("position")).toBe(attr);
+    expect((attr as THREE.BufferAttribute).version).toBe(version); // same box: not rewritten
+
+    s.update(frameFromJson(frameJson({ n: 5, box: [12, 10, 10, 0, 0, 0] })));
+    expect(s.box.geometry.getAttribute("position")).toBe(attr);
+    expect((attr as THREE.BufferAttribute).version).toBeGreaterThan(version);
+    const xs = (attr.array as Float32Array).filter((_, i) => i % 3 === 0);
+    expect(Math.max(...xs)).toBeCloseTo(0.5);
+
+    const geometry = s.box.geometry;
+    const disposed = vi.fn();
+    geometry.addEventListener("dispose", disposed);
+    s.update(frameFromJson(frameJson({ n: 5, box: [10, 10, 0, 0, 0, 0], dimensions: 2 })));
+    expect(disposed).toHaveBeenCalled();
+    expect(s.box.geometry.getAttribute("position").count).toBe(8);
     s.dispose();
   });
 
