@@ -38,6 +38,8 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   T-009b starts (실행7).
 - T-009 + T-105 merged → user browser check of the live view and login (via the director).
 
+- Merge order: T-009b (remote_view mark) and T-010 stage 4 (client rule) before any screen router (T-100..T-106 stage B).
+
 ## 후속 과제 후보
 
 - **WP-C 초점 이식에 같이 넣을 것** (실행2 메모, 2026-10-01): `focus/classical.py` 에
