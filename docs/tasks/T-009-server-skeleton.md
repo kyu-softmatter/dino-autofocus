@@ -112,3 +112,18 @@
   attaching the control grant to the engine Command, and reading the T-011 permission table.
 - Dependencies: `pillow` for JPEG. `httpx2` instead of `httpx`, only if it is the package Starlette's own docs
   name for TestClient. State the source and the package's maintainer in the review request.
+
+## Shared permissions endpoint (T-009b, from T-103)
+
+- `GET /api/permissions?ops=a,b,c` -> `{op: {allowed, reason}}`: engine `check()` (T-011) plus remote, role and
+  login state. Every screen uses it for pre-click disabled reasons (ui-spec 7.0). Area routers add only
+  area-specific items (e.g. `can_open_folder`). Feature gates stay in `/api/hardware/gates`.
+- `/api/permissions` also answers non-engine actions, from the T-018 named permissions plus loopback:
+  `session_open`, `session_close`, `session_continue`, `submit_question`. Engine ops (including `map_flag`,
+  `map_flag_retire`, `candidate_confirm`, `candidate_reject`) come from the engine's `check()`. Area-only rules
+  stay in the area routers as 403/409.
+
+## Typed snapshot (T-009b, from T-010)
+
+- A pydantic `Snapshot` model for `GET /api/state` (lights, positions, running op, sample, hardware,
+  last_shutdown_lights, unclean_shutdown), so the web side gets generated types instead of an untyped dict.

@@ -24,7 +24,7 @@
   T-027 and the light ops for D15.
 - Snapshot block for the screen (T-011 provides the slot): `{profile, profile_path, gates, last_status}`.
 - Permissions: `hardware_scan` needs a local operator with control (it opens devices). `hardware_confirm`
-  needs a local operator and an open session.
+  needs a local operator, no session (the hardware check comes before any experiment session; session_id is null).
 
 ## Done when
 
