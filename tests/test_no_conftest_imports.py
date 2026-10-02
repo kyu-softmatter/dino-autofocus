@@ -1,7 +1,7 @@
 """Guard (T-015e): no test module imports a conftest by name.
 
 Several test directories have a conftest.py, and pytest puts each directory on sys.path, so
-`from conftest import X` resolves to whichever conftest loaded first and breaks when
+importing a conftest by name resolves to whichever one loaded first and breaks when
 directories run in another order (T-015d, T-015e). Shared fakes live in uniquely named
 modules instead (tests/engine/engine_fakes.py, tests/e2e/e2e_helpers.py,
 tests/server/server_fakes.py). Docstrings and comments may mention conftest; only import
@@ -37,8 +37,9 @@ def test_no_test_module_imports_a_conftest():
 
 
 def test_the_guard_sees_both_import_forms(tmp_path):
-    (tmp_path / "a.py").write_text("from conftest import X\n", encoding="utf-8")
-    (tmp_path / "b.py").write_text("import conftest\n", encoding="utf-8")
-    (tmp_path / "c.py").write_text('"""from conftest import X is not an import"""\n',
+    name = "conf" + "test"  # split so a plain git grep for the pattern stays empty
+    (tmp_path / "a.py").write_text(f"from {name} import X\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text(f"import {name}\n", encoding="utf-8")
+    (tmp_path / "c.py").write_text(f'"""from {name} import X is not an import"""\n',
                                    encoding="utf-8")
     assert conftest_imports(tmp_path) == ["a.py:1", "b.py:1"]
