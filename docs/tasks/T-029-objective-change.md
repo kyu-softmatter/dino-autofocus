@@ -77,8 +77,10 @@
   never fires. After the T-036 unlock, objective_change with `escape: false` would climb 0 → 2800 on the stand.
 - Central refusal in `engine/guards.py`: a new `BENCH_APPROACH = "UNMEASURED"` with the same fail-safe reader as
   `BENCH_MOTION` (anything but the exact unlocked value is locked). In `FocusAxis.approach()` and every guards path
-  that raises Z: when `is_bench(info)` and `BENCH_APPROACH` is locked, refuse any approach above `RETURN_Z_UM` and any
-  approach on a lens other than 4x, whoever the caller is. The reason names Q13, Q20 and the stage limits.
+  that raises Z, including `move_to` and the sweeps (focus_100x sweeps with `move_to`, not `approach`; 실행11):
+  when `is_bench(info)` and `BENCH_APPROACH` is locked, refuse any upward Z move to above `RETURN_Z_UM` and any upward
+  Z move on a lens other than 4x, whoever the caller is. Downward moves and `retract()` stay allowed. The reason
+  names Q13, Q20 and the stage limits.
 - Second layer: preflight refusals with the same reason in `objective_change` (escape true and false) and
   `focus_100x`, so the user sees why before anything moves. This task may edit those preflight lines.
 - Tests: bench + locked refuses objective_change both ways, focus_100x and scan_4x's non-4x paths; 4x ≤ 2800 still
