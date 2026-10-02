@@ -74,11 +74,13 @@ function authDefaults(opts: FakeOptions): Record<string, Route> {
 export function fakeTransport(routes: Record<string, Route>, opts: FakeOptions = {}) {
   const sockets: FakeSocket[] = [];
   const calls: { path: string; init?: RequestInit }[] = [];
-  const table: Record<string, Route> = { ...authDefaults(opts), ...routes };
+  // Look routes up, never spread them: a test may pass a Proxy that answers any path
+  // (the map screen's testWorld), and spreading a Proxy copies nothing.
+  const defaults = authDefaults(opts);
   const transport: Transport = {
     fetch: async (path, init) => {
       calls.push({ path, init });
-      const route = table[path];
+      const route = routes[path] ?? defaults[path];
       const { status, body, headers } = route
         ? route(init)
         : { status: 404, body: { detail: "Not Found" }, headers: undefined };
