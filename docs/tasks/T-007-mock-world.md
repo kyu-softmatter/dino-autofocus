@@ -65,3 +65,5 @@ PLAN.md v0.2 5절의 `mock` 백엔드는 M1 의 기본 백엔드다. 그 핵심�
   parallel load (검토보조2, `tests/engine tests/e2e`). Keep the strict bound only when `DINOAF_PERF=1` is set
   (skip with a reason otherwise), and keep an always-on loose check (e.g. median of 5 under 500 ms) so a real
   regression still fails.
+- Also in T-007b (manager, owned path added): one docstring line in `src/dino_autofocus/records/events.py` `fold()`
+  saying that `flag_remove` on an unknown `flag_id` leaves a retired stub (T-027c). Docstring only, no code change.
