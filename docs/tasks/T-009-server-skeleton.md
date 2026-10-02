@@ -197,3 +197,7 @@
 3. `GET /api/auth/me` answers a locked login (`locked_ok=True` in `_http_refusal`), so the lock screen knows whose
    password to ask for and can tell locked from logged out. No login still gives 401. Every other read stays 423
    while locked.
+4. (from the screen manager; blocks all seven screen routers) Replace
+   `test_server_rest.py::test_no_area_routers_yet` (`include_area_routers(FastAPI()) == []`) with a test that does
+   not name areas: every module under `server/api/` not starting with "_" exposes a module-level `router` and is
+   mounted at `/api/<name>`; a module without `router` raises TypeError (use a temporary test package).
