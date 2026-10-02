@@ -214,3 +214,10 @@
     sample record (awaiting_return etc.) is read as usual when the operator continues.
   - Tests: an open session at start-up becomes closed with that note; the AutoCommitter is flushed and stopped at
     shutdown; the server-side Sessions holder is empty after start-up.
+
+## T-009f (AF 실행7, urgent, before T-009e; review AF 검토보조3) — area-mount test that sees real areas
+
+- T-009d's `test_every_area_module_is_mounted_under_its_name` reads `{r.path for r in app.routes}`. With FastAPI
+  0.142.2 / starlette 1.7.0, `include_router` adds one `_IncludedRouter` (path None), so area paths never appear and
+  the test fails for the first real area (실행8, T-013b on 336ec69). Check `app.openapi()["paths"]` (or request each
+  route) instead, with a temporary package holding a real router and one route. tests/server only.
