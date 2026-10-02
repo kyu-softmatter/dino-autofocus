@@ -106,6 +106,9 @@ UI text is in English. Remote viewers and viewers can read everything and change
 | G8 | The logged-in user id and name | Use T-105's auth dependency. Until it merges, tests use a fake user | T-105 (answered) |
 | G9 | Where the server reads the current sample | `snapshot()["sample"] = {sample_id, reserved, session_id}` (set by `sample_open` / `sample_new`, T-027). Sample state shown on screens comes from `engine/sample.py`'s named view over the generic `records.events.fold()`, read through the server; `records/` gets no sample-specific fields | T-011 / T-027 (answered) |
 
+| G10 | `create_app(records=...)` keeps the store only on the engine's sample seat | The router reads `app.state.records` if set, else `engine.sample_seat.store`; 503 `no_records` when neither. Proposal: `create_app` sets `app.state.records` | T-009 |
+| G11 | The router makes one `AutoCommitter` and reads the code version once per app on first use (`app.state.records_committer`, `app.state.records_code_version`); nothing flushes the committer at shutdown, and a session left open by a crash is not handed to the engine at start-up | `create_app`'s lifespan builds both, adopts `GET /current` into `app.state.sessions` and `set_experiment_session` at start-up, and calls `committer.flush()` / `stop()` on shutdown | T-009 |
+
 ## 6. Stage B tests (outline)
 
 - **pytest** (`TestClient`, a `FolderStore` and a `GitFolderStore` under `tmp_path`): open, close, list

@@ -1,8 +1,9 @@
 // Temporary until gen:api, T-009: the /api/sessions and /api/permissions shapes are hand-written
-// here (docs/screens/sessions.md section 2) because the router is not on main yet. Everything goes
-// through the shell's shared client (src/app/client.tsx); this file opens no connection of its own.
+// here (docs/screens/sessions.md section 2) until gen:api covers server/api/sessions.py. Reads and
+// writes go through the shell's shared client (src/app/client.tsx: get, post); this file opens no
+// connection of its own.
 
-import { type Client, CommandRefused } from "../../app/client";
+import type { Client } from "../../app/client";
 
 export type SessionStatus = "open" | "closed";
 
@@ -101,34 +102,6 @@ export function blockedBy(readOnly: boolean, permissions: Permissions | null, op
   const p = permissions[op];
   if (!p) return PERMISSION_UNAVAILABLE;
   return p.allowed ? null : p.reason ?? PERMISSION_UNAVAILABLE;
-}
-
-// -- router writes ---------------------------------------------------------------------------
-
-/**
- * POST JSON to this area's router through the shared transport, with the signature of the shell's
- * coming `useClient().post<T>(path, body?) -> Promise<T | null>` (T-010 stage 3, null for 204).
- * Swap to `client.post` when that merges. Until then a 403 here stays an area refusal (for example
- * the session owner rule) and does not switch the app to read-only.
- */
-export async function postJson<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
-  const r = await client.transport.fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!r.ok) {
-    let detail = `HTTP ${r.status}`;
-    try {
-      const b = (await r.json()) as { detail?: unknown };
-      if (typeof b.detail === "string") detail = b.detail;
-    } catch {
-      // keep the status text
-    }
-    throw new CommandRefused(r.status, detail);
-  }
-  if (r.status === 204) return null;
-  return (await r.json()) as T;
 }
 
 /** The engine's current sample from the snapshot, or null (T-011 adds the `sample` block). */

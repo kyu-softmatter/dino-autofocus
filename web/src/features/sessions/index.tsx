@@ -14,7 +14,6 @@ import {
   blockedBy,
   PATHS,
   type Permissions,
-  postJson,
   readCurrentSample,
   readPermissions,
   SESSION_OPS,
@@ -153,7 +152,7 @@ export default function SessionsScreen() {
         {current ? `Open: ${current.session_id} · ${current.sample_id}` : "No experiment session"}
       </p>
       <div>
-        <button disabled={busy || !!openReason} onClick={() => act(() => postJson<SessionDetail>(client, PATHS.open))}>
+        <button disabled={busy || !!openReason} onClick={() => act(() => client.post<SessionDetail>(PATHS.open))}>
           {sample ? `Open experiment session for ${sample}` : "Open experiment session"}
         </button>{" "}
         <Reason text={openReason} />
@@ -286,13 +285,13 @@ export default function SessionsScreen() {
             <label>
               Note <input value={note} onChange={(e) => setNote(e.target.value)} disabled={!!closeReason} />
             </label>{" "}
-            <button disabled={busy || !!closeReason} onClick={() => act(() => postJson<SessionDetail>(client, PATHS.close(detail.session_id), { note }))}>
+            <button disabled={busy || !!closeReason} onClick={() => act(() => client.post<SessionDetail>(PATHS.close(detail.session_id), { note }))}>
               Close
             </button>{" "}
             <Reason text={closeReason} />
           </div>
           <div>
-            <button disabled={busy || !!continueReason} onClick={() => act(() => postJson<SessionDetail>(client, PATHS.continueFrom(detail.session_id)))}>
+            <button disabled={busy || !!continueReason} onClick={() => act(() => client.post<SessionDetail>(PATHS.continueFrom(detail.session_id)))}>
               Continue with this sample
             </button>{" "}
             <Reason text={continueReason} />

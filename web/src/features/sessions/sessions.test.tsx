@@ -45,7 +45,8 @@ interface World {
 function server(w: World) {
   let n = 0;
   const json = (status: number, body: unknown) => ({ status, body });
-  const no = (status: number, detail: string) => json(status, { detail });
+  // T-009b refusals: detail = {code, message}
+  const no = (status: number, message: string, code = "refused") => json(status, { detail: { code, message } });
   const summary = ({ log_tail: _l, records: _r, manifest: _m, code: _c, hardware_profile: _h, ...s }: SessionDetail) => s;
   const openFor = (sampleId: string, continues: string | null) => {
     const open = w.sessions.find((s) => s.status === "open");
@@ -94,7 +95,7 @@ function server(w: World) {
     if (m[2] === "close") {
       if (s.status === "closed") return no(409, `Session ${s.session_id} is closed (read-only)`);
       if (w.user.role !== "admin" && s.user_id !== w.user.user_id) {
-        return no(403, `Only ${s.user_id} or an admin can close this session`);
+        return no(403, `Only ${s.user_id} or an admin can close this session`, "not_owner");
       }
       s.status = "closed";
       s.closed_at = "2026-10-01T12:00:00-07:00";
