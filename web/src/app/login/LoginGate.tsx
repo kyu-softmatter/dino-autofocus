@@ -11,6 +11,11 @@ export interface AuthState {
   api: AuthApi;
   logout(): Promise<void>;
   lock(): Promise<void>;
+  /**
+   * Counts unlocks. While locked the server sends lock state only (T-009c), so the shell
+   * re-reads its state (e.g. /api/state) when this changes.
+   */
+  resumed: number;
   /** re-read /me; call it when any other request answers 401 or 423 */
   refresh(): Promise<void>;
 }
@@ -38,6 +43,7 @@ function GateWith({
   api,
   abort,
   pollMs = 30_000,
+  onLockState,
   local = isLoopbackHost(window.location.hostname),
   children,
 }: {
@@ -45,11 +51,14 @@ function GateWith({
   abort?: ReactNode;
   /** how often /me is re-read so an idle lock shows without user input */
   pollMs?: number;
+  /** lock-state messages from /ws/events (T-009c): the gate re-reads /me on each one */
+  onLockState?: (fn: (locked: boolean) => void) => () => void;
   /** before login the server has not said; guessed from the page host (a remote viewer uses a non-loopback name) */
   local?: boolean;
   children: ReactNode;
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
+  const [resumed, setResumed] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -76,6 +85,11 @@ function GateWith({
     return () => clearInterval(id);
   }, [loggedIn, pollMs, refresh]);
 
+  useEffect(() => {
+    if (!loggedIn || !onLockState) return;
+    return onLockState(() => void refresh());
+  }, [loggedIn, onLockState, refresh]);
+
   const auth = useMemo<AuthState | null>(
     () =>
       phase.kind === "in"
@@ -83,6 +97,7 @@ function GateWith({
             me: phase.me,
             api,
             refresh,
+            resumed,
             logout: async () => {
               await api.logout();
               setPhase({ kind: "out", view: "login" });
@@ -93,7 +108,7 @@ function GateWith({
             },
           }
         : null,
-    [phase, api, refresh],
+    [phase, api, refresh, resumed],
   );
 
   const out = (view: Extract<Phase, { kind: "out" }>["view"]) => setPhase({ kind: "out", view });
@@ -161,7 +176,11 @@ function GateWith({
         <LockScreen
           name={me.name}
           abort={abort}
-          onUnlock={async (password) => setPhase({ kind: "in", me: await api.unlock({ password }) })}
+          onUnlock={async (password) => {
+            setPhase({ kind: "in", me: await api.unlock({ password }) });
+            await refresh(); // events were not sent while locked: read everything again
+            setResumed((n) => n + 1);
+          }}
           onLogout={() => void auth?.logout()}
         />
       )}
@@ -174,7 +193,12 @@ type GateProps = Omit<Parameters<typeof GateWith>[0], "api">;
 function GateOverClient(props: GateProps) {
   const client = useClient();
   const api = useMemo(() => clientAuthApi(client), [client]);
-  return <GateWith api={api} {...props} />;
+  // T-009c sends lock state on /ws/events; the shared stream exposes it once T-010 adds onLock
+  const events = client.events as typeof client.events & {
+    onLock?: (fn: (locked: boolean) => void) => () => void;
+  };
+  const onLockState = useMemo(() => events.onLock?.bind(events), [events]);
+  return <GateWith api={api} onLockState={onLockState} {...props} />;
 }
 
 /**

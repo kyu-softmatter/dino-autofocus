@@ -258,3 +258,35 @@ describe("clientAuthApi over the shared client", () => {
     expect(login.init?.method).toBe("POST");
   });
 });
+
+describe("LoginGate with T-009c lock state", () => {
+  it("shows the lock screen on a lock-state message alone, then re-reads /me after unlock", async () => {
+    // a fake socket that sends lock state only: no engine events while locked
+    const listeners = new Set<(locked: boolean) => void>();
+    const onLockState = (fn: (locked: boolean) => void) => {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    };
+    const api = createFakeAuthApi({ users: USERS });
+    await api.login({ email: "otto@example.test", password: "otto-pass-1" });
+    const meCalls = vi.spyOn(api, "me");
+    function Resumed() {
+      return <output data-testid="resumed">{useAuth()?.resumed}</output>;
+    }
+    render(
+      <LoginGate api={api} pollMs={0} onLockState={onLockState}>
+        <Resumed />
+      </LoginGate>,
+    );
+    expect((await screen.findByTestId("resumed")).textContent).toBe("0");
+    api.lockNow(); // the server locked the login (idle)
+    await act(async () => listeners.forEach((fn) => fn(true)));
+    await screen.findByRole("dialog", { name: "Locked" });
+    const before = meCalls.mock.calls.length;
+    fill("Password", "otto-pass-1");
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(screen.getByTestId("resumed").textContent).toBe("1"));
+    expect(meCalls.mock.calls.length).toBeGreaterThan(before); // /me read again after unlock
+    expect(screen.queryByRole("dialog", { name: "Locked" })).toBeNull();
+  });
+});
