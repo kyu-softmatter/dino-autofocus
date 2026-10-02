@@ -15,9 +15,11 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 
-# lights_off pre-empts: the runner aborts the running operation and switches all off
-COMMAND_KINDS = ("start", "abort", "confirm", "lights_off")
+# lights_off pre-empts: the runner aborts the running operation and switches all off.
+# update changes a running operation's declared args; approve / reject decide a proposal.
+COMMAND_KINDS = ("start", "abort", "confirm", "lights_off", "update", "approve", "reject")
 ORIGINS = ("human", "assistant")  # an assistant command is a proposal until a human confirms
+CONFIRM_KINDS = ("question", "manual_step")  # manual_step: F5 "Loading done", recorded as such
 
 EVENT_KINDS = (
     # operation life cycle
@@ -28,6 +30,10 @@ EVENT_KINDS = (
     # the operator has to answer before the operation goes on (oil loaded, climb past a
     # peak); "confirmed" records the answer as an operator-graded entry
     "confirm_required", "confirmed",
+    # commands: an assistant proposal and its decision, a refused command, an update
+    "proposed", "approved", "rejected", "refused", "updated",
+    # state the screens follow (screen contracts, T-100..T-106)
+    "map_changed", "sample_opened", "objective", "session_changed",
     "log",
 )
 
@@ -39,9 +45,16 @@ def _check(kind: str, allowed: tuple[str, ...], what: str) -> None:
 
 @dataclass
 class Command:
-    """`start` names an operation in `op` with its `args`; `abort` and `confirm` name the
-    running operation by `op_id`. A confirm answers a `confirm_required` event: `args` holds
-    `{"key": <that event's data["key"]>, "ok": bool}`."""
+    """`start` names an operation in `op` with its `args`; `abort`, `confirm` and `update`
+    name the running operation by `op_id`. A confirm answers a `confirm_required` event:
+    `args` holds `{"key": <that event's data["key"]>, "ok": bool}` (or `"answer"`). `update`
+    carries the args to change; `approve` / `reject` name a proposal by `op_id`.
+
+    An assistant `start` with `confirmed_by` was confirmed by that person on the proposal
+    card (T-013) and runs; without it the engine holds it as a proposal. `remote` marks a
+    command from a non-loopback client: the engine takes only `abort` from one (D13).
+    `control_grant` is attached by the server from the operator's control (T-018), never
+    taken from the browser; the engine ignores token-like fields inside `args`."""
 
     kind: str
     op: str = ""
@@ -50,6 +63,11 @@ class Command:
     origin: str = "human"
     user_id: str | None = None  # who sent it; None until login exists (T-018)
     session_id: str | None = None  # experiment session id (T-019); None outside one
+    proposal_id: str | None = None  # assistant proposals (T-013)
+    conversation_id: str | None = None
+    confirmed_by: str | None = None
+    remote: bool = False
+    control_grant: str | None = None
     t: float = field(default_factory=time.time)
 
     def __post_init__(self) -> None:
@@ -66,10 +84,15 @@ class Command:
 
 @dataclass
 class Event:
+    """`user_id` / `session_id` are the operation's (rule 12); None for engine-wide events
+    such as the periodic `position`."""
+
     kind: str
     op_id: str = ""
     data: dict = field(default_factory=dict)
     t: float = field(default_factory=time.time)
+    user_id: str | None = None
+    session_id: str | None = None
 
     def __post_init__(self) -> None:
         _check(self.kind, EVENT_KINDS, "event")

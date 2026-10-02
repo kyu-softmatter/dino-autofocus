@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+
+from dino_autofocus.server.__main__ import PlaceholderEngine, main
+from dino_autofocus.server.schemas import Command
+
+COMMON = {"CommandIn", "CommandAccepted", "EventOut", "Health", "ApiError",
+          "WsEvent", "WsCommand", "WsAccepted", "WsError", "WsFrame", "RefusalDetail",
+          "Snapshot", "PermissionOut", "OpSummary", "Lights", "Positions"}
+
+
+def test_dump_openapi(tmp_path, capsys):
+    out = tmp_path / "openapi.json"
+    assert main(["--dump-openapi", str(out)]) == 0
+    spec = json.loads(out.read_text(encoding="utf-8"))
+    assert {"/api/health", "/api/state", "/api/commands", "/api/permissions",
+            "/api/shutdown"} <= set(spec["paths"])
+    schemas = spec["components"]["schemas"]
+    assert set(schemas) >= COMMON
+    assert schemas["CommandIn"]["properties"]["kind"]["enum"][:2] == ["start", "abort"]
+    # WebSocket models refer to the shared ones, not to private copies
+    assert schemas["WsEvent"]["properties"]["event"]["$ref"] == "#/components/schemas/EventOut"
+
+    assert main(["--dump-openapi", "-"]) == 0
+    assert json.loads(capsys.readouterr().out)["paths"] == spec["paths"]
+
+
+def test_import_pulls_no_heavy_modules():
+    code = (
+        "import sys, dino_autofocus.server, dino_autofocus.server.__main__\n"
+        "heavy = {'torch', 'pymmcore', 'pymmcore_plus', 'tkinter', 'PySide6', 'PyQt5', 'PyQt6'}\n"
+        "bad = sorted(m for m in sys.modules if m.split('.')[0] in heavy)\n"
+        "assert not bad, bad\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_placeholder_engine_moves_nothing():
+    eng = PlaceholderEngine(shape=(60, 80))
+    seen = []
+    unsubscribe = eng.subscribe(seen.append)
+    try:
+        op_id = eng.submit(Command(kind="start", op="status"))
+        assert [e.kind for e in seen if e.op_id == op_id] == ["started", "finished"]
+        before = eng.snapshot()["positions"]
+        eng.submit(Command(kind="lights_off"))
+        assert eng.snapshot()["positions"] == before
+    finally:
+        unsubscribe()

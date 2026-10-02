@@ -107,7 +107,8 @@ their own sockets:
 | Hook | What |
 |---|---|
 | `useClient().get(path)` | `GET` JSON from the server |
-| `useClient().command(cmd)` | `POST /api/commands` (types from `src/api/schema.ts`), returns the `op_id` |
+| `useClient().command(cmd)` | engine commands: `POST /api/commands` (types from `src/api/schema.ts`), returns the `op_id` |
+| `useClient().post(path, body?)` | an area's own routes (console submit, map writes, sessions, sample "Open folder", auth). Returns the JSON reply, `null` for 204. Same 403 / 401 / 423 handling as `command` |
 | `useEngineEvents(handler, kinds?)` | engine events from the shared `/ws/events` socket. Pass a stable `handler` (`useCallback`) |
 | `useEventsConnected()` | whether that socket is open. Re-read your state when it turns true again: events in a gap are lost |
 | `useReadOnly()` | `{readOnly, why}`. Disable command buttons when true |
@@ -120,6 +121,32 @@ The status bar (`src/app/StatusBar.tsx`) shows the server connection, the read-o
 lights, XY and the encoder Z, the running operation and the assistant's provider and data stage
 (PLAN D7; "assistant: unavailable" until `GET /api/assistant/status` answers). The first screen
 shows the last shutdown's light readback from `GET /api/state` when the engine reports one.
+
+While the event socket is down, the lights and XY/Z are never shown as current: the bar says
+"unknown" and gives the last known values with their time. `GET /api/state` restores them on
+reconnect.
+
+## Login
+
+The login screen is T-105's (`src/app/login/`, not an area, no route). The shell reaches it only
+through `src/app/auth.tsx`, which uses `LoginGate`, `useAuth` and `ApprovalList` from
+`./login/index.ts` when that file is in the build, and pass-through stand-ins until then:
+
+- `App` wraps everything in `<LoginGate abort={<AbortButton />}>`. Abort needs no login and no
+  control, so it stays on screen while logged out or locked.
+- Any 401 or 423 from the client (`client.onAuthFailure`) calls `useAuth().refresh()`, which
+  shows the login or lock screen again.
+- The status bar shows the user and role, the control holder (`GET /api/auth/control`) with
+  Take / Release for a local operator or admin, and a menu: Log out, Lock, and Approve accounts
+  (admins, `ApprovalList`). `me.local === false` turns the app read-only.
+- `useActivity` posts `/api/auth/activity` on input, at most every 30 s, while logged in.
+
+## Live view
+
+`src/features/live/` (shell-owned) shows `/ws/frames`: one `WsFrame` text message, then the JPEG.
+It shows the frame time, the receive rate, the binning and the display range. Z appears only when
+the frame metadata has the encoder read-back. A 501 ("this engine provides no frames") is shown
+and not retried. Raw frames stay on disk.
 
 Tests use `src/test/fakes.ts` (`fakeTransport`, `FakeSocket`): no network, no browser.
 

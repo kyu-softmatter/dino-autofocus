@@ -21,5 +21,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // Fork workers time out starting on the loaded shared PC; two threads are enough.
+    pool: "threads",
+    maxWorkers: 2,
   },
 });

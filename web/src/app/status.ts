@@ -47,6 +47,9 @@ export interface EngineStatus {
   connected: boolean;
   positions: Positions | null;
   lights: LightsView | null;
+  /** when positions / lights were last read from the server (ms since epoch) */
+  positionsAt: number | null;
+  lightsAt: number | null;
   running: RunningOp[];
   lastShutdown: LastShutdown | null;
 }
@@ -106,6 +109,7 @@ function readLastShutdown(data: unknown): LastShutdown | null {
 /** Kinds after which the running list may have changed: re-read the snapshot. */
 const LIFECYCLE = new Set([
   "started", "finished", "aborted", "error", "refused", "confirmed", "planned", "session_changed",
+  "approved", "rejected", "updated",
 ]);
 
 export function useEngineStatus(): EngineStatus {
@@ -116,6 +120,8 @@ export function useEngineStatus(): EngineStatus {
     error: null,
     positions: null,
     lights: null,
+    positionsAt: null,
+    lightsAt: null,
     running: [],
     lastShutdown: null,
   });
@@ -125,11 +131,14 @@ export function useEngineStatus(): EngineStatus {
     try {
       const snap = await client.get<Record<string, unknown>>("/api/state");
       if (!alive.current) return;
+      const t = Date.now();
       setS({
         loaded: true,
         error: null,
         positions: readPositions(snap.positions),
         lights: readLights(snap.lights),
+        positionsAt: t,
+        lightsAt: t,
         running: readRunning(snap.running),
         lastShutdown: readLastShutdown(snap.last_shutdown_lights),
       });
@@ -153,8 +162,8 @@ export function useEngineStatus(): EngineStatus {
 
   const onEvent = useCallback(
     (ev: EventOut) => {
-      if (ev.kind === "position") setS((p) => ({ ...p, positions: readPositions(ev.data) }));
-      else if (ev.kind === "light_changed") setS((p) => ({ ...p, lights: readLights(ev.data) }));
+      if (ev.kind === "position") setS((p) => ({ ...p, positions: readPositions(ev.data), positionsAt: Date.now() }));
+      else if (ev.kind === "light_changed") setS((p) => ({ ...p, lights: readLights(ev.data), lightsAt: Date.now() }));
       else if (LIFECYCLE.has(ev.kind)) void reload();
     },
     [reload],
