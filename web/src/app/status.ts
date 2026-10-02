@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { components } from "../api/schema";
-import { type EventOut, useClient, useEngineEvents, useEventsConnected } from "./client";
+import { type EventOut, useClient, useEngineEvents, useEventsConnected, useEventsLocked } from "./client";
 
 /**
  * Reading the engine's state for the status bar. `GET /api/state` returns the
@@ -43,6 +43,8 @@ export interface EngineStatus {
   loaded: boolean;
   error: string | null;
   connected: boolean;
+  /** the login is locked (WsLock): no events arrive, so values are not live. Optional for callers building a status by hand */
+  locked?: boolean;
   positions: Positions | null;
   lights: LightsView | null;
   /** when positions / lights were last read from the server (ms since epoch) */
@@ -112,6 +114,7 @@ const LIFECYCLE = new Set([
 export function useEngineStatus(resumed?: number): EngineStatus {
   const client = useClient();
   const connected = useEventsConnected();
+  const locked = useEventsLocked();
   const [s, setS] = useState<Omit<EngineStatus, "connected">>({
     loaded: false,
     error: null,
@@ -175,7 +178,7 @@ export function useEngineStatus(resumed?: number): EngineStatus {
   );
   useEngineEvents(onEvent);
 
-  return { ...s, connected };
+  return { ...s, connected, locked };
 }
 
 // -- assistant (PLAN D7) ----------------------------------------------------------------
