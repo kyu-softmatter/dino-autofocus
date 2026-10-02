@@ -8,19 +8,16 @@ User decision: no new work is assigned. Work already committed or in review fini
 then each seat is archived. Development moves to another platform later; this section is the handover list.
 Everything below "HANDOVER" is the older working backlog and stays for history.
 
-### In flight at the freeze (finishes on its own; check `git branch --no-merged main`)
+### State at the end of the freeze (main = origin/main = 3cbe466)
 
-- Merged since the freeze (31565db): T-009g, schema regen 3, T-015e, T-012-6 (gsd; run `uv sync`).
-- Merged (738d507): T-013c, T-105 login, T-106 sessions, T-010-12. Last batch (9) in AF 검토's run: T-032 stage 2,
-  T-009i/j, T-010-9.
-- Server: T-009i real runner at start-up (mock default, separate mock records root, records + committer wired) and
-  T-009j replay start-up + op records into the open session (stack head a1753de, records-root fix in review).
-- Web: T-010-9 (401 code, locked = stale, WsLock types, `--dev-origin`; merge main after regen 3), T-010-12
-  (0c1f3de, vitest maxWorkers 2 + 15 s timeouts; committed before the freeze).
-- Assistant: T-013c (proposal reject needs confirm's permission).
-- Sample map: T-032 stage 2 (sample_map, goto_xy with PFS off before the retract, map record ops with one lock,
-  edge_trace writes sample events; head 60953e9).
-- Screens: T-105 login, T-106 sessions.
+- Nothing is in flight. All 108 local exec* branches are contained in main. Last suite on the merged tree:
+  pytest 1488 passed, 11 skipped; vitest 322 passed; build ok; no D:\AutoFocus* folder created by tests.
+- Merged after the freeze: T-009g/i/j (server starts the real runner, mock by default, separate mock records root,
+  replay start-up, op records into the open session), schema regen 3, T-010-9, T-010-12, T-012-6 (gsd), T-013c,
+  T-015e, T-032 stage 2 (sample_map, goto_xy with PFS off first), T-105 login, T-106 sessions.
+- Both safety locks are on: `mm_real.BENCH_MOTION = "LOCKED"` and `guards.BENCH_APPROACH = "UNMEASURED"`.
+- After `git merge main`, run `uv sync` (anthropic and gsd are in the server group).
+- All seats are archived except the director, AF 검토 and the manager.
 
 ### Carded but not started (unassigned; pick up from the card)
 
