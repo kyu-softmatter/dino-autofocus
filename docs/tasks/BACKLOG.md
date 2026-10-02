@@ -127,3 +127,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - Watch (2026-10-02): a native crash / hang in the full pytest run under heavy parallel load, seen three times
   (실행5, 검토보조2 hang at 25%, AF 검토 Windows fatal exception); reruns pass. No test or native frame captured yet.
   Reviewers keep the full pytest log (faulthandler on). When a frame names a module, card a fix.
+  Diagnosed (AF 검토, full log on d544ea9 + T-029b): three crashes in one run at unrelated places (platform WMI
+  query 0x8007000e, a .pyc read 0xc000070a, pure Python in engine/sample.py 0xc000070a) = machine-wide memory /
+  commit-charge exhaustion, not a code bug (same code as docs/integration-notes.md). 0xc000070a / 0x8007000e in a
+  test run means "rerun when the machine is quieter", not a failure. Run-limit rule proposed to the director.
