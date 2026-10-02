@@ -27,7 +27,9 @@ Gap numbers (G1-G9) refer to section 7.
 
 Storage (manager decision D1, G1): boundary points, flags and candidates are append-only events in
 the open experiment session's `records/sample_events.jsonl`; one engine reader folds them into the
-sample state. `sample.json` and `map.json` are derived views. The router calls only that reader,
+sample state (`engine/sample.py`, T-027). `sample.json` and `map.json` are derived views in the
+legacy root `D:\AutoFocus\samples\<sample_id>\`, which also holds the large files the result
+endpoints read (`scan4x_*/`, `sample_map_*/`, tiles, `mosaic.npy`). The router calls only that reader,
 behind one function in `map.py`, so a storage change is a one-place change.
 Response bodies are pydantic models; the TypeScript types are generated from OpenAPI (PLAN.md 5절).
 
