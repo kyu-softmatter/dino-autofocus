@@ -31,7 +31,9 @@ Stage A, contract (short, English):
 - Field list for each panel in ui-spec 7.2 (devices, objectives, camera/piezo, human-confirmed items,
   gates, current state, lights), and which engine piece provides it. Missing pieces become requests to
   AF 업무분배보조, who forwards them to the manager.
-- Remote and role rules: reads for everyone; scan, confirm and lights need local operator with control.
+- Remote and role rules: reads for everyone; scan and confirm need the local operator with control.
+  PLAN v1.1 D15: `light_set` and `lights_off` are M3 items; `light_set` needs the operator with control and
+  an open experiment session, like motion. `lights_off` stays available to everyone as a stop (PLAN 5절).
 
 Stage B, implementation (mock first):
 - `hardware.py`: router registered through T-009's mechanism, read endpoints only; commands use the common

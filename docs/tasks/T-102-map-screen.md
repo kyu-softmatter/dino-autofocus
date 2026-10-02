@@ -34,12 +34,18 @@ Stage A, contract (short, English):
 - Map layers and their data source (ui-spec 7.4 layer table). Click-to-move flow steps 1–6 mapped to events.
 - Missing pieces (e.g. candidate ids, mosaic metadata fields, retire/confirm operations) become requests to
   AF 업무분배보조, who forwards them to the manager.
-- Remote and role rules: map and progress for everyone; trace, scan, flags, candidates, click-move and
-  boundary only for the local operator with control and an open experiment session.
+- Remote and role rules: map and progress for everyone; trace, scan, click-move and boundary only for the
+  local operator with control and an open experiment session. PLAN v1.1 D16: flag write, flag retire and
+  candidate confirm/reject only for the operator on the microscope PC (loopback); viewers and remote
+  operators may not.
 
 Stage B, implementation (mock first):
 - `map.py`: read endpoints and the mosaic image endpoint; commands use the common command endpoint.
   Pydantic response models. The server reads sample files; it never moves anything itself.
+- D16 on the server: every route in `map.py` that writes flags or candidate decisions checks the named
+  permission `WRITE_MAP_FLAG` from T-018 `auth/roles.py` (operator only, local only). If these writes go
+  through the common command endpoint instead, say so in stage A and request the same check from the manager.
+  Hiding buttons alone does not satisfy D16.
 - `features/map/index.tsx` by the T-010 registration rule. Canvas map with toggleable layers, axes drawn in
   joystick direction as ui-spec says, side panels (sequence, hole summary, edge trace, scan, results, flags,
   candidates). The hover target, distance and "outside the scanned area" hint are display only; the engine
@@ -51,7 +57,8 @@ Stage B, implementation (mock first):
 ## Tests
 
 - pytest with `TestClient`, a fake engine and the fixture sample: map state, results, mosaic image (size,
-  content type, flip), flags and candidates lists, remote/role refusals.
+  content type, flip), flags and candidates lists, remote/role refusals. Each flag write, flag retire and
+  candidate confirm/reject route has a test that refuses a viewer and one that refuses a remote operator (D16).
 - vitest: layer toggles, candidate marks by source, click-move steps from a scripted event sequence
   (including outside-box refusal and the retract confirm), stale hole fit warning, read-only mode.
 - Tests never open browser or desktop windows, and stop any server they start. No hardware scripts.
