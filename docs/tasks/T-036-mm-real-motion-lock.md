@@ -39,3 +39,8 @@
   Light-path and shutter settings stay allowed. Record what the preset sets in `config_record()`.
 - Tests with small synthetic `.cfg` files (one clean, one with a motion property in Startup).
 - Owner AF 실행12, review AF 검토보조2, priority right after T-036 merges.
+
+## T-036c follow-up (after T-036b merges)
+
+- Apply the same check to the `System/Shutdown` preset (applied at unload by some cores): refuse to open a config whose
+  Shutdown preset touches MOTION_DEVICES, listing the devices. Owner AF 실행12, review AF 검토보조2.
