@@ -840,8 +840,8 @@ class EdgeTraceOp(Operation):
     """`start("edge_trace", {...})` on the open sample (or `sample_id` in the args).
 
     Operator-watched (D14); `update{speed_um_s}` changes the pace mid-run. A declined
-    confirmation ends it aborted before anything moves. `samples_root` is where sample
-    folders live; the engine's start-up sets it (default `engine.sample.SAMPLES_ROOT`)."""
+    confirmation ends it aborted before anything moves. Sample folders live under the
+    runner's installed `sample_seat.samples_root` (T-027), else `samples_root`."""
 
     name = NAME
     watched = WATCHED
@@ -856,6 +856,10 @@ class EdgeTraceOp(Operation):
     def _trace_args(self) -> dict:
         return {k: v for k, v in self.args.items() if k != "sample_id"}
 
+    def _root(self) -> Path:
+        seat = getattr(self.ctx.runner, "sample_seat", None)
+        return Path(getattr(seat, "samples_root", None) or self.samples_root)
+
     def _sample_id(self) -> str | None:
         return self.args.get("sample_id") or self.ctx.runner.snapshot()["sample"]["sample_id"]
 
@@ -867,7 +871,7 @@ class EdgeTraceOp(Operation):
 
     def preflight(self) -> list[dict]:
         sid = self._sample_id()
-        folder = None if not sid else Path(self.samples_root) / sid
+        folder = None if not sid else self._root() / sid
         ok = folder is not None and folder.is_dir()
         self._checks = [{"name": "sample", "ok": ok, "want": "an open sample folder",
                          "read": None if folder is None else str(folder),
@@ -877,7 +881,7 @@ class EdgeTraceOp(Operation):
 
     def run(self) -> dict:
         ctx = self.ctx
-        sample = Sample(self._sample_id(), Path(self.samples_root))
+        sample = Sample(self._sample_id(), self._root())
         a = EdgeTraceArgs.from_dict(self._trace_args())
         try:
             backups = prepare(sample, a, lambda key, text: bool(ctx.confirm(key, text)["ok"]))
