@@ -12,6 +12,10 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo = (Resolve-Path (Join-Path $here "..\..")).Path
 $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $ico = Join-Path $here "autofocus.ico"
+# absolute (csc resolves relative paths against the process directory) and with its folder present
+$Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
+$outDir = Split-Path -Parent $Out
+if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Force $outDir | Out-Null }
 if (Test-Path $Out) {
     $old = Get-Item $Out
     if (-not $Force) {
