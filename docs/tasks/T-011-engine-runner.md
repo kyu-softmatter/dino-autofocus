@@ -186,3 +186,9 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - `check(ops, context) -> {op: {allowed, reason}}`, computed from the one permission table plus engine state
   (running op, awaiting_return, open session, control holder). The server adds remote and auth state
   (T-009b `GET /api/permissions`). Screens never compute these reasons themselves.
+
+## Light payload shape (from T-010 stage 2; manager decision)
+
+- `light_changed` and the snapshot's lights use one shape: `{dialamp: {state, intensity}, aura: {state, lines:
+  {<LINE>: percent}}, verified, records}` (ui-spec 4.4 names plus the readback fields). Drop the generic
+  `{state: {device: read}}` form.
