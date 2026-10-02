@@ -28,8 +28,8 @@ without the T-036b checks. Motion goes through the app, or by hand at the stand.
 | Close every app tab on the microscope PC | browser | a watched operation aborts 10 s later (D14) |
 | Hardware stop | Ti2 controller / joystick at the stand | always available; use it if the screen does not respond |
 
-On the microscope PC, Abort and Lights off work without a login (PLAN D13: loopback stops always work).
-A remote screen can only send Abort, and it needs a login.
+On the microscope PC, Abort and Lights off work without a login (PLAN 6 rule 12, the T-009b contract:
+loopback stops always work). A remote screen can only send Abort, and it needs a login (PLAN D13).
 
 Each move is checked against its readback. A move that reads back more than 0.25 um off in Z or 5 um
 off in XY (both tolerances *provisional*) stops the operation by itself. The record shows a `motion`
@@ -113,8 +113,8 @@ Use this until T-039 merges, or if `z_retract` is refused for a reason you canno
    nosepiece State 0 and `1-Plan Apo LmbdD20 4x`. The 2026-09-30 session ended on the **100x Oil** with
    ZDrive at 498 um; if the stand is still like that, clean the oil off the 100x after turning.
 
-The turn to 4x is always by hand for now: the app's objective change cannot do it on the stand yet (see
-"blocked" below).
+The turn to 4x is always by hand for now. Do not use the app's `objective_change` for it: the code would
+let it run, but it must not be used on the stand yet (2c, "Do not use the other operations instead").
 
 ### 2c. Small XY moves
 
@@ -122,7 +122,7 @@ The turn to 4x is always by hand for now: the app's objective change cannot do i
 
 | # | Move | Expected readback | Rule that applies |
 |---|---|---|---|
-| a | (Z is at 0 from 2a or 2b) | ZDrive 0.0 +- 0.25 | `goto_xy` retracts Z first for a large move; here it is already retracted |
+| a | (Z is at 0 from 2a or 2b) | ZDrive 0.0 +- 0.25 | Z already retracted, so no long-move rule can stop the moves below |
 | b | XY +100 in X from where it is | X +100 +- 5, Y unchanged | inside the XY box; short move |
 | c | XY -100 in X (back) | the start XY +- 5 | |
 | d | XY +100 in Y, then -100 in Y | the start XY +- 5 | |
@@ -136,24 +136,31 @@ What each move must show:
 Keep every move well inside the stage. The real stage limits are unknown (`StageLimits` all None), so
 the backend cannot catch a move past the travel.
 
-**Blocked until T-032 stage 2 merges.** `goto_xy` comes with T-032 stage 2 (sample map). Per the spec it
-retracts Z first when a move is large. Until it merges, no registered operation moves XY on request; do
-the XY moves above only after that, and only after 2a has passed once on the stand.
+**Blocked until T-032 stage 2 merges.** `goto_xy` comes with T-032 stage 2 (sample map). Per the T-032
+spec it retracts Z first when a move is large; verify that when it merges. Today `guards.XYAxis` refuses
+a long move with Z up; it does not retract.
 
-Why the existing operations cannot stand in:
-- `objective_change` retracts Z but always climbs back to 2800 afterwards.
-  On `mm-real` the runner refuses that climb in preflight until a bench clearance check exists (T-027b,
-  T-011b).
-- `scan_4x` is refused for the same reason.
+Until T-032 stage 2 merges, no registered operation moves XY on request. Do the XY moves above only after
+that, and only after 2a has passed once on the stand.
 
-Do not use `scripts/*` instead.
+Do not use the other operations instead:
+- **`objective_change`: do not run it on the stand**, including a turn to a dry lens without `escape`.
+  **The code does not stop it yet.** After the unlock it would run on `mm-real`, including the climb back
+  to 2800 µm. Its "clearance" callback is a software bounds check, not a sensor: it checks the Z window
+  and cap, the lens readback and abort. An enforcing card will follow, making `mm-real` refuse it until
+  the approach is measured. Until then this is a user rule.
+- `scan_4x` is refused on `mm-real` by the runner: it approaches with no clearance callback (T-011b
+  `approach_clearance`).
+- `scripts/*`: never (see the top of this runbook).
 
 Enforced by:
 - T-036, the lock;
 - T-032 stage 2: `goto_xy`;
 - T-027b: `approach` caps, and `is_bench`, which makes every non-mock backend count as the bench;
-- T-011b: the bench clearance check in the runner's preflight;
-- `guards.XYAxis`: box, long-move rule, readback.
+- T-011b: the bench clearance check in the runner's preflight (refuses `scan_4x`, not
+  `objective_change`);
+- `guards.XYAxis`: box, long-move rule, readback;
+- the "no `objective_change` on the stand" rule: this runbook only, until the enforcing card lands.
 
 ## Step 3. No 100x Oil approach yet
 
@@ -165,14 +172,21 @@ Do not raise Z under the 100x Oil (0 -> 2800 -> sample window) until two questio
 - **Q20**: how long an XY move may be on the 100x before Z must retract (the oil film), and `z_safe`. Today
   `Z_SAFE_UM` is 0 for every lens and the 100x long-move row is 156 um (*provisional*).
 
-What the screen shows if someone tries: the operation is refused in preflight on `mm-real`, because
-`approach` on the bench needs a clearance check.
+**The code does not stop all of this yet.** What it does stop, and what it does not:
+- Stopped: `approach` above 2800 µm under the 100x Oil. Its `FREE_WD_UM` (130 µm) does not cover the
+  window, so a higher approach target is refused (T-027b, T-029).
+- Not stopped: `objective_change` to the 100x still climbs 0 -> 2800 µm, the very move Q13 is about.
+  Its clearance callback is a software bounds check, not a sensor.
+- Not stopped: `focus_100x` sweeps inside the window with ordinary guarded moves, not `approach`, so
+  the runner's bench clearance check does not apply to it.
 
-Enforced by:
-- T-027b and T-029: `approach` refuses above 2800 unless `FREE_WD_UM` covers the window, and needs a
-  clearance check on the bench;
-- T-011b: the runner's `approach_clearance` preflight;
-- `guards.OBJECTIVE_LIMITS`.
+So this is a user rule: do not run `objective_change` to the 100x or `focus_100x` on the stand. An
+enforcing card will follow, making `mm-real` refuse both until Q13 and Q20 are answered.
+
+Enforced today by:
+- T-027b and T-029: the approach cap above 2800 µm;
+- `guards.OBJECTIVE_LIMITS` (*provisional*);
+- for the rest, this runbook.
 
 ## Step 4. No F5 objective change on the stand yet
 
@@ -186,9 +200,12 @@ What the screen shows: the objective change is refused in preflight with "the ba
 Y limit; refusing the step-out". `mm-real` reports no stage limits today, so this already holds. Keep it
 that way: do not enter guessed limits to get past it.
 
-Note: the step-out runs only for a change *to* an immersion lens (oil or water). A dry-to-dry turn
-(e.g. 100x Oil -> 4x) has no step-out, so the missing limits do not stop it. It still needs Z retracted,
-PFS off and Out of Range, and (step 2 note) a clearance check for the climb back.
+Note: by default the step-out runs only for a change *to* an immersion lens (oil or water). An explicit
+`escape: true` still forces one.
+
+A turn to a dry lens (e.g. 100x Oil -> 4x) has no step-out by default, so the missing limits do not stop
+it. It still needs Z retracted and PFS off and Out of Range. Step 2 says when `objective_change` may be
+used on the stand at all.
 
 Enforced by:
 - T-027 and T-029: the step-out as data, and the preflight Y-limit check;
