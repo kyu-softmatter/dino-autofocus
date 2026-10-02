@@ -104,3 +104,12 @@ def test_import_pulls_in_no_heavy_or_ui_packages():
             "'PySide6', 'PyQt6', 'anthropic', 'numpy') if m in sys.modules]; print(bad)")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]"
+
+
+def test_kinds_for_commands_and_questions_exist(tmp_path):
+    for kind in ("command_proposed", "command_confirmed", "command_executed", "command_rejected",
+                 "question_submitted", "assistant_message"):
+        assert AuditKind(kind)
+    row = AuditLog(tmp_path / "a.jsonl").append(AuditKind.QUESTION_SUBMITTED, "otto@example.test",
+                                               area="console", text="Is the 100x lens in?")
+    assert row["kind"] == "question_submitted" and row["area"] == "console"

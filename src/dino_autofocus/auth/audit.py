@@ -40,6 +40,8 @@ class AuditKind(StrEnum):
     COMMAND_CONFIRMED = "command_confirmed"
     COMMAND_EXECUTED = "command_executed"
     COMMAND_REJECTED = "command_rejected"
+    #: a question put to the assistant (console F1.1 submit or a prompt box; D16)
+    QUESTION_SUBMITTED = "question_submitted"
     ASSISTANT_MESSAGE = "assistant_message"
 
 
