@@ -282,21 +282,41 @@ name = "dino-autofocus"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
-    { name = "matplotlib" },
     { name = "numpy" },
-    { name = "pydantic" },
+    { name = "scipy" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "matplotlib" },
     { name = "pymmcore" },
     { name = "pymmcore-plus" },
     { name = "pyyaml" },
     { name = "scikit-image" },
     { name = "scikit-learn" },
-    { name = "scipy" },
     { name = "torch" },
     { name = "torchvision" },
+]
+hw = [
+    { name = "pymmcore" },
+    { name = "pymmcore-plus" },
+]
+ml = [
+    { name = "scikit-learn" },
+    { name = "torch" },
+    { name = "torchvision" },
+]
+plot = [
+    { name = "matplotlib" },
+]
+synth = [
+    { name = "pyyaml" },
+    { name = "scikit-image" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "dino-autofocus", extra = ["all"] },
     { name = "httpx2" },
     { name = "pytest" },
     { name = "ruff" },
@@ -306,6 +326,7 @@ server = [
     { name = "fastapi" },
     { name = "gsd" },
     { name = "pillow" },
+    { name = "pydantic" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 web = [
@@ -314,21 +335,23 @@ web = [
 
 [package.metadata]
 requires-dist = [
-    { name = "matplotlib", specifier = ">=3.6" },
+    { name = "dino-autofocus", extras = ["ml", "hw", "synth", "plot"], marker = "extra == 'all'" },
+    { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.6" },
     { name = "numpy", specifier = ">=2.0" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "pymmcore", specifier = "==12.5.0.75.0" },
-    { name = "pymmcore-plus", specifier = "==0.18.1" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "scikit-image", specifier = ">=0.20" },
-    { name = "scikit-learn", specifier = ">=1.4" },
+    { name = "pymmcore", marker = "extra == 'hw'", specifier = "==12.5.0.75.0" },
+    { name = "pymmcore-plus", marker = "extra == 'hw'", specifier = "==0.18.1" },
+    { name = "pyyaml", marker = "extra == 'synth'", specifier = ">=6.0" },
+    { name = "scikit-image", marker = "extra == 'synth'", specifier = ">=0.20" },
+    { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.4" },
     { name = "scipy", specifier = ">=1.10" },
-    { name = "torch", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cu126" },
-    { name = "torchvision", specifier = ">=0.21", index = "https://download.pytorch.org/whl/cu126" },
+    { name = "torch", marker = "extra == 'ml'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cu126" },
+    { name = "torchvision", marker = "extra == 'ml'", specifier = ">=0.21", index = "https://download.pytorch.org/whl/cu126" },
 ]
+provides-extras = ["ml", "hw", "synth", "plot", "all"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "dino-autofocus", extras = ["all"] },
     { name = "httpx2", specifier = ">=2.13" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },
@@ -338,6 +361,7 @@ server = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "gsd", specifier = ">=5.0" },
     { name = "pillow", specifier = ">=10" },
+    { name = "pydantic", specifier = ">=2.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 web = [{ name = "nodejs-wheel", specifier = ">=22,<23" }]

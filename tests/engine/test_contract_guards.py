@@ -13,6 +13,8 @@ from dino_autofocus.engine.guards import (
     SweepPlan,
     XYAxis,
     XYBox,
+    approach_ceiling_um,
+    bench_ascent_refusal,
     best_z_um,
     limits_for,
     registry_key,
@@ -287,7 +289,7 @@ def test_every_known_lens_label_has_a_table_row(label, key):
 def test_config_lens_names_map_to_table_rows():
     from pathlib import Path
 
-    import yaml
+    yaml = pytest.importorskip("yaml")  # the synth extra
 
     root = Path(__file__).resolve().parents[2] / "configs"
     names = [yaml.safe_load(p.read_text(encoding="utf-8"))["system"]["name"]
@@ -395,14 +397,70 @@ def _bench(fake):
     return fake
 
 
-def test_bench_approach_ships_locked_and_is_read_in_one_place():
+def test_bench_unlocked_keeps_the_per_lens_ceiling(fake):
+    """Partial unlock: on the bench only a lens whose free WD covers the window may go above
+    2800 (4x, 10x, 20x); 40x-WI, 60x-Oil, 100x-Oil and an unreadable lens stay at 2800 for
+    every upward move. Off the bench nothing changes."""
+    off = fake.info()
+    assert bench_ascent_refusal(off, "100x-Oil", 3200.0) is None
+    info = _bench(fake).info()
+    for key in ("4x", "10x", "20x"):
+        assert bench_ascent_refusal(info, key, 3200.0) is None
+    for key in ("40x-WI", "60x-Oil", "100x-Oil", None):
+        assert bench_ascent_refusal(info, key, 2800.0) is None
+        assert "partial unlock" in bench_ascent_refusal(info, key, 2800.5)
+    assert [approach_ceiling_um(k) for k in ("4x", "10x", "20x")] == [3200.0] * 3
+    assert [approach_ceiling_um(k) for k in ("40x-WI", "60x-Oil", "100x-Oil", None)] == [2800.0] * 4
+
+
+@pytest.mark.parametrize("how", ["sweep", "move_to"])
+def test_bench_unlocked_100x_cannot_sweep_or_move_above_2800(fake, how):
+    """The hole the T-029d lock used to cover: a sweep's first move climbs to its start in one
+    jump with no clearance check. Partial unlock refuses it before anything goes up."""
+    _bench(fake)
+    fake.state, fake.z = 5, 2800.0
+    a = FocusAxis(fake, OIL, allow_motion=True, sleep=lambda s: None)
+    before = len([c for c in fake.calls if c[0] == "move_z"])
+    with pytest.raises(GuardError, match="partial unlock"):
+        if how == "sweep":
+            a.sweep(a.plan(2985, 20, 5), fake.snap, score=lambda f: 0.0)
+        else:
+            a.move_to(2850, allow_ascent_um=60)
+    assert [c for c in fake.calls if c[0] == "move_z"][before:] == [] and fake.z == 2800.0
+
+
+def test_bench_unlocked_100x_fine_steps_under_the_tolerance_cannot_add_up(fake):
+    """0.2 um steps are under the 0.25 um readback tolerance; above 2800 each is still checked."""
+    _bench(fake)
+    fake.state, fake.z = 5, 2800.0
+    a = FocusAxis(fake, OIL, allow_motion=True, sleep=lambda s: None)
+    with pytest.raises(GuardError, match="partial unlock"):
+        a.sweep(a.plan(2800, 10, 0.2), fake.snap, score=lambda f: 0.0)
+    assert fake.z <= 2800.0
+
+
+def test_bench_unlocked_4x_climbs_above_2800(fake):
+    _bench(fake)
+    fake.state, fake.z = 0, 2800.0
+    assert axis(fake).approach(2850, clearance=lambda z: True) == 2850
+
+
+@pytest.fixture
+def approach_locked(monkeypatch):
+    """The T-029d lock as it shipped until 2026-10-02, so its refusals stay tested."""
+    from dino_autofocus.engine import guards
+    monkeypatch.setattr(guards, "BENCH_APPROACH", "UNMEASURED")
+
+
+def test_bench_approach_unlocked_by_the_user_and_read_in_one_place():
+    """Unlocked by the user on 2026-10-02; still one module-level line, one reader."""
     import ast
     from pathlib import Path
 
     from dino_autofocus.engine import guards
 
-    assert guards.BENCH_APPROACH == "UNMEASURED"
-    assert guards.bench_approach_state().startswith("LOCKED: ")
+    assert guards.BENCH_APPROACH == "MEASURED"
+    assert guards.bench_approach_state() == "MEASURED"
     root = Path(__file__).resolve().parents[2]
     hits = [p for d in ("src", "scripts") for p in (root / d).rglob("*.py")
             if "BENCH_APPROACH" in p.read_text(encoding="utf-8") and p.name != "guards.py"]
@@ -422,17 +480,17 @@ def test_bench_approach_ships_locked_and_is_read_in_one_place():
     assert "environ" not in src and "getenv" not in src and "settings" not in src
 
 
-def test_environment_and_config_do_not_unlock_it():
-    """A fresh interpreter with every plausible variable set still reads LOCKED."""
+def test_environment_and_config_do_not_change_it():
+    """A fresh interpreter with every plausible variable set reads the source line only."""
     import os
     import subprocess
     import sys
 
-    env = {**os.environ, "BENCH_APPROACH": "MEASURED", "DINO_BENCH_APPROACH": "MEASURED",
-           "DINO_AUTOFOCUS_BENCH_APPROACH": "MEASURED"}
+    env = {**os.environ, "BENCH_APPROACH": "UNMEASURED", "DINO_BENCH_APPROACH": "UNMEASURED",
+           "DINO_AUTOFOCUS_BENCH_APPROACH": "UNMEASURED"}
     code = ("from dino_autofocus.engine import guards; "
-            "assert guards.BENCH_APPROACH == 'UNMEASURED'; "
-            "assert guards.bench_approach_state().startswith('LOCKED')")
+            "assert guards.BENCH_APPROACH == 'MEASURED'; "
+            "assert guards.bench_approach_state() == 'MEASURED'")
     subprocess.run([sys.executable, "-c", code], check=True, env=env)
 
 
@@ -440,7 +498,7 @@ def test_environment_and_config_do_not_unlock_it():
     (0, "4x above 2800 (approach)"), (0, "4x above 2800 (move_to)"),
     (0, "4x sweep above 2800"), (5, "100x Oil up to 2800"), (5, "100x Oil sweep"),
     (2, "20x up to 2800"), ("unreadable", "unreadable lens up to 2800")])
-def test_bench_upward_moves_are_refused_before_any_move(fake, state, how):
+def test_bench_upward_moves_are_refused_before_any_move(fake, approach_locked, state, how):
     _bench(fake)
     if state == "unreadable":
         def broken():

@@ -30,18 +30,35 @@ Two mappings:
 
 from __future__ import annotations
 
+import importlib.util
 import math
+import os
+import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol
 
-from .classical import (
-    DROPOUT_TOLERANCE,
-    MAX_SATURATED_FRACTION,
-    FrameStats,
-    analyse_sweep,
-)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load(name: str, filename: str):
+    """A sibling file by path, the soft-matter-agents idiom (no package, no relative import).
+    A name already loaded is reused, so every importer shares one module object."""
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, os.path.join(_HERE, filename))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+_classical = _load("_mic_focus_classical", "focus_classical.py")
+DROPOUT_TOLERANCE = _classical.DROPOUT_TOLERANCE
+MAX_SATURATED_FRACTION = _classical.MAX_SATURATED_FRACTION
+FrameStats = _classical.FrameStats
+analyse_sweep = _classical.analyse_sweep
 
 #: Frames whose 99.9th percentile is less than this many ADU above their median hold no
 #: sample: 2026-09-30, a 30 ms 100x Vollath run read only the dark offset (~102 ADU) and
