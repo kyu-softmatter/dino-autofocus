@@ -112,3 +112,9 @@
   attaching the control grant to the engine Command, and reading the T-011 permission table.
 - Dependencies: `pillow` for JPEG. `httpx2` instead of `httpx`, only if it is the package Starlette's own docs
   name for TestClient. State the source and the package's maintainer in the review request.
+
+## Shared permissions endpoint (T-009b, from T-103)
+
+- `GET /api/permissions?ops=a,b,c` -> `{op: {allowed, reason}}`: engine `check()` (T-011) plus remote, role and
+  login state. Every screen uses it for pre-click disabled reasons (ui-spec 7.0). Area routers add only
+  area-specific items (e.g. `can_open_folder`). Feature gates stay in `/api/hardware/gates`.
