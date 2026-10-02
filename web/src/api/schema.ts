@@ -216,6 +216,238 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hardware/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Profile
+         * @description The last hardware profile, or `profile: null` before the first scan.
+         */
+        get: operations["profile_api_hardware_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hardware/gates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gates
+         * @description Every gate row: on/off, the reasons it is off, what it needs. `light_set` has one row
+         *     per mode (`light_set:brightfield`, `light_set:aura`, `light_set:off`).
+         */
+        get: operations["gates_api_hardware_gates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hardware/gates/{op}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Gate */
+        get: operations["gate_api_hardware_gates__op__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hardware/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status
+         * @description The last `status` result since the engine started, or null.
+         */
+        get: operations["status_api_hardware_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Map State */
+        get: operations["map_state_api_map__sample_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Results */
+        get: operations["results_api_map__sample_id__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}/results/{result_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Result */
+        get: operations["result_api_map__sample_id__results__result_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}/results/{result_id}/mosaic.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mosaic */
+        get: operations["mosaic_api_map__sample_id__results__result_id__mosaic_png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}/flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Flags */
+        get: operations["flags_api_map__sample_id__flags_get"];
+        put?: never;
+        /** Add Flag */
+        post: operations["add_flag_api_map__sample_id__flags_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Candidates */
+        get: operations["candidates_api_map__sample_id__candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}/flags/{flag_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire Flag */
+        post: operations["retire_flag_api_map__sample_id__flags__flag_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}/candidates/{candidate_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Candidate */
+        post: operations["confirm_candidate_api_map__sample_id__candidates__candidate_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/{sample_id}/candidates/{candidate_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Candidate */
+        post: operations["reject_candidate_api_map__sample_id__candidates__candidate_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/simulation/runs": {
         parameters: {
             query?: never;
@@ -397,6 +629,67 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** BoundaryPoint */
+        BoundaryPoint: {
+            /** X Um */
+            x_um: number;
+            /** Y Um */
+            y_um: number;
+            /** T */
+            t?: number | null;
+        };
+        /** Box */
+        Box: {
+            /** X0 */
+            x0: number;
+            /** X1 */
+            x1: number;
+            /** Y0 */
+            y0: number;
+            /** Y1 */
+            y1: number;
+        };
+        /** CameraInfo */
+        CameraInfo: {
+            /** Name */
+            name?: string | null;
+            /** Sensor */
+            sensor?: [
+                number,
+                number
+            ] | null;
+            /** Bit Depth */
+            bit_depth?: number | null;
+            /** Ceiling Adu */
+            ceiling_adu?: number | null;
+            /** Pixel Type */
+            pixel_type?: string | null;
+        };
+        /** Candidate */
+        Candidate: {
+            /** Candidate Id */
+            candidate_id: string;
+            /** X Um */
+            x_um: number;
+            /** Y Um */
+            y_um: number;
+            /** Source */
+            source: string;
+            /** Score */
+            score?: number | null;
+            /** Result Id */
+            result_id?: string | null;
+            /** Decides */
+            decides?: string | null;
+            /** T */
+            t: number | null;
+            /** By */
+            by?: string | null;
+            /** Decided At */
+            decided_at?: number | null;
+            /** History */
+            history?: components["schemas"]["HistoryEntry"][];
+        };
         /** CardOut */
         CardOut: {
             /** Name */
@@ -448,6 +741,15 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ConfirmedItem */
+        ConfirmedItem: {
+            /** Value */
+            value: string;
+            /** By */
+            by?: string | null;
+            /** At */
+            at?: string | null;
+        };
         /** CurveOut */
         CurveOut: {
             /** Path */
@@ -465,6 +767,32 @@ export interface components {
              */
             kind: "line" | "histogram";
         };
+        /** DecisionIn */
+        DecisionIn: {
+            /** Note */
+            note?: string | null;
+        };
+        /** DeviceRow */
+        DeviceRow: {
+            /** Label */
+            label: string;
+            /** Role */
+            role?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Library */
+            library?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Present */
+            present: boolean;
+            /** Read Back */
+            read_back?: boolean | null;
+            /** Write Verified */
+            write_verified?: boolean | null;
+            /** Note */
+            note?: string | null;
+        };
         /** DocumentOut */
         DocumentOut: {
             /** Name */
@@ -473,6 +801,57 @@ export interface components {
             version: number;
             /** Text */
             text: string;
+        };
+        /** Flag */
+        Flag: {
+            /** Flag Id */
+            flag_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** T */
+            t: number | null;
+            /** Objective */
+            objective?: string | null;
+            /** X Um */
+            x_um: number;
+            /** Y Um */
+            y_um: number;
+            /** Z Um */
+            z_um?: number | null;
+            /** Replaces */
+            replaces?: string | null;
+            /**
+             * Retired
+             * @default false
+             */
+            retired: boolean;
+            /** Retired At */
+            retired_at?: number | null;
+            /** Retired By */
+            retired_by?: string | null;
+            /** History */
+            history?: components["schemas"]["HistoryEntry"][];
+        };
+        /** FlagIn */
+        FlagIn: {
+            /** X Um */
+            x_um: number;
+            /** Y Um */
+            y_um: number;
+            /** Name */
+            name: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Replaces */
+            replaces?: string | null;
         };
         /**
          * FrameOut
@@ -502,10 +881,84 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** GateRequires */
+        GateRequires: {
+            /** Devices */
+            devices?: string[];
+            /** Objectives */
+            objectives?: string[];
+            /** Confirmed */
+            confirmed?: string[];
+            /** Checks */
+            checks?: string[];
+            /** Arg */
+            arg?: {
+                [key: string]: string;
+            } | null;
+        };
+        /** GateRow */
+        GateRow: {
+            /** Op */
+            op: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Reasons */
+            reasons?: string[];
+            requires?: components["schemas"]["GateRequires"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HardwareProfile
+         * @description T-028 `engine.gates.HardwareProfile`, reshaped for the screen.
+         */
+        HardwareProfile: {
+            /** Detected At */
+            detected_at: string;
+            /** Backend Kind */
+            backend_kind: string;
+            /** Host */
+            host?: string | null;
+            /** Bench */
+            bench?: boolean | null;
+            /** Objective */
+            objective?: string | null;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Devices */
+            devices?: components["schemas"]["DeviceRow"][];
+            /** Objectives */
+            objectives?: components["schemas"]["ObjectiveRow"][];
+            camera?: components["schemas"]["CameraInfo"] | null;
+            piezo?: components["schemas"]["PiezoInfo"] | null;
+            /** Human Confirmed */
+            human_confirmed?: {
+                [key: string]: components["schemas"]["ConfirmedItem"];
+            };
+            /** Notes */
+            notes?: {
+                [key: string]: string;
+            };
+            /** Errors */
+            errors?: {
+                [key: string]: string;
+            };
+        };
+        /** HardwareProfileOut */
+        HardwareProfileOut: {
+            profile: components["schemas"]["HardwareProfile"] | null;
+            /** Path */
+            path: string | null;
+            /** Sha256 */
+            sha256: string | null;
+            previous?: components["schemas"]["PreviousProfile"] | null;
+            /** Error */
+            error?: string | null;
         };
         /** HardwareState */
         HardwareState: {
@@ -542,6 +995,48 @@ export interface components {
             remote_view: boolean;
             /** Remote Abort */
             remote_abort: boolean;
+        };
+        /**
+         * HistoryEntry
+         * @description One step of a flag or candidate, from the fold (T-027c): who, when, what.
+         */
+        HistoryEntry: {
+            /** Kind */
+            kind: string;
+            /** By */
+            by?: string | null;
+            /** At */
+            at?: number | null;
+            /** Status */
+            status?: string | null;
+        };
+        /** HoleFit */
+        HoleFit: {
+            /** Centre Um */
+            centre_um: [
+                number,
+                number
+            ];
+            /** Diameter Mm */
+            diameter_mm: number;
+            /** Fit Rms Um */
+            fit_rms_um?: number | null;
+            /** N Points */
+            n_points?: number | null;
+            /** Arc Deg */
+            arc_deg?: number | null;
+            /** Fitted At */
+            fitted_at?: number | null;
+            /**
+             * Closed Loop
+             * @default false
+             */
+            closed_loop: boolean;
+            /**
+             * Loop Why
+             * @default
+             */
+            loop_why: string;
         };
         /** InboxMessageOut */
         InboxMessageOut: {
@@ -607,6 +1102,58 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** MapState */
+        MapState: {
+            /** Sample Id */
+            sample_id: string;
+            /** Boundary */
+            boundary: components["schemas"]["BoundaryPoint"][];
+            hole: components["schemas"]["HoleFit"] | null;
+            /** Expected Diameter Mm */
+            expected_diameter_mm: number | null;
+            /** Visits */
+            visits: components["schemas"]["Visit"][];
+            scan_box_um: components["schemas"]["Box"] | null;
+            allowed_box_um: components["schemas"]["Box"] | null;
+            /** Session Started At */
+            session_started_at: number | null;
+        };
+        /** MosaicExtent */
+        MosaicExtent: {
+            /** X0 */
+            x0: number;
+            /** X1 */
+            x1: number;
+            /** Y0 */
+            y0: number;
+            /** Y1 */
+            y1: number;
+            /** Um Per Px */
+            um_per_px: number;
+            /** Bin */
+            bin: number;
+        };
+        /** ObjectiveRow */
+        ObjectiveRow: {
+            /** Label */
+            label: string;
+            /** State */
+            state?: number | null;
+            /** Magnification */
+            magnification?: number | null;
+            /** Registry Key */
+            registry_key?: string | null;
+            /** Na */
+            na?: number | null;
+            /** Immersion */
+            immersion?: string | null;
+            /** Working Distance Um */
+            working_distance_um?: number | null;
+            /** Wd Source */
+            wd_source?: string | null;
+            /** Pixel Um */
+            pixel_um?: number | null;
+        };
         /** OpSummary */
         OpSummary: {
             /** Op Id */
@@ -664,6 +1211,17 @@ export interface components {
             /** Code */
             code?: string | null;
         };
+        /** PiezoInfo */
+        PiezoInfo: {
+            /** Port */
+            port?: string | null;
+            /** Connected */
+            connected?: boolean | null;
+            /** Z Um */
+            z_um?: number | null;
+            /** Error */
+            error?: string | null;
+        };
         /**
          * Positions
          * @description Stage readback in um; None where the read failed, with the reason in `errors`.
@@ -687,6 +1245,27 @@ export interface components {
             t?: number | null;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * PreviousProfile
+         * @description The latest version's diff against the one before (T-028 `ProfileStore.previous`).
+         */
+        PreviousProfile: {
+            /** Sha256 */
+            sha256?: string | null;
+            /** Detected At */
+            detected_at?: string | null;
+            /** Changed */
+            changed?: components["schemas"]["ProfileChange"][];
+        };
+        /** ProfileChange */
+        ProfileChange: {
+            /** Key */
+            key: string;
+            /** Before */
+            before?: unknown;
+            /** After */
+            after?: unknown;
         };
         /** ProgressOut */
         ProgressOut: {
@@ -808,6 +1387,55 @@ export interface components {
             code: string;
             /** Message */
             message: string;
+        };
+        /** ResultDetail */
+        ResultDetail: {
+            /** Result Id */
+            result_id: string;
+            /** Kind */
+            kind: string;
+            /** Started */
+            started: number | null;
+            /** Finished */
+            finished: number | null;
+            /** Light */
+            light: string | null;
+            /** N Tiles */
+            n_tiles: number;
+            /** Grid N */
+            grid_n: number;
+            /** Has Mosaic */
+            has_mosaic: boolean;
+            scan_box_um: components["schemas"]["Box"] | null;
+            allowed_box_um: components["schemas"]["Box"] | null;
+            /** Tiles */
+            tiles: components["schemas"]["Tile"][];
+            /** Fov Um */
+            fov_um: number | null;
+            /** Um Per Px */
+            um_per_px: number | null;
+            mosaic: components["schemas"]["MosaicExtent"] | null;
+        };
+        /** ResultSummary */
+        ResultSummary: {
+            /** Result Id */
+            result_id: string;
+            /** Kind */
+            kind: string;
+            /** Started */
+            started: number | null;
+            /** Finished */
+            finished: number | null;
+            /** Light */
+            light: string | null;
+            /** N Tiles */
+            n_tiles: number;
+            /** Grid N */
+            grid_n: number;
+            /** Has Mosaic */
+            has_mosaic: boolean;
+            scan_box_um: components["schemas"]["Box"] | null;
+            allowed_box_um: components["schemas"]["Box"] | null;
         };
         /** RunDetailOut */
         RunDetailOut: {
@@ -982,6 +1610,19 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** StatusResultOut */
+        StatusResultOut: {
+            /** Op Id */
+            op_id: string;
+            /** T */
+            t: number;
+            /** User Id */
+            user_id?: string | null;
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+        };
         /** StoreOut */
         StoreOut: {
             /**
@@ -991,6 +1632,35 @@ export interface components {
             store: string;
             /** Writable */
             writable: boolean;
+        };
+        /** Tile */
+        Tile: {
+            /** Name */
+            name: string;
+            /** Row */
+            row: number;
+            /** Col */
+            col: number;
+            /** X Um */
+            x_um: number;
+            /** Y Um */
+            y_um: number;
+            /** Z Focus Um */
+            z_focus_um: number | null;
+            /**
+             * Focus Note
+             * @default
+             */
+            focus_note: string;
+            /** Block Z Um */
+            block_z_um?: (number | null)[];
+            /**
+             * Blocks Per Side
+             * @default 6
+             */
+            blocks_per_side: number;
+            /** Dropout Z Um */
+            dropout_z_um?: number[];
         };
         /** ValidationError */
         ValidationError: {
@@ -1004,6 +1674,21 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** Visit */
+        Visit: {
+            /** X Um */
+            x_um: number;
+            /** Y Um */
+            y_um: number;
+            /** W Um */
+            w_um: number;
+            /** H Um */
+            h_um: number;
+            /** Verdict */
+            verdict?: string | null;
+            /** Source */
+            source?: string | null;
         };
         /** ZipEntryOut */
         ZipEntryOut: {
@@ -1652,6 +2337,1068 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    profile_api_hardware_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HardwareProfileOut"];
+                };
+            };
+        };
+    };
+    gates_api_hardware_gates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateRow"][];
+                };
+            };
+        };
+    };
+    gate_api_hardware_gates__op__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                op: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateRow"];
+                };
+            };
+            /** @description no gate for this operation */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_hardware_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResultOut"] | null;
+                };
+            };
+        };
+    };
+    map_state_api_map__sample_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MapState"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    results_api_map__sample_id__results_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultSummary"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    result_api_map__sample_id__results__result_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    mosaic_api_map__sample_id__results__result_id__mosaic_png_get: {
+        parameters: {
+            query?: {
+                max_px?: number;
+            };
+            header?: never;
+            path: {
+                sample_id: string;
+                result_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    flags_api_map__sample_id__flags_get: {
+        parameters: {
+            query?: {
+                include_retired?: boolean;
+            };
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Flag"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    add_flag_api_map__sample_id__flags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlagIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    candidates_api_map__sample_id__candidates_get: {
+        parameters: {
+            query?: {
+                include_rejected?: boolean;
+            };
+            header?: never;
+            path: {
+                sample_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Candidate"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    retire_flag_api_map__sample_id__flags__flag_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+                flag_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    confirm_candidate_api_map__sample_id__candidates__candidate_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DecisionIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    reject_candidate_api_map__sample_id__candidates__candidate_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: string;
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DecisionIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandAccepted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
             };
         };
     };
