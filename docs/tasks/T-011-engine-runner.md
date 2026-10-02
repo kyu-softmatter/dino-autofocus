@@ -165,3 +165,8 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - Session and sample rule (manager decision, answers 실행1): one sample per experiment session (T-019 as
   written). `sample_open` and `sample_new` run with no session open (they pick the sample for the next
   session; nothing moves); with a session open they refuse unless the sample is the session's own.
+
+## Frame hand-over to the server (from T-009)
+
+- Optional `FrameSource.latest_frame() -> (uint16 ndarray, meta) | None`, read by the server on `frame_ready`.
+  The engine keeps only the newest frame for it. `EngineAPI.shutdown(reason)` is blocking (lights off first).

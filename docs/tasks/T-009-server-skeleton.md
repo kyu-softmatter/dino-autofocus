@@ -103,3 +103,12 @@
 - A cookie check on `/ws/*` and every other `/api/*` router. Abort and the stop path stay open (D13/D2).
 - The control token never reaches the browser. The server attaches the operator's grant to the engine
   Command, and the browser sees only `has_control`.
+
+## Split (manager, 2026-10-01): T-009 now, T-009b after T-011 and T-018
+
+- T-009 (review now): everything independent of unmerged work, plus AgentStoreDep, IsLocal, the auth POST
+  exemptions and the D16 refusal on `/api/commands`.
+- T-009b (same branch or `exec7/T-009b`, after T-011 and T-018 merge): cookie check on `/ws/*` and `/api/*`,
+  attaching the control grant to the engine Command, and reading the T-011 permission table.
+- Dependencies: `pillow` for JPEG. `httpx2` instead of `httpx`, only if it is the package Starlette's own docs
+  name for TestClient. State the source and the package's maintainer in the review request.
