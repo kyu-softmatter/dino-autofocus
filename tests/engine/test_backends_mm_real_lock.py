@@ -23,7 +23,7 @@ from dino_autofocus.engine.backend import GUARD_TOKEN, PfsState
 from dino_autofocus.engine.backends import mm_real
 from dino_autofocus.engine.backends.mm_real import BenchMotionLocked, MmRealBackend
 from dino_autofocus.engine.backends.mock import MockBackend
-from dino_autofocus.engine.guards import FocusAxis, XYAxis, XYBox, rotate_nosepiece
+from dino_autofocus.engine.guards import FocusAxis, GuardError, XYAxis, XYBox, rotate_nosepiece
 
 T = GUARD_TOKEN
 ROOT = Path(__file__).resolve().parents[2]
@@ -103,10 +103,14 @@ def test_guard_paths_reach_the_lock(real):
     z = real.positions().z_um
     axis = FocusAxis(real, "4x", allow_motion=True, sleep=lambda s: None,
                      window=(z - 50.0, z + 50.0))
+    # upward paths: the T-029d bench-approach refusal in guards stops them first (an earlier,
+    # independent layer); the down move and the nosepiece turn reach the T-036 lock
     for call in (lambda: axis.move_to(z + 1.0, allow_ascent_um=2.0),
-                 lambda: axis.park_at(z),
                  lambda: axis.sweep(axis.plan(z + 10.0, 5.0, 5.0), real.snap),
-                 lambda: axis.approach(z + 20.0, clearance=lambda read: True),
+                 lambda: axis.approach(z + 20.0, clearance=lambda read: True)):
+        with pytest.raises((GuardError, BenchMotionLocked), match="T-029d|T-027, T-011"):
+            call()
+    for call in (lambda: axis.park_at(z),
                  lambda: rotate_nosepiece(real, axis, 1)):
         with pytest.raises(BenchMotionLocked):
             call()
