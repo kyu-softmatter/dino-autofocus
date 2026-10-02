@@ -6,7 +6,7 @@
 // /runs/{run_id}/series); the plotted numbers are the result cards' and run records' own.
 // Dataset, theory and target conventions: extract.ts.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { components } from "../../api/schema";
 import { useClient } from "../../app/client";
@@ -281,16 +281,7 @@ export function Explorer({ datasets }: { datasets: Dataset[] }) {
             {ds.columns.map((c) => <option key={c.name} value={c.name}>{label(c)}</option>)}
           </select>
         </label>
-        <fieldset>
-          <legend>Y axis</legend>
-          {ds.columns.filter((c) => c.name !== xCol.name).map((c) => (
-            <label key={c.name}>
-              <input type="checkbox" checked={ys.includes(c.name)}
-                onChange={(e) => setYs(e.target.checked ? [...ys, c.name] : ys.filter((n) => n !== c.name))} />
-              {label(c)}
-            </label>
-          ))}
-        </fieldset>
+        <YPicker columns={ds.columns.filter((c) => c.name !== xCol.name)} ys={ys} setYs={setYs} />
         <label><input type="checkbox" checked={withTheory} onChange={(e) => setWithTheory(e.target.checked)} /> theory (dashed)</label>
         <label><input type="checkbox" checked={logX} onChange={(e) => setLogX(e.target.checked)} /> log x</label>
         <label><input type="checkbox" checked={logY} onChange={(e) => setLogY(e.target.checked)} /> log y</label>
@@ -300,5 +291,40 @@ export function Explorer({ datasets }: { datasets: Dataset[] }) {
           title={`${ys.join(", ")} vs ${xCol.name}`} />
       )}
     </section>
+  );
+}
+
+/** The Y axis as a drop-down: a button naming the picked columns, opening a checklist (several may be picked). */
+function YPicker({ columns, ys, setYs }: { columns: Column[]; ys: string[]; setYs: (ys: string[]) => void }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (e: Event) => {
+      const el = ref.current;
+      if (!el?.open) return;
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !el.contains(e.target as Node)) el.open = false;
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
+  const picked = ys.filter((n) => columns.some((c) => c.name === n)); // pick order, as in the plot title and colours
+  return (
+    <details className="res-ypick" ref={ref}>
+      <summary aria-label="Y axis">
+        Y axis <span className="res-ypick-btn">{picked.length ? picked.join(", ") : "none"}</span>
+      </summary>
+      <div className="res-ypick-menu" role="group" aria-label="Y columns">
+        {columns.map((c) => (
+          <label key={c.name}>
+            <input type="checkbox" checked={ys.includes(c.name)}
+              onChange={(e) => setYs(e.target.checked ? [...ys, c.name] : ys.filter((n) => n !== c.name))} />
+            {label(c)}
+          </label>
+        ))}
+      </div>
+    </details>
   );
 }
