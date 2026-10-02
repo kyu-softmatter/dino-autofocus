@@ -107,7 +107,8 @@ their own sockets:
 | Hook | What |
 |---|---|
 | `useClient().get(path)` | `GET` JSON from the server |
-| `useClient().command(cmd)` | `POST /api/commands` (types from `src/api/schema.ts`), returns the `op_id` |
+| `useClient().command(cmd)` | engine commands: `POST /api/commands` (types from `src/api/schema.ts`), returns the `op_id` |
+| `useClient().post(path, body?)` | an area's own routes (console submit, map writes, sessions, sample "Open folder", auth). Returns the JSON reply, `null` for 204. Same 403 / 401 / 423 handling as `command` |
 | `useEngineEvents(handler, kinds?)` | engine events from the shared `/ws/events` socket. Pass a stable `handler` (`useCallback`) |
 | `useEventsConnected()` | whether that socket is open. Re-read your state when it turns true again: events in a gap are lost |
 | `useReadOnly()` | `{readOnly, why}`. Disable command buttons when true |
