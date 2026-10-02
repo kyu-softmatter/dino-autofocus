@@ -5,6 +5,8 @@ import sys
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from dino_autofocus.agents import MockStore
+from dino_autofocus.server import create_app
 from dino_autofocus.server.api import include_area_routers
 
 
@@ -65,24 +67,35 @@ def test_commands_refused_from_foreign_pages(engine, make_client):
     assert len(engine.commands) == 2
 
 
-def test_area_router_discovery(tmp_path, monkeypatch, engine):
+def test_area_router_discovery(tmp_path, monkeypatch, engine, agent_store):
     pkg = tmp_path / "fake_areas"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("")
     (pkg / "_private.py").write_text("raise RuntimeError('must be skipped')\n")
     (pkg / "demo.py").write_text(
         "from fastapi import APIRouter\n"
-        "from dino_autofocus.server.api import Engine\n"
+        "from dino_autofocus.server.api import AgentStoreDep, Engine, IsLocal, LocalOnly\n"
         "router = APIRouter()\n"
         "@router.get('/ping')\n"
-        "def ping(eng: Engine) -> dict:\n"
-        "    return {'pong': eng.snapshot()['running']}\n"
+        "def ping(eng: Engine, store: AgentStoreDep, local: IsLocal) -> dict:\n"
+        "    return {'pong': eng.snapshot()['running'], 'local': local,\n"
+        "            'store': type(store).__name__}\n"
+        "@router.put('/note', dependencies=[LocalOnly])\n"
+        "def note() -> dict:\n"
+        "    return {'ok': True}\n"
     )
     monkeypatch.syspath_prepend(str(tmp_path))
     app = FastAPI()
     app.state.engine = engine
+    app.state.agent_store = agent_store
     assert include_area_routers(app, "fake_areas") == ["demo"]
-    assert TestClient(app).get("/api/demo/ping").json() == {"pong": None}
+    local = TestClient(app, client=("127.0.0.1", 1))
+    assert local.get("/api/demo/ping").json() == {"pong": None, "local": True,
+                                                  "store": "MockStore"}
+    assert local.put("/api/demo/note").json() == {"ok": True}
+    remote = TestClient(app, client=("10.0.0.5", 1))
+    assert remote.get("/api/demo/ping").json()["local"] is False
+    assert remote.put("/api/demo/note").status_code == 403
 
     (pkg / "broken.py").write_text("x = 1\n")
     sys.modules.pop("fake_areas", None)
@@ -96,3 +109,8 @@ def test_area_router_discovery(tmp_path, monkeypatch, engine):
 
 def test_no_area_routers_yet():
     assert include_area_routers(FastAPI()) == []
+
+
+def test_agent_store_on_app_state(engine, make_client, agent_store):
+    assert make_client(engine).app.state.agent_store is agent_store
+    assert isinstance(create_app(engine).state.agent_store, MockStore)  # the dev default

@@ -1,7 +1,7 @@
 """The FastAPI app: the only owner of the engine. It turns requests into engine commands and
 engine events into WebSocket messages, and decides nothing itself.
 
-Access scope (PLAN.md 5, D13):
+Access scope (PLAN.md 5, D13, D16; the rules live in `server/api/__init__.py`):
 - The server listens on 127.0.0.1 only; `remote_view` opens it to other PCs for viewing.
 - The Host header must be in an allow-list (loopback names, plus this PC's names and
   addresses under remote view), so a page that rebinds its own domain to 127.0.0.1 is refused.
@@ -10,29 +10,30 @@ Access scope (PLAN.md 5, D13):
   from a page served by this server or a loopback dev server (or a non-browser client), so a
   web page open in another tab cannot drive the stage.
 - D13: a remote viewer may send `abort` and nothing else (`remote_abort`, default on).
+- Exception: the five login routes `POST /api/auth/{login, logout, unlock, activity, signup}`
+  are open to remote viewers (they must log in); none of them reaches the engine.
+- D16: map writes are refused on `/api/commands`; they go through `/api/map`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import ipaddress
 import logging
 import threading
 from collections.abc import AsyncIterator, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic.json_schema import models_json_schema
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.requests import HTTPConnection
 
+from ..agents import AgentStore, MockStore
 from . import static, ws
-from .api import Engine, include_area_routers
+from .api import Engine, command_refusal, include_area_routers, origin_refusal
 from .schemas import (
     WS_MODELS,
     ApiError,
@@ -49,34 +50,10 @@ log = logging.getLogger(__name__)
 READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 COMMANDS_PATH = "/api/commands"  # checked in the endpoint, which knows the command kind
-
-
-def _is_loopback(host: str | None) -> bool:
-    if not host:
-        return False
-    if host.lower() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host.strip("[]")).is_loopback
-    except ValueError:
-        return False
-
-
-def command_refusal(conn: HTTPConnection, kind: str | None = None) -> str | None:
-    """Why this connection may not send a command of `kind`, or None if it may. `kind=None`
-    means "some write whose kind is unknown" and gets no D13 exception."""
-    client = conn.client.host if conn.client else None
-    remote_ok = kind == "abort" and getattr(conn.app.state, "remote_abort", False)
-    if not remote_ok and not _is_loopback(client):
-        allowed = "abort only" if getattr(conn.app.state, "remote_abort", False) else "nothing"
-        return (f"commands are accepted only on the microscope PC (request from {client}; "
-                f"remote viewers may send {allowed})")
-    origin = conn.headers.get("origin")
-    if origin is not None:
-        o = urlsplit(origin)
-        if o.netloc != conn.headers.get("host", "") and not _is_loopback(o.hostname):
-            return f"commands are not accepted from pages served by {origin}"
-    return None
+# remote viewers must be able to log in (PLAN.md 5); T-018 adds the routes in server/api/auth.py
+AUTH_OPEN_PATHS = frozenset(
+    f"/api/auth/{name}" for name in ("login", "logout", "unlock", "activity", "signup")
+)
 
 
 class EngineStopper:
@@ -121,14 +98,16 @@ def _package_version() -> str:
 def create_app(
     engine: EngineAPI,
     *,
+    agent_store: AgentStore | None = None,
     remote_view: bool = False,
     remote_abort: bool = True,
     allowed_hosts: Sequence[str] = (),
     engine_name: str = "unknown",
     web_dist: Path | None = None,
 ) -> FastAPI:
-    """`allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
-    launcher passes this PC's host names and addresses."""
+    """`agent_store` defaults to a `MockStore` (dev). `allowed_hosts` adds Host header names
+    beyond the loopback ones; under remote view the launcher passes this PC's host names and
+    addresses."""
     stopper = EngineStopper(engine)
 
     @contextlib.asynccontextmanager
@@ -138,6 +117,7 @@ def create_app(
 
     app = FastAPI(title="dino-autofocus", version=_package_version(), lifespan=lifespan)
     app.state.engine = engine
+    app.state.agent_store = agent_store if agent_store is not None else MockStore()
     app.state.remote_view = remote_view
     app.state.remote_abort = remote_abort
     app.state.stop_engine = stopper
@@ -145,8 +125,9 @@ def create_app(
 
     @app.middleware("http")
     async def writes_from_this_pc_only(request: Request, call_next):
-        if request.method not in READ_METHODS and request.url.path != COMMANDS_PATH:
-            why = command_refusal(request)
+        path = request.url.path
+        if request.method not in READ_METHODS and path != COMMANDS_PATH:
+            why = origin_refusal(request) if path in AUTH_OPEN_PATHS else command_refusal(request)
             if why is not None:
                 return JSONResponse({"detail": why}, status_code=403)
         return await call_next(request)
@@ -172,7 +153,7 @@ def create_app(
     )
     def commands(cmd: CommandIn, request: Request, eng: Engine) -> CommandAccepted:
         """Hand a command to the engine. Whether it runs is reported by events."""
-        why = command_refusal(request, cmd.kind)
+        why = command_refusal(request, cmd.kind, cmd.op)
         if why is not None:
             raise HTTPException(status_code=403, detail=why)
         if stopper.done:

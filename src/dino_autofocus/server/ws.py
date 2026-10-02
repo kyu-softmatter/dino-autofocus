@@ -43,7 +43,7 @@ EVENT_QUEUE_MAX = 1000  # a client this far behind is closed (1013) and should r
 CLOSE_TRY_AGAIN = 1013
 CLOSE_UNSUPPORTED = 1003
 
-Refuse = Callable[[HTTPConnection, str | None], str | None]  # (connection, kind) -> why not
+Refuse = Callable[[HTTPConnection, str | None, str], str | None]  # (conn, kind, op) -> why not
 
 
 def install(
@@ -90,7 +90,7 @@ def install(
                 msg = WsCommand.model_validate_json(text)
             except ValidationError as e:
                 return WsError(status=422, detail=str(e))
-            why = refuse(conn, msg.command.kind)
+            why = refuse(conn, msg.command.kind, msg.command.op)
             if why is not None:
                 return WsError(status=403, detail=why)
             if stopped():

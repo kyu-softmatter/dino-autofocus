@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from dino_autofocus.agents import MockStore
 from dino_autofocus.server import create_app
 from dino_autofocus.server.schemas import Command, Event
 
@@ -78,12 +79,19 @@ class LoopbackClient(TestClient):
         return super().websocket_connect(url, *args, **kwargs)
 
 
+@pytest.fixture(scope="session")
+def agent_store(tmp_path_factory):
+    """One MockStore for the whole run: building one takes a fraction of a second."""
+    return MockStore(tmp_path_factory.mktemp("agent-store"))
+
+
 @pytest.fixture
-def make_client(tmp_path):
+def make_client(tmp_path, agent_store):
     """`make_client(engine, remote=False, **create_app_kwargs)`; no web build unless given."""
 
     def make(engine: Any, *, remote: bool = False, **kw) -> TestClient:
         kw.setdefault("web_dist", tmp_path / "no-web-dist")
+        kw.setdefault("agent_store", agent_store)
         app = create_app(engine, engine_name="fake", **kw)
         return LoopbackClient(app, base_url="http://127.0.0.1:8765",
                               client=REMOTE if remote else LOCAL)

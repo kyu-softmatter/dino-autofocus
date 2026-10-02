@@ -4,7 +4,8 @@ Importing this package pulls in no torch, pymmcore or UI toolkit (tests/server c
 Run with `uv run python -m dino_autofocus.server`.
 """
 
-from .app import command_refusal, create_app
+from .api import command_refusal
+from .app import create_app
 from .schemas import EngineAPI, FrameSource
 
 __all__ = ["EngineAPI", "FrameSource", "command_refusal", "create_app"]
