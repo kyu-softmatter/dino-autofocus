@@ -32,7 +32,7 @@ Light state has no endpoint of its own. It comes from `/api/state` when the scre
 
 | Button (ui-spec 7.2) | Body | Who may send it |
 |---|---|---|
-| `"Scan hardware"` | `{"kind": "start", "op": "hardware_scan", "args": {"include_properties": true, "piezo_port": "COM4"}}` | Local operator with control. No experiment session needed (nothing moves, nothing turns on) |
+| `"Scan hardware"` | `{"kind": "start", "op": "hardware_scan", "args": {"include_properties": true, "piezo_port": ""}}` (`""` skips the piezo; G10) | Local operator with control. No experiment session needed (nothing moves, nothing turns on) |
 | Save human-confirmed items | `{"kind": "start", "op": "hardware_confirm", "args": {"items": {"<item>": "<value>"}}}` | Same as scan. The engine stamps `by` (user id) and `at` |
 | `"Show objective / Z / PFS"` | `{"kind": "start", "op": "status"}` | Local operator with control. No session (read only) |
 | `"Brightfield on"` | `{"kind": "start", "op": "light_set", "args": {"mode": "brightfield"}}` | Local operator, control **and** an open experiment session (D15, like motion) |
@@ -99,9 +99,11 @@ The screen never works them out itself.
 - **G9** "Diff against the previous profile" needs profile history. Proposal: keep each
   `hardware_scan_<stamp>/summary.json` (ops-spec 5) and have the engine report the previous profile's
   sha256 and changed keys. Until then the panel shows `"no previous profile"`.
-- **G10** `hardware_scan` opens the piezo port by default (`COM4`). Whether opening it alone changes the
-  controller is still unconfirmed (ops-spec Q19). The scan form exposes `piezo_port` and allows `""` to
-  skip the piezo.
+- **G10** ops-spec 5 defaults `piezo_port` to `COM4`, and whether opening the port alone changes the
+  controller is still unconfirmed (Q19). Answer (업무분배보조): the scan form and the tests default to
+  `piezo_port: ""` (skip the piezo), and tests never touch COM ports.
+- **G8 interim** (업무분배보조): treat `lights_off` like `abort`: anyone locally; a remote client gets
+  whatever T-009 does for remote `abort` (D13).
 
 ## 6. Stage B plan (after T-009 and T-010 skeletons merge)
 
