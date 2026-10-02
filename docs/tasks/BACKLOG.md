@@ -149,3 +149,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - Microscope PC (T-029d): the bench ascent check reads `info()` and `nosepiece()` on every upward Z step (two core
   reads per step, uncached on purpose so a lens change is never missed). Measure the per-step latency on the stand
   before the BENCH_APPROACH flip.
+- T-036 unlock (2026-10-02): every code prerequisite is on main (b1d5a1d). The flip of `BENCH_MOTION` was refused by
+  실행12's own permission check, so it is the user's: approve it in 실행12's window or make the one-line edit. Director
+  recommends holding it until the user is at the microscope PC for runbook step 1. `exec12/T-036-unlock` is parked
+  at ebfff88; no other seat makes the edit.
