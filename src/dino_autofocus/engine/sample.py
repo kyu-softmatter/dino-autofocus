@@ -127,7 +127,10 @@ FULL_LOOP_STOP = "full loop"  # edge_trace: "back where the edge was first seen:
 
 def hole_loop(hole: dict[str, Any] | None) -> dict[str, Any]:
     """{closed, why, fitted_at, trace_stop, arc_deg} for a hole fit, next to fitted_at, so
-    the re-trace rule and scan_4x can tell a partial arc from a full fit."""
+    the re-trace rule and scan_4x can tell a partial arc from a full fit.
+
+    edge_trace's boolean `closed_loop` flag decides when the fit has it; the trace_stop
+    text and FULL_LOOP_ARC_DEG are kept only for older fits without the flag."""
     if not hole:
         return {"closed": False, "why": "no hole fit", "fitted_at": None, "trace_stop": None,
                 "arc_deg": None}
@@ -136,7 +139,11 @@ def hole_loop(hole: dict[str, Any] | None) -> dict[str, Any]:
         arc_f = None if arc is None else float(arc)
     except (TypeError, ValueError):
         arc_f = None
-    if stop is not None and FULL_LOOP_STOP in str(stop):
+    flag = hole.get("closed_loop")  # edge_trace's own flag (T-032)
+    if isinstance(flag, bool):
+        closed = flag
+        why = "edge_trace: closed loop" if flag else f"edge_trace: partial trace ({stop})"
+    elif stop is not None and FULL_LOOP_STOP in str(stop):
         closed, why = True, f"trace stopped on a full loop ({stop})"
     elif stop is not None:
         closed, why = False, f"partial trace: {stop}"
