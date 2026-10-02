@@ -69,9 +69,11 @@ def test_commands_refused_from_foreign_pages(engine, make_client):
     assert evil.status_code == 403
     same = c.post("/api/commands", json=body, headers={"origin": "http://127.0.0.1:8765"})
     assert same.status_code == 200
-    # the Vite dev server on this PC proxies to the API from another port
-    dev = c.post("/api/commands", json=body, headers={"origin": "http://localhost:5173"})
-    assert dev.status_code == 200
+    # the Vite dev server on this PC: refused unless named with --dev-origin (T-009c)
+    dev = {"origin": "http://localhost:5173"}
+    assert c.post("/api/commands", json=body, headers=dev).status_code == 403
+    listed = make_client(engine, dev_origins=["http://localhost:5173"])
+    assert listed.post("/api/commands", json=body, headers=dev).status_code == 200
     assert len(engine.commands) == 2
 
 
@@ -121,7 +123,9 @@ def test_area_router_discovery(tmp_path, monkeypatch, engine, agent_store, seat,
 def assert_mounted(app: FastAPI, name: str, router: APIRouter) -> int:
     """Every HTTP route of `router` is served at /api/<name>/... Read from the app's OpenAPI
     paths, not `app.routes`: with FastAPI 0.142 / Starlette 1.7 an included router is one
-    `_IncludedRouter` entry without a path there. Returns how many routes were checked."""
+    `_IncludedRouter` entry without a path there. Returns how many routes were checked.
+    WebSocket routes are not in the OpenAPI paths: an area that adds one needs this check to
+    walk `_IncludedRouter.original_router` as well (none does today)."""
     paths = app.openapi()["paths"]
     checked = 0
     for route in router.routes:

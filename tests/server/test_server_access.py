@@ -81,16 +81,26 @@ def test_map_writes_only_through_map_router(op, engine, make_client):
     assert engine.commands == []
 
 
+def refusal_code(r) -> str | None:
+    return r.headers.get("X-DinoAF-Refusal")
+
+
 def test_login_routes_open_to_remote_viewers(engine, make_client):
-    """Exactly the six login routes skip the loopback rule (they 404 until T-018 adds them);
-    any other write under /api/auth stays local only, and foreign pages are still refused."""
+    """Exactly the six login routes skip the loopback rule: a logged-in remote viewer posting
+    from this server's own page is not refused there at all (no 401 / 403, no refusal mark).
+    What the route then answers is T-105's (404 before its router, 422 for an empty body), so
+    it is not asserted. Any other write under /api/auth stays local only, and foreign pages
+    are still refused."""
     c = make_client(engine, remote=True, remote_view=True)
+    own = {"origin": f"http://{c.base_url.netloc.decode()}"}
     for name in ("login", "logout", "lock", "unlock", "activity", "signup"):
-        assert c.post(f"/api/auth/{name}", json={}).status_code == 404
-    assert c.post("/api/auth/users", json={}).status_code == 403
-    assert c.post("/api/auth/login/extra", json={}).status_code == 403
+        r = c.post(f"/api/auth/{name}", json={}, headers=own)
+        assert r.status_code not in (401, 403) and refusal_code(r) is None, (name, r.status_code)
+    for path in ("/api/auth/users", "/api/auth/login/extra"):
+        r = c.post(path, json={})
+        assert (r.status_code, refusal_code(r)) == (403, "remote_view"), path
     foreign = c.post("/api/auth/login", json={}, headers={"origin": "https://example.com"})
-    assert foreign.status_code == 403
+    assert (foreign.status_code, refusal_code(foreign)) == (403, "foreign_origin")
 
 
 # a plausible forged value per stamped field; the test fails if SERVER_STAMPED gains a field

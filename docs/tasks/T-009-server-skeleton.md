@@ -238,3 +238,9 @@
   `Runner(..., hardware=hw)`; the assistant's tool `gates=` uses `hw.check`. The profile store lives in the
   microscope's own records folder, not per session (manager decision, from 실행17). Test that hardware_scan and
   hardware_confirm are registered and that a gated op is refused through the server.
+
+## T-009h (AF 실행7, small, blocks T-105; review AF 검토보조3)
+
+- `test_server_access.py::test_login_routes_open_to_remote_viewers` (T-009f item 2) posts logout first, so lock,
+  unlock and activity then run without a login and get 401 from T-105's router. Put logout last (or log in again
+  after it), keeping the assertion "a remote viewer is not refused on these routes". tests/server only.

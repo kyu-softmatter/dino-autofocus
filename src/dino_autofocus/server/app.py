@@ -12,8 +12,10 @@ Access scope (PLAN.md 5, D13, D16; the rules live in `server/api/__init__.py`):
   launcher has no login), and the stops `abort` / `lights_off` from the microscope PC.
 - A write (any method other than GET/HEAD/OPTIONS, and command messages on `/ws/events`) is
   accepted only from the microscope PC itself, and only from a page served by this server or
-  a loopback dev server (or a non-browser client), so a page in another tab cannot drive the
-  stage. D13: a logged-in remote viewer may send `abort` and nothing else (`remote_abort`).
+  a dev server named with `dev_origins` (or a non-browser client), so a page in another tab,
+  even one on another loopback port that carries the login cookie, cannot drive the stage.
+  WebSocket handshakes get the same origin check.
+- D13: a logged-in remote viewer may send `abort` and nothing else (`remote_abort`).
 - D16: map writes are refused on `/api/commands`; they go through `/api/map`.
 - The server stamps every engine Command with who sent it, from where and with which control
   grant (T-018); the browser never sees the grant.
@@ -55,6 +57,7 @@ from .api import (
     is_local,
     logged_in_refusal,
     login_state,
+    normalize_origin,
     origin_refusal,
     own_origin_refusal,
     remote_view,
@@ -204,6 +207,41 @@ def install_sample_seat(engine: EngineAPI, records: Any, samples_root: Path | No
     sample_ops.install_sample_seat(engine, seat)
 
 
+INTERRUPTED_NOTE = "interrupted: server restart"
+COMMITTER_STOP_S = 30.0
+
+
+def close_interrupted_sessions(records: Any, committer: Any = None) -> list[str]:
+    """Close every experiment session a crash left `open` (manager decision, T-009e). None is
+    handed to the engine: the operator carries on with `continue_from` (T-106 "Continue"), so
+    a restarted server never resumes motion context on its own. Returns the closed ids."""
+    from ..records import ExperimentSession
+
+    closed = []
+    for info in records.list_sessions():
+        if info.get("status") != "open":
+            continue
+        sid = info["session_id"]
+        try:
+            ExperimentSession.load(records, sid, committer=committer).close(note=INTERRUPTED_NOTE)
+        except Exception:
+            log.exception("could not close interrupted session %s", sid)
+            continue
+        log.warning("closed experiment session %s left open by the last run", sid)
+        closed.append(sid)
+    return closed
+
+
+def stop_committer(committer: Any, timeout_s: float = COMMITTER_STOP_S) -> None:
+    """Let queued record commits finish, then end the worker. Never raises."""
+    try:
+        if not committer.flush(timeout_s):
+            log.warning("record commits still queued after %.0f s at shutdown", timeout_s)
+        committer.stop(timeout_s)
+    except Exception:
+        log.exception("stopping the records auto-committer failed")
+
+
 def _package_version() -> str:
     try:
         return version("dino-autofocus")
@@ -217,11 +255,13 @@ def create_app(
     agent_store: AgentStore | None = None,
     auth: AuthSeat | None = None,
     records: Any = None,
+    committer: Any = None,
     hardware: Any = None,
     samples_root: Path | None = None,
     remote_view: bool = False,
     remote_abort: bool = True,
     allowed_hosts: Sequence[str] = (),
+    dev_origins: Sequence[str] = (),
     engine_name: str = "unknown",
     web_dist: Path | None = None,
 ) -> FastAPI:
@@ -229,28 +269,42 @@ def create_app(
     in a temporary folder (nobody can log in; the launcher passes `AuthSeat.from_config()`).
     `records` (a T-019 RecordsStore) installs the engine's sample seat (T-027): the sample
     operations write through the server's one open ExperimentSession (`app.state.sessions`,
-    set by the sessions router). Without it the sample operations refuse.
+    set by the sessions router). Without it the sample operations refuse. It is also on
+    `app.state.records` for the sessions router. `committer` (the T-019 AutoCommitter the
+    records are written with) is flushed and stopped when the app shuts down.
     `hardware` (from `build_runner`) is kept on `app.state.hardware`: the gates the
     assistant's tools ask (`gates=app.state.hardware.check`, T-013b) and the screens read.
     `allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
-    launcher passes this PC's host names and addresses."""
+    launcher passes this PC's host names and addresses. `dev_origins` names page origins
+    besides this server's own that may write, e.g. the Vite dev server
+    `http://localhost:5173` (T-010); none by default."""
     stopper = EngineStopper(engine)
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        app.state.sessions.clear()  # nothing open until the operator opens or continues one
+        if records is not None:
+            app.state.interrupted_sessions = await asyncio.to_thread(
+                close_interrupted_sessions, records, committer)
         yield
         await asyncio.to_thread(stopper.quietly, "server stopping")
+        if committer is not None:  # after the engine's last records, before exit
+            await asyncio.to_thread(stop_committer, committer)
 
     app = FastAPI(title="dino-autofocus", version=_package_version(), lifespan=lifespan)
     app.state.engine = engine
     app.state.agent_store = agent_store if agent_store is not None else MockStore()
     app.state.auth = auth if auth is not None else AuthSeat.throwaway()
     app.state.sessions = SessionSeat()
+    app.state.records = records
+    app.state.committer = committer
+    app.state.interrupted_sessions = []  # closed at start-up, for the sessions screen
     app.state.hardware = hardware
     if records is not None:
         install_sample_seat(engine, records, samples_root, app.state.sessions)
     app.state.remote_view = remote_view
     app.state.remote_abort = remote_abort
+    app.state.dev_origins = frozenset(normalize_origin(o) for o in dev_origins)
     app.state.stop_engine = stopper
     app.state.request_exit = None  # set by the launcher: makes the server process exit
 

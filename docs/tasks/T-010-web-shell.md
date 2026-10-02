@@ -143,3 +143,11 @@
   path answers 404.
 - Fix in fakes.ts: look up `routes[path] ?? authDefaults(opts)[path]` instead of spreading, so plain objects and
   Proxies both work. Add a test with a Proxy routes table. Run the whole web suite (vitest) and the build.
+
+## T-010-11 (AF 실행4, after T-010-10; review AF 검토보조4; not urgent) — `client.postStream`
+
+- From T-014b (f8af945): `client.post` cannot return a stream, so the prompt box POSTs NDJSON through
+  `client.transport.fetch` and reaches the re-login listeners only indirectly. Add
+  `client.postStream(path, body) -> Response` that runs the same `check()` (401/423 re-login) and the `remote_view`
+  read-only rule as `post`, then returns the raw Response for streaming. Tests for 401, 423, 403 remote_view and a
+  streamed body. T-014b then switches to it.

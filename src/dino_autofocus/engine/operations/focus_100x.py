@@ -45,7 +45,15 @@ from ...focus.classical import (
 )
 from ..backend import PROVISIONAL, Backend
 from ..events import Event, EventSink, null_sink
-from ..guards import FocusAxis, GuardError, SweepResult, best_z_um, operation
+from ..guards import (
+    SAMPLE_Z_WINDOW_UM,
+    FocusAxis,
+    GuardError,
+    SweepResult,
+    bench_ascent_refusal,
+    best_z_um,
+    operation,
+)
 from ..records import GRADE_COMPUTED, GRADE_MEASURED
 from ..runner import Operation, register_operation
 from ..sample import SAMPLES_ROOT, Sample
@@ -129,7 +137,17 @@ def preflight(backend: Backend) -> list[str]:
         label = backend.nosepiece()
     except Exception as exc:  # noqa: BLE001
         label = f"unreadable ({exc})"
-    return [] if label == OBJECTIVE_100X else [f"nosepiece reads {label!r}, not {OBJECTIVE_100X!r}"]
+    problems = [] if label == OBJECTIVE_100X else [
+        f"nosepiece reads {label!r}, not {OBJECTIVE_100X!r}"]
+    # T-029d second layer: the 100x sweeps climb with move_to, which the bench lock refuses
+    try:
+        info = backend.info()
+    except Exception:  # noqa: BLE001 - is_bench counts an unreadable info as the bench
+        info = None
+    why = bench_ascent_refusal(info, "100x-Oil", SAMPLE_Z_WINDOW_UM[1])
+    if why:
+        problems.append(why)
+    return problems
 
 
 def run_focus_100x(backend: Backend, sample: Sample, args: dict, sink: EventSink = null_sink, *,
