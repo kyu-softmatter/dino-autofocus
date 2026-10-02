@@ -131,3 +131,6 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   query 0x8007000e, a .pyc read 0xc000070a, pure Python in engine/sample.py 0xc000070a) = machine-wide memory /
   commit-charge exhaustion, not a code bug (same code as docs/integration-notes.md). 0xc000070a / 0x8007000e in a
   test run means "rerun when the machine is quieter", not a failure. Run-limit rule proposed to the director.
+  Measured (AF 검토, after T-031b's run): commit charge 9.0 GB free of 81.9 GB, while physical RAM had 25.7 GB free.
+  The limit is commit (mostly the ~30 open sessions), so a full suite needs commit headroom; pausing does not free
+  it, closing a session or a bigger pagefile does (both are the user's).
