@@ -9,8 +9,10 @@ from dino_autofocus.engine.guards import (
     XYAxis,
     XYBox,
     best_z_um,
+    limits_for,
     registry_key,
     rotate_nosepiece,
+    step_out_target,
 )
 from dino_autofocus.engine.records import model_value
 
@@ -217,3 +219,93 @@ def test_relative_xy_moves_go_through_the_absolute_guard(fake):
     with pytest.raises(GuardError, match="needs Z retracted"):
         xy.goto_rel(200.0, 0.0)
     assert not any(c[0] == "move_xy_rel" for c in fake.calls)
+
+
+@pytest.mark.parametrize("flagged", ["bench=True", "no bench field, unknown kind"])
+def test_approach_on_a_bench_needs_a_clearance_check(fake, flagged):
+    from types import SimpleNamespace
+
+    real_info = fake.info
+
+    def bench_info():
+        info = real_info()
+        if flagged == "bench=True":
+            info.bench = True  # a bench-flagged FakeBackend (T-033)
+            return info
+        return SimpleNamespace(kind="something-new")  # a backend from before T-033
+    fake.info = bench_info
+    fake.z = 0.0
+    a = axis(fake, OIL)
+    with pytest.raises(GuardError, match="needs a clearance check"):
+        a.approach(2840)
+    assert not any(c[0] == "move_z" for c in fake.calls)
+    assert a.approach(2840, clearance=lambda z: True) == 2840
+
+
+def test_the_step_out_is_plus_y_and_stays_inside_the_stage_travel(fake):
+    x, y, basis = step_out_target(fake, 8026.0, 571.6)  # fake Y travel -35..35 mm
+    assert (x, y) == (8026.0, 15571.6)
+    assert basis["basis"]["escape_dy_um"] == "unmeasured provisional"
+    with pytest.raises(GuardError, match="outside the stage Y travel"):
+        step_out_target(fake, 8026.0, 25000.0)
+    real_info = fake.info
+
+    def no_limits():
+        info = real_info()
+        info.stage_limits.y_um = None
+        return info
+    fake.info = no_limits
+    with pytest.raises(GuardError, match="no stage Y limit"):
+        step_out_target(fake, 8026.0, 571.6)
+
+
+LENS_LABELS = {  # nosepiece labels: bench (mm_demo_core), mock world, FakeBackend
+    "1-Plan Apo LmbdD20 4x": "4x",
+    "2-Plan Apo LmbdD 10x": "10x",
+    "2-Plan Apo 10x": "10x",
+    "3-Plan Apo LmbdD 20x": "20x",
+    "3-Plan Apo 20x": "20x",
+    "4-Apo LmbdS 40xC WI": "40x-WI",
+    "4-Plan Apo 40x WI": "40x-WI",
+    "5-Plan Apo LmbdD 60x Oil": "60x-Oil",
+    "5-Plan Apo 60x Oil": "60x-Oil",
+    "6-Plan Apo LmbdD0.13 100x Oil": "100x-Oil",
+}
+
+
+@pytest.mark.parametrize("label, key", sorted(LENS_LABELS.items()))
+def test_every_known_lens_label_has_a_table_row(label, key):
+    assert registry_key(label) == key
+    assert limits_for(label)[1] == key  # not the strictest row
+
+
+def test_config_lens_names_map_to_table_rows():
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[2] / "configs"
+    names = [yaml.safe_load(p.read_text(encoding="utf-8"))["system"]["name"]
+             for p in sorted(root.glob("ti2_*.yaml"))]
+    assert len(names) == 6
+    keys = {registry_key(n) for n in names}
+    assert keys == {"4x", "10x", "20x", "40x-WI", "60x-Oil", "100x-Oil"}
+
+
+@pytest.mark.parametrize("bench, refused", [(True, True), (False, False)])
+def test_the_bench_flag_decides_when_present(fake, bench, refused):
+    real_info = fake.info
+
+    def flagged():
+        info = real_info()
+        info.kind = "mock"
+        info.bench = bench  # T-033 field; set by hand until it lands
+        return info
+    fake.info = flagged
+    fake.z = 0.0
+    a = axis(fake, OIL)
+    if refused:
+        with pytest.raises(GuardError, match="needs a clearance check"):
+            a.approach(2810)
+    else:
+        assert a.approach(2810) == 2810
