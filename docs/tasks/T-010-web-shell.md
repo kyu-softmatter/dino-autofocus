@@ -127,3 +127,19 @@
   `client.events.onLock(fn) -> unsubscribe` for `type: "lock"`, and reload `useEngineStatus` (`/api/state`) when
   `useAuth().resumed` changes after unlock. T-105's gate already calls `client.events.onLock` when present.
   Regenerate schema.ts after T-009c merges so `WsLock` is typed.
+
+## T-010-9 (AF 실행4, after T-009c merges; review AF 검토보조4) — notes from the T-010-7/8 merge (AF 검토)
+
+- The test fake's 401 code `not_logged_in` becomes the server's `login_required`.
+- While locked the socket stays open with no events, so status values can age: treat locked like disconnected for the
+  stale marker wherever the status bar is visible under the lock.
+- After T-009c merges, regenerate schema.ts and type `WsLock` from it (drop the hand-written type).
+
+## T-010-10 (AF 실행4, URGENT, main is red; review AF 검토보조4)
+
+- main f1b96f5: all 20 tests in `web/src/features/map/MapScreen.test.tsx` fail (deterministic). T-010-7 changed
+  `web/src/test/fakes.ts` to `const table = { ...authDefaults(opts), ...routes }`; T-102's `testWorld.tsx` passes
+  `routes` as a Proxy with no own keys, and object spread copies nothing from it, so every map/state/permissions
+  path answers 404.
+- Fix in fakes.ts: look up `routes[path] ?? authDefaults(opts)[path]` instead of spreading, so plain objects and
+  Proxies both work. Add a test with a Proxy routes table. Run the whole web suite (vitest) and the build.
