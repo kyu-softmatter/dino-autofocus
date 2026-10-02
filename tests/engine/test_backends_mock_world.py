@@ -25,7 +25,6 @@ from dino_autofocus.engine.backends.mock_world import (
 from dino_autofocus.engine.guards import (
     OBJECTIVE_LIMITS,
     STRICTEST,
-    GuardError,
     limits_for,
     registry_key,
 )
@@ -91,13 +90,7 @@ def test_every_mock_lens_key_has_its_own_guards_row():
     assert {o.key for o in OBJECTIVES} == set(OBJECTIVE_LIMITS)
 
 
-_40X_LABEL = pytest.mark.xfail(
-    raises=GuardError, strict=False,
-    reason="guards.registry_key cannot read '40xC' yet; T-027 fixes the regex")
-
-
-@pytest.mark.parametrize("o", [pytest.param(o, id=o.key, marks=_40X_LABEL if "40xC" in o.label
-                                            else ()) for o in OBJECTIVES])
+@pytest.mark.parametrize("o", [pytest.param(o, id=o.key) for o in OBJECTIVES])
 def test_every_mock_lens_label_reads_back_to_its_key(o):
     """What the mock nosepiece reports maps to the same guards row as the key."""
     assert registry_key(o.label) == o.key
