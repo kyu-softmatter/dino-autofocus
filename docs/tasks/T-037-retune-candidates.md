@@ -22,3 +22,9 @@
 ## Done when
 
 - Common criteria, trailer `Session: AF 실행16`. Send `[검토요청 T-037]` to AF 검토보조2.
+
+## After merge (efdbcef)
+
+- `scripts/retune_candidates.py::detect_once` swaps `mosaic.detect_blobs` temporarily (restored in finally). Offline
+  only: never import it from the server or engine; any later engine use needs a parameter on `detect_blobs`
+  instead of the swap (AF 검토).

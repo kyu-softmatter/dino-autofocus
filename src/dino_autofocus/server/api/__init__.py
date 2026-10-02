@@ -14,7 +14,8 @@ Dependencies for handlers (`Annotated`, so `def handler(eng: Engine, me: Login):
   login, not from a foreign page). Area writes that move nothing but must stay local use it.
 
 Access (PLAN.md 5, D13, D16; manager's T-009b contract), one place for REST and WebSocket:
-- Without a live login only these work: `GET /api/health`, the login routes, `POST
+- Without a live login only these work: `GET /api/health` and `/api/auth/setup`, the login
+  routes, first-run `POST /api/auth/setup/admin` (loopback, own page only), `POST
   /api/shutdown` (loopback), and the stops `abort` / `lights_off` from loopback. Everything
   else under `/api/*` and `/ws/*` is 401 `login_required`; a locked login gets 423 `locked`
   except for stops and the login routes.
@@ -230,6 +231,22 @@ def origin_refusal(conn: HTTPConnection) -> Refusal | None:
     if o.netloc == conn.headers.get("host", "") or is_loopback_host(o.hostname):
         return None
     return Refusal(403, "foreign_origin", f"writes are not accepted from pages served by {origin}")
+
+
+def own_origin_refusal(conn: HTTPConnection) -> Refusal | None:
+    """Stricter than `origin_refusal`: the request must come from a page this server served.
+    The Origin must be present and equal this server's own origin exactly: scheme, host and
+    port (`localhost` is not `127.0.0.1`, `https` is not `http`). No dev servers, no
+    non-browser clients. For the one write that works with no login, first-run setup
+    (T-009d)."""
+    origin = conn.headers.get("origin")
+    if origin is not None:
+        o = urlsplit(origin)
+        own_scheme = {"ws": "http", "wss": "https"}.get(conn.url.scheme, conn.url.scheme)
+        if o.scheme == own_scheme and o.netloc == conn.headers.get("host", ""):
+            return None
+    return Refusal(403, "foreign_origin",
+                   f"this is accepted only from this server's own page (Origin: {origin})")
 
 
 def logged_in_refusal(me: LoginState, *, locked_ok: bool = False) -> Refusal | None:
