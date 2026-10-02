@@ -138,3 +138,34 @@ def test_a_readback_mismatch_fails_with_commanded_and_read(make, fake):
     assert done.kind == "error"
     text = str(done.data)
     assert "commanded 0.000" in text and "read 1.500" in text
+
+
+
+def test_pfs_is_switched_off_before_the_z_move(make, fake):
+    fake.z, fake.pfs_enabled, fake.pfs_in_range = 2950.0, True, "In Range"
+    real_off = fake.pfs_off
+
+    def pfs_off(*, token):
+        fake.calls.append(("pfs_off",))
+        rb = real_off(token=token)
+        fake.pfs_in_range = "Out of Range"
+        return rb
+    fake.pfs_off = pfs_off
+    r, sink = make(bench(fake))
+    done = sink.wait(("finished", "error"), start(r))
+    assert done.kind == "finished", done.data
+    order = [c[0] for c in fake.calls if c[0] in ("pfs_off", "move_z")]
+    assert order == ["pfs_off", "move_z"]
+    assert done.data["summary"]["pfs"] == {"enabled_before": False, "enabled": False,
+                                           "in_range": "Out of Range"}
+    assert not fake.pfs_enabled
+
+
+def test_an_unreadable_pfs_refuses_before_any_move(make, fake):
+    def broken():
+        raise OSError("PFS not answering")
+    fake.pfs = broken
+    r, sink = make(bench(fake))
+    failed = sink.wait(("preflight_failed", "finished", "error"), start(r))
+    assert failed.kind == "preflight_failed" and "PFS state unreadable" in str(failed.data)
+    assert not any(c[0] == "move_z" for c in fake.calls)
