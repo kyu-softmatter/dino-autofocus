@@ -11,6 +11,7 @@ from dino_autofocus.engine.guards import (
     best_z_um,
     registry_key,
     rotate_nosepiece,
+    step_out_target,
 )
 from dino_autofocus.engine.records import model_value
 
@@ -234,3 +235,20 @@ def test_approach_on_a_bench_needs_a_clearance_check(fake, kind):
         a.approach(2840)
     assert not any(c[0] == "move_z" for c in fake.calls)
     assert a.approach(2840, clearance=lambda z: True) == 2840
+
+
+def test_the_step_out_is_plus_y_and_stays_inside_the_stage_travel(fake):
+    x, y, basis = step_out_target(fake, 8026.0, 571.6)  # fake Y travel -35..35 mm
+    assert (x, y) == (8026.0, 15571.6)
+    assert basis["basis"]["escape_dy_um"] == "unmeasured provisional"
+    with pytest.raises(GuardError, match="outside the stage Y travel"):
+        step_out_target(fake, 8026.0, 25000.0)
+    real_info = fake.info
+
+    def no_limits():
+        info = real_info()
+        info.stage_limits.y_um = None
+        return info
+    fake.info = no_limits
+    with pytest.raises(GuardError, match="no stage Y limit"):
+        step_out_target(fake, 8026.0, 571.6)

@@ -69,7 +69,8 @@ SIMULATED_KINDS = frozenset({"mock", "fake", "replay", "mm-demo"})
 # unmeasured provisional (checklist Q20 / Q12); every use is marked in the record
 Z_SAFE_UM = 0.0  # z_safe: full retract, for every lens
 RETRACTED_MAX_Z_UM = Z_SAFE_UM + 1.0  # "Z retracted" for nosepiece turns and long XY moves
-ESCAPE_DY_UM: float | None = None  # F5 immersion-loading move; None -> preflight refuses
+# F5 immersion-loading step-out: +Y by 15 mm (user, PLAN v1.3). Stage-level, not per lens.
+ESCAPE_DY_UM: float = +15000.0
 Z_TOL_UM = 0.25
 XY_TOL_UM = 5.0
 
@@ -403,6 +404,28 @@ def rotate_nosepiece(backend: Backend, focus: FocusAxis, state: int) -> str:
     if not rb.verified:
         raise GuardError(f"Nosepiece reads {rb.read}, not {state}")
     return backend.nosepiece()
+
+
+def step_out_target(backend: Backend, x_um: float, y_um: float) -> tuple[float, float, dict]:
+    """(x, y, basis) of the F5 step-out from (x_um, y_um): +ESCAPE_DY_UM in Y. Refused when
+    the backend reports no Y travel or the target is outside it. The move itself still goes
+    through XYAxis.goto (box, Z retracted for a long move, readback)."""
+    x, y = plain(x_um, "x"), plain(y_um, "y")
+    target = y + ESCAPE_DY_UM
+    try:
+        limits = backend.info().stage_limits.y_um
+    except Exception as exc:  # noqa: BLE001 - no limits read means no step-out
+        raise GuardError(f"stage Y limit unreadable ({type(exc).__name__}: {exc}); "
+                         "refusing the step-out") from None
+    if limits is None:
+        raise GuardError("the backend reports no stage Y limit; refusing the step-out")
+    lo, hi = limits
+    if not lo <= target <= hi:
+        raise GuardError(f"step-out to y {target:.0f} um is outside the stage Y travel "
+                         f"{lo:.0f}..{hi:.0f} um")
+    basis = {"escape_dy_um": ESCAPE_DY_UM, "basis": {"escape_dy_um": PROVISIONAL},
+             "stage_y_um": [lo, hi]}
+    return x, target, basis
 
 
 # -- XY -----------------------------------------------------------------------------------
