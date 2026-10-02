@@ -218,6 +218,19 @@ class LightSet(Operation):
         return {}
 
 
+class Approach(Operation):
+    """Stands in for an op that calls FocusAxis.approach()."""
+
+    name = "approach_op"
+    approaches = True
+
+    def clearance(self):
+        return (lambda z: True) if self.args.get("clear") else None
+
+    def run(self) -> dict:
+        return {}
+
+
 class Stream:
     def __init__(self) -> None:
         self.on, self.calls = True, []
@@ -240,7 +253,7 @@ class Stream:
 
 REG = Registry()
 for _cls in (Steps, Hold, Watched, Boom, Oil, Tare, Trace, Escape, GoBack, Snapper, Peeks,
-             SampleOpen, Status, LightSet):
+             SampleOpen, Status, LightSet, Approach):
     REG.register(_cls)
 
 
@@ -855,6 +868,46 @@ def test_a_failing_sink_does_not_stop_the_engine(make):
     sink.wait("finished", r.submit(start("steps")))
     unsubscribe()
     unsubscribe()  # twice is fine
+
+
+def test_bench_backend_refuses_an_approach_without_clearance(make, fake):
+    r, sink = make()
+    sink.wait("finished", r.submit(start("approach_op")))  # fake backend: not the bench
+    info = fake.info()
+    info.kind = "mm-real"
+    fake.info = lambda: info
+    blocked = r.submit(start("approach_op"))
+    failed = sink.wait("preflight_failed", blocked)
+    assert failed.data["checks"][0]["name"] == "approach_clearance"
+    sink.wait("finished", r.submit(start("approach_op", clear=True)))
+    del fake.info
+
+
+def test_check_explains_what_is_allowed_now(make):
+    r, sink = make(control=GrantHolder())
+    me = {"user_id": USER, "control_grant": "g-1", "session_id": SESSION}
+    got = r.check(["steps", "tare", "abort", "lights_off", "scan_4x"], me)
+    assert got["steps"] == {"allowed": True, "reason": None}
+    assert got["abort"]["allowed"] and got["lights_off"]["allowed"]
+    assert got["scan_4x"] == {"allowed": False, "reason": "scan_4x is not available yet"}
+    viewer = r.check(["steps", "lights_off"], {"user_id": "viewer@example.test"})
+    assert "equipment control" in viewer["steps"]["reason"]
+    assert viewer["lights_off"]["allowed"]
+    held = r.submit(granted(start("hold")))
+    sink.wait("progress", held)
+    busy = r.check(["steps", "tare"], me)
+    assert busy["steps"]["reason"] == f"busy: {held} holds the core"
+    assert busy["tare"]["allowed"]  # record-only runs alongside
+    r.submit(cmd("abort", held))
+    sink.wait("aborted", held)
+    sink.wait("finished", r.submit(granted(start("escape"))))
+    away = r.check(["steps", "go_back", "tare"], {**me, "args": {"go_back": {"resume": True}}})
+    assert "return it first" in away["steps"]["reason"]
+    assert away["go_back"]["allowed"] and away["tare"]["allowed"]
+    assert set(r.check(context=me)) >= set(PERMISSIONS)
+    r.set_experiment_session(None)
+    assert r.check(["steps"], me)["steps"]["reason"] == "no open experiment session"
+    json.dumps(r.check(context=me))
 
 
 def test_registry_refuses_reserved_and_duplicate_names():

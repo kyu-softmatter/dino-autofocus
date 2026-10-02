@@ -66,6 +66,8 @@ YES = ("yes", "ok", "done", "true")
 RUNNING_MARK = "running.json"
 LAST_SHUTDOWN = "last_shutdown_lights.json"
 UNCLEAN_LOG = "unclean_shutdowns.jsonl"
+BENCH_BACKENDS = ("mm-real",)  # real hardware: approach() needs a clearance callback
+AWAITING_WHY = "the stage is away from the sample; return it first"
 
 
 @runtime_checkable
@@ -269,6 +271,7 @@ class Operation:
     keep_lights_on_finish: ClassVar[bool] = False  # light_set: on success lights stay as set
     updatable: ClassVar[frozenset[str]] = frozenset()  # args `update` may change mid-run
     record_prefix: ClassVar[str | None] = None  # e.g. "scan4x" keeps scan4x_<stamp>/
+    approaches: ClassVar[bool] = False  # calls FocusAxis.approach(); see `clearance`
 
     def __init__(self, ctx: OpContext):
         self.ctx = ctx
@@ -298,6 +301,11 @@ class Operation:
         """True for the one motion allowed while awaiting return (ui-spec 7.5:
         `objective_change` with `resume: true`); finishing it clears the state."""
         return False
+
+    def clearance(self) -> Callable[[float], bool] | None:
+        """The callback an `approaches` operation hands to `approach(clearance=...)`. On a
+        bench backend the runner refuses the operation in preflight while this is None."""
+        return None
 
 
 class Registry:
@@ -1018,12 +1026,62 @@ class Runner:
         self._emit(ev)
 
     def _runner_checks(self, op: _Op) -> list[dict]:
+        checks = []
         aw = self._awaiting
         if aw and op.cls.motion and not op.instance.returns_to_sample():
-            return [{"name": "awaiting_return", "ok": False, "want": "sample returned",
-                     "read": aw.get("op_id"),
-                     "why": "the stage is away from the sample; return it first"}]
-        return []
+            checks.append({"name": "awaiting_return", "ok": False, "want": "sample returned",
+                           "read": aw.get("op_id"), "why": AWAITING_WHY})
+        if op.cls.approaches and op.instance.clearance() is None:
+            kind = self._backend_kind()
+            if kind is None or kind in BENCH_BACKENDS:
+                checks.append({"name": "approach_clearance", "ok": False,
+                               "want": "a clearance callback", "read": kind,
+                               "why": "on the bench an approach needs a clearance check"})
+        return checks
+
+    def _backend_kind(self) -> str | None:
+        """None when info() fails: treated as the bench, the strict side."""
+        try:
+            return self._backend.info().kind
+        except Exception:
+            return None
+
+    def check(self, ops: list[str] | None = None, context: dict | None = None) -> dict:
+        """`{op: {allowed, reason}}` for the screens (T-009b `GET /api/permissions`), from
+        the permission table and the engine state. `context`: `user_id`, `control_grant`,
+        `session_id` of the asking person, and optional `args` per op (e.g. objective_change
+        `{"resume": true}`). The server adds remote and login state on top."""
+        ctx = context or {}
+        probe = Command("start", user_id=ctx.get("user_id"), session_id=ctx.get("session_id"),
+                        control_grant=ctx.get("control_grant"))
+        names = ops if ops is not None else sorted(set(PERMISSIONS) | set(self._registry.names()))
+        with self._lock:
+            owner = self._owner.op_id if self._owner else None
+        out = {}
+        for name in names:
+            out[name] = {"allowed": False, "reason": self._why_not(name, probe, owner, ctx)}
+            out[name]["allowed"] = out[name]["reason"] is None
+        return out
+
+    def _why_not(self, name: str, probe: Command, owner: str | None, ctx: dict) -> str | None:
+        if permission(name).action == "stop":
+            return None  # abort and lights_off: always
+        if not self._started or self._closed:
+            return "the engine is not running"
+        cls = self._registry.get(name)
+        if cls is None:
+            return f"{name} is not available yet"
+        if why := self._unauthorized(probe, name):
+            return why
+        if cls.exclusive and owner:
+            return f"busy: {owner} holds the core"
+        if self._awaiting and cls.motion:
+            op = _Op(op_id=f"{name}_check", op=name, cls=cls,
+                     args=dict((ctx.get("args") or {}).get(name, {})), origin="human",
+                     user_id=probe.user_id, session_id=probe.session_id, quiet=True)
+            if not cls(OpContext(self, op, backend=_NoHardware())).returns_to_sample():
+                return AWAITING_WHY
+        return None
 
     def _track_awaiting(self, op: _Op, state: str, end: dict) -> None:
         if end.get("state") == "awaiting_return":
