@@ -286,15 +286,19 @@ export interface LightRecord {
   verified: boolean;
 }
 
+/**
+ * One lamp from the one light shape (server/schemas/state.py `Lights`): DiaLamp
+ * `{state, intensity}`, Aura `{state, lines: {LINE: percent}}`.
+ */
 function lightPart(name: string, on: boolean, raw: unknown): string {
   if (!on) return `${name} OFF`;
-  if (raw && typeof raw === "object") {
-    const r = raw as { line?: unknown; intensity_permille?: unknown };
-    if (typeof r.line === "string") {
-      const pct = typeof r.intensity_permille === "number" ? `${r.intensity_permille / 10} %` : "? %";
-      return `${name} ${r.line} ${pct}`;
-    }
+  const r = raw && typeof raw === "object" ? (raw as { intensity?: unknown; lines?: unknown }) : {};
+  if (r.lines && typeof r.lines === "object") {
+    const lines = Object.entries(r.lines as Record<string, unknown>)
+      .map(([line, pct]) => `${line} ${typeof pct === "number" ? pct : "?"} %`);
+    if (lines.length > 0) return `${name} ${lines.join(", ")}`;
   }
+  if (typeof r.intensity === "number") return `${name} ON (${r.intensity})`;
   return `${name} ON`;
 }
 

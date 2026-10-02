@@ -92,7 +92,7 @@ role, control, session or remote rules itself.
 | Human-confirmed items | per item: `value`, `by`, `at`; editable form for the local operator, read only otherwise | `hardware_confirm` | Skeleton `confirmed: {item: "who/when"}` has no value field (G5) |
 | Gates | `GateRow` (section 1) | `gates.GATES` + `gates.evaluate(profile)` | Skeleton has 3 example gates. WP-G writes the real list (ops-spec 5 gate table) |
 | Current state (Step 0) | objective label, Z, PFS triple | `status` op + `position` | `status` op not yet written (WP-C) |
-| Lights | DiaLamp on/off/unknown, Aura `state`/`line`/`intensity_permille`, `verified`, last readback time | `light_set`, `lights_off`, `light_changed` | Backend has `lamp_on/off`, `aura_line_on/off`, `all_off`; `light_set` op does not exist (G2) |
+| Lights | the one light shape (server/schemas/state.py `Lights`): DiaLamp `{state, intensity}`, Aura `{state, lines: {LINE: percent}}`, `verified`, `records`, `error`, last readback time | `light_set`, `lights_off`, `light_changed` | Backend has `lamp_on/off`, `aura_line_on/off`, `all_off`; `light_set` op does not exist (G2) |
 
 ## 5. Gaps (requests to AF 업무분배보조, to forward to the manager)
 

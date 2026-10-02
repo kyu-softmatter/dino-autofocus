@@ -191,18 +191,34 @@ describe("hardware screen", () => {
     await waitFor(() => expect(t.sent()).toHaveLength(1));
     expect(state.textContent).toContain("no read-back yet");
 
+    // the one light shape (server/schemas/state.py `Lights`, runner._light_payload)
     t.emit("light_changed", {
-      dialamp: "unknown",
-      aura: { state: "off" },
+      dialamp: { state: "unknown", intensity: null },
+      aura: { state: "off", lines: {} },
       verified: false,
-      records: [{ device: "DiaLamp", property: "State", wanted: 1, read: 0, verified: false }],
+      records: [{ device: "DiaLamp", prop: "State", wanted: 1, read: 0, verified: false }],
+      error: null,
     });
     expect(state.textContent).toContain("Lights not confirmed: DiaLamp read 0, wanted 1");
 
-    const lit = { dialamp: "off", aura: { state: "on", line: "GREEN", intensity_permille: 10 }, verified: true };
+    const lit = {
+      dialamp: { state: "off", intensity: null },
+      aura: { state: "on", lines: { GREEN: 1 } },
+      verified: true,
+      records: [],
+      error: null,
+    };
     t.world.snapshot = { ...t.world.snapshot, lights: lit };
     t.emit("light_changed", lit);
     expect(state.textContent).toContain("DiaLamp OFF · Aura GREEN 1 %");
+
+    const lamp = { ...lit, dialamp: { state: "on", intensity: 608 }, aura: { state: "off", lines: {} } };
+    t.world.snapshot = { ...t.world.snapshot, lights: lamp };
+    t.emit("light_changed", lamp);
+    expect(state.textContent).toContain("DiaLamp ON (608) · Aura OFF");
+
+    t.world.snapshot = { ...t.world.snapshot, lights: lit };
+    t.emit("light_changed", lit);
 
     // the end of an operation does not mean lights off (T-011): only a read-back changes the panel
     t.emit("finished", { op: "status", summary: {} }, "op-2");
