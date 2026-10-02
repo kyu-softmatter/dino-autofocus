@@ -239,3 +239,8 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - Fix at the choke point: every `light_changed` that leaves the runner (event sink → /ws/events, records) is
   normalised to `_light_payload`'s shape, keeping the emitter's readbacks as `records` and `verified`/`error`.
   Emitters do not change. Tests: a guards light event and a light_set event both come out in the one shape.
+- Item 2 (from 검토보조2 / 실행11 via AF 검토, after T-031b): the exit light step always reads `light_state()` and
+  records the end state as read, with `verified` True/False and the readbacks, even when it switched nothing (an op
+  such as scan_4x may already have switched off in its own finally). Today summary.json then shows both off with
+  `verified: None` and no readbacks (PLAN rules 4/5). Test: an op that switches off itself still gets a verified
+  end state in summary.json.
