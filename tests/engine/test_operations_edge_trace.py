@@ -459,15 +459,18 @@ def test_runner_bad_args_fail_preflight(live) -> None:
     assert any(c["name"] == "args" and not c["ok"] for c in fail.data["checks"])
 
 
-def test_runner_uses_the_installed_sample_root(live, tmp_path) -> None:
+def test_runner_uses_the_installed_sample_root_and_needs_its_session(live, tmp_path) -> None:
     from types import SimpleNamespace
 
     other = tmp_path / "seat_root"
     (other / SID).mkdir(parents=True)
     lv = live(HoleWorld(START))
-    lv.r.sample_seat = SimpleNamespace(samples_root=other)
+    lv.r.sample_seat = SimpleNamespace(samples_root=other, store=None,
+                                       session_for=lambda session_id: None)
     op_id = lv.cmd("start", op="edge_trace", sample_id=SID)
-    ok = lv.wait(lambda e: e.op_id == op_id and e.kind in ("preflight_ok", "preflight_failed"))
-    sample_check = next(c for c in ok.data["checks"] if c["name"] == "sample")
-    assert sample_check["ok"] and sample_check["read"] == str(other / SID)
-    lv.cmd("abort", op_id)
+    fail = lv.wait(lambda e: e.op_id == op_id and e.kind in ("preflight_ok", "preflight_failed"))
+    assert fail.kind == "preflight_failed"
+    checks = {c["name"]: c for c in fail.data["checks"]}
+    assert checks["sample"]["ok"] and checks["sample"]["read"] == str(other / SID)
+    assert not checks["sample_record"]["ok"]
+    assert "open experiment session" in checks["sample_record"]["why"]

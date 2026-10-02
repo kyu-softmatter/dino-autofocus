@@ -22,6 +22,7 @@ MODULES = (
     "focus_100x",
     "objective_change",
     "sample_ops",
+    "sample_map",
 )
 
 for _name in MODULES:
