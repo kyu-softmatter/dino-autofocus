@@ -100,3 +100,12 @@ without a token; `lamp_off`, `aura_off`, `all_off` take none.
   this task may edit those import lines in other tasks' test files, imports only.
 - Done when `uv run pytest`, `pytest tests/engine tests/e2e`, `pytest tests/e2e tests/engine` and each directory
   alone all collect and pass, and `git grep -nE "(from|import) conftest" -- tests` is empty apart from the re-export.
+
+## T-015e (AF 실행12; review AF 검토보조2) — no test imports from conftest, enforced
+
+- `tests/server/test_api_map.py:15` (T-102, f42f95f) does `from conftest import OPERATOR, VIEWER, FakeEngine`; with
+  `pytest tests/server tests/auth` it resolves to tests/auth/conftest.py and collection stops (검토보조2). Move those
+  helpers into a uniquely named module (e.g. `tests/server/server_fakes.py`) and import by name; conftest keeps a
+  re-export for one transition. This task may edit that import line in T-102's file.
+- Add a guard test (e.g. `tests/test_no_conftest_imports.py`) that fails when any file under tests/ has
+  `from conftest import` or `import conftest`, so the pattern cannot come back.
