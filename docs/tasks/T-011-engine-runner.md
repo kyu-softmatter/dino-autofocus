@@ -201,6 +201,7 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 | hardware_confirm, sample_open, sample_new | record | yes (hardware_confirm: local operator only) | no |
 | sample_geometry_set, loading_confirm_person, loading_check_image | record | yes | yes |
 | boundary_mark/undo/reset, map_flag, map_flag_retire, candidate_confirm/reject | record (beside a hardware op) | no; local operator (D16) | yes |
+| score_tare | record | yes | yes |
 | light_set | light | yes | yes |
 | edge_trace, scan_4x, sample_map, goto_xy, focus_100x, objective_change | motion | yes | yes |
 | unknown op | motion (strictest) | yes | yes |
@@ -208,7 +209,7 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 ## Exit-path lights (manager decision, from T-030 review)
 
-- A normal op exit (finished or error) restores the lights to their state before the op: it turns off what that
-  op turned on and leaves a light set by `light_set` alone. `abort`, `lights_off`, `shutdown`, D14 auto-abort and
-  closing the experiment session turn everything off. Record which rule applied. Test: `light_set` then
+- A normal op exit (finished) restores the lights to their state before the op: it turns off what that
+  op turned on and leaves a light set by `light_set` alone. `error`, `abort`, `lights_off`, `shutdown`, D14 auto-abort and
+  closing the experiment session turn everything off (PLAN rule 5, aa32fcf). Record which rule applied. Test: `light_set` then
   `status` keeps the light on; `light_set` then `abort` turns it off.

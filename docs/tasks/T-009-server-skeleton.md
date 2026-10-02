@@ -127,3 +127,5 @@
 
 - A pydantic `Snapshot` model for `GET /api/state` (lights, positions, running op, sample, hardware,
   last_shutdown_lights, unclean_shutdown), so the web side gets generated types instead of an untyped dict.
+- T-009b test (director): a request from another loopback origin without a session cookie gets nothing beyond the
+  login routes (no state, no events, no commands except abort per D13).
