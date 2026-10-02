@@ -596,7 +596,7 @@ M1 에서 mock 백엔드와 mock 저장소로 끝까지 돈다. 표의 "실제" 
 | `map` | 4x 스캔, 샘플 맵 (모자이크, 후보) | M1 | M4 | 스캔 결과 보기는 M2 (저장된 `scan4x_*`) |
 | `map` | flag, 후보 확인 | M1 | M2 | 기록 작업. 실제 샘플 위에서 |
 | `map` | 클릭 이동 | M1 | M4 | |
-| `objective` | 렌즈 전환 7단계, `"Loading done"`, 복귀, 재로딩 | M1 | M4 | 이탈 거리 미정 (PLAN 10절) 이라 그 전에는 `escape=False` 만 |
+| `objective` | 렌즈 전환 7단계, `"Loading done"`, 복귀, 재로딩 | M1 | M4 | 이탈 거리와 부호가 미정 (PLAN 5절 방향 기준, 10절) 이라 그 전에는 `escape=False` 만 |
 | `objective` | 100x 초점 (고전 판정) | M1 | M4 | |
 | `live` | 라이브 영상, 상태 줄, 트레이스 | M1 | M3 | 실제 카메라는 M3 (읽기 전용 + 조명) |
 | `live` | 고전 판정 배지 | M1 | M3 | |
@@ -677,9 +677,9 @@ UI 는 카드를 고치지 않는다 (PLAN 6절 9항). 아래 필드 이름은 s
 
 | 패널 | 보여 주는 것 | 출처 |
 |---|---|---|
-| 질문 목록 | 두 에이전트의 질문. 열: `qid`, 에이전트, `status` (`DRAFT`, `VALIDATED`, `REFUSED` 등), `purpose`, `intent`, `observable.name`, `created_at`, 최신 버전 (`r1`/`v2_`/`v3_`). 거르기: 에이전트, 상태, 날짜 | `*/questions/<qid>/` 의 `goal.json` (최신 버전) |
+| 질문 목록 | 두 에이전트의 질문. 열: `qid`, 에이전트, `status` (`DRAFT`, `VALIDATED`, `REFUSED` 등), `purpose`, `intent`, `observable.name`, `created_at`, 최신 버전 (접두 없음 = 1판, 그다음 `v2_`, `v3_`, … 있는 만큼). 거르기: 에이전트, 상태, 날짜 | `*/questions/<qid>/` 의 `goal.json` (최신 버전) |
 | 질문 상세 | 카드 탭: `goal`, `axis` (축마다 하나, 예: `bd_pairwise` 의 `a1`…`a7`, `verdict`), `synthesis` (`chosen_config`, `operating_point`, `rejected`), `plan` (`sweep`, `conditions`, `envelope_check`, `cost`, `stop_criteria`, `success_criteria`, `open_risks`), `refusal` (`stage`, `reason_code`, `alternatives`), 그리고 microscope 쪽 `analysis_method_declared` 같은 기타 카드 | 같은 폴더의 `*.json`. JSON 이 정본이다 (soft-matter-agents P3). `.md` 는 "generated" 표시와 함께 보조로만 |
-| 버전 | 버전 고르개 (`r1`, `v2_`, `v3_`). 기본은 최신. 두 버전의 필드 차이 보기 | 파일 접두 (T-008 의 버전 규칙) |
+| 버전 | 버전 고르개. 목록은 고정하지 않고 폴더에 있는 `vN_` 접두를 모두 모은다 (baf6f1e 기준 `v6_` 까지 있다). 기본은 가장 큰 N. 두 버전의 필드 차이 보기 | 파일 접두 (T-008 의 버전 규칙) |
 | 숫자 표 | 카드의 `numbers`: `name`, `value`, `unit`, `source`, **등급 배지** (`E1`–`E5`), `precision`. 등급은 카드의 값을 그대로 쓰고 화면이 다시 매기지 않는다 | `numbers[]` |
 | 가정과 빈칸 | `assumptions` (`statement`, `authorised_by`), `kb_refs`, `kb_gaps`, `degraded`. `degraded` 가 비어 있지 않으면 경고 띠 | 같은 카드 |
 | 실행 목록 | 에이전트별 `run_id`, `qid`, `plan_id`, `backend`, 시작 (`t0_wall`), 끝 (`finished_at`), 승인 (`approval.kind`) | `*/runs/<run_id>/log.json`, `config.json` |
@@ -769,14 +769,14 @@ UI 는 카드를 고치지 않는다 (PLAN 6절 9항). 아래 필드 이름은 s
 
 | 층 | 그리는 것 | 출처 |
 |---|---|---|
-| 모자이크 | 투과광 4x 모자이크 (명시야 권장). 스캔이 여럿이면 고르개 | `sample_map_<stamp>/mosaic.npy` + `mosaic.json` (`x0, x1, y0, y1, um_per_px, bin`) 을 서버가 이미지로 (`GET`, 제안). 좌우 반전은 보정 `M` 의 부호로 서버가 맞춘다 (operations-spec 6.1) |
+| 모자이크 | 투과광 4x 모자이크 (명시야 권장). 스캔이 여럿이면 고르개 | `sample_map_<stamp>/mosaic.npy` + `mosaic.json` (`x0, x1, y0, y1, um_per_px, bin`) 을 서버가 이미지로 (`GET`, 제안). 좌우 반전은 보정 `M` 의 부호로 서버가 맞춘다 (operations-spec 6.1). 영상은 재물대와 거울상이고, 픽셀 p 의 재물대 좌표는 `stage + inv(M) @ (centre − p)` 다 (PLAN 5절 방향 기준, v1.2) |
 | 스캔 박스 | 마지막 `scan_4x` / `sample_map` 의 박스와 + 1 mm 여유 (클릭 이동 허용 범위) | 스캔 기록 |
 | 방문 필드 | 1.2 (d) 와 같음. 색은 판정 (5.3) | `map_changed` |
 | 경계와 hole | 경계점, 원 피팅, 중심. 피팅 시각과 세션 상태 (5.1) | `map_changed`, `sample_opened` |
 | 입자 후보 | **두 가지를 모양으로 구분**: 고전 처리 후보 (`source: "classical_candidate"`) 는 속이 빈 원, 사람이 확인한 것 (`source: "person_confirmed"`) 은 속이 찬 원. 거부한 후보는 기본으로 숨기고 켜면 회색 × | `features.json` 또는 `map.json` (operations-spec 6.1) |
 | flag | 깃발과 이름. 은퇴한 flag 는 기본으로 숨김 | `flags.json` |
 | 현재 시야 | 주황 사각형과 십자 (1.2 (d)) | `position`, `objective` |
-| 클릭 목표 | 마우스 위치의 stage 좌표, 현재 위치에서 거리, 허용 범위 안/밖 | 화면 계산 (표시만) |
+| 클릭 목표 | 마우스 위치의 stage 좌표, 현재 위치에서 거리, 허용 범위 안/밖 | 화면 계산 (표시만). 모자이크 픽셀에서 stage 좌표로는 PLAN 5절 방향 기준의 식을 쓰고, 화면이 따로 부호를 정하지 않는다. 식과 `M` 은 서버가 `mosaic.json` 과 함께 내려 준다 **(제안)** |
 
 축 방향은 1.2 (d) 처럼 스탠드의 조이스틱 방향으로 뒤집어 그리고, 축척 글자에 방향을 적는다.
 
@@ -836,7 +836,7 @@ Z 는 다시 올리지 않는다 (operations-spec 6.3 의 4번). 화면은 다�
 |---|---|
 | 현재 | 렌즈 라벨, 픽셀 크기, Z (엔코더), PFS |
 | 고르기 | 렌즈 표의 렌즈. 같은 렌즈, 렌즈 표에 없는 렌즈, 작동 거리가 없는 렌즈 (40x WI) 는 꺼짐과 이유 (`"already on that objective"`, `"no working distance value"`) |
-| 선택 | Y 이탈 (`escape`) 켬/끔과 거리. 거리가 정해지기 전에는 켬이 꺼져 있고 `"escape distance not set"` (PLAN 10절). 건조 렌즈끼리면 끔이 기본 |
+| 선택 | Y 이탈 (`escape`) 켬/끔과 거리. 이탈의 **거리와 부호 (+Y / −Y) 둘 다** 아직 사용자 확인 전이다 (PLAN 5절 방향 기준 v1.2, 10절). 정해지기 전에는 켬이 꺼져 있고 `"escape distance and direction not set"`. 화면은 부호를 기본값으로 고르지 않는다. 건조 렌즈끼리면 끔이 기본 |
 | 계획 | 7단계와 각 단계의 목표값 (`planned`) |
 | 시작 | `"Rotate"` → C6 |
 
