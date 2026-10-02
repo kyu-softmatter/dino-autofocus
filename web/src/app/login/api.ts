@@ -1,6 +1,8 @@
-// Temporary until gen:api, T-009: the auth API types and clients are written by hand from
-// docs/screens/login.md section 1. Once server/api/auth.py is in and `npm run gen:api` has run,
-// the types come from src/api/ and this file keeps only the clients.
+// Temporary until gen:api, T-009: the auth API types are written by hand from
+// docs/screens/login.md section 1 and server/api/auth.py. Once `npm run gen:api` has run with
+// the router in, the types come from src/api/ and this file keeps only the clients.
+
+import { type Client, CommandRefused } from "../client";
 
 export type Role = "admin" | "operator" | "viewer";
 export type SetupState = "needs_admin_email" | "needs_admin" | "ready";
@@ -52,41 +54,64 @@ export interface AuthApi {
   approve(email: string, role: Role): Promise<Account>;
 }
 
-// -- the real client: same origin, the session cookie rides along -----------------------------
+// -- the real client: the app's shared client (cookie rides along, same origin) ---------------
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api/auth${path}`, {
-    method,
-    credentials: "same-origin",
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { detail?: string; outcome?: LoginFailure };
-    throw new AuthError(res.status, err.detail ?? res.statusText, err.outcome);
-  }
-  return res.status === 204 || res.status === 201 ? (undefined as T) : ((await res.json()) as T);
+const OUTCOMES: readonly string[] = ["bad_credentials", "pending_approval", "disabled"];
+
+function authError(e: unknown): unknown {
+  if (!(e instanceof CommandRefused)) return e;
+  const outcome = e.code && OUTCOMES.includes(e.code) ? (e.code as LoginFailure) : undefined;
+  return new AuthError(e.status, e.detail, outcome);
 }
 
-export const httpAuthApi: AuthApi = {
-  setup: async () => (await call<{ state: SetupState }>("GET", "/setup")).state,
-  createAdmin: (body) => call("POST", "/setup/admin", body),
-  signup: (body) => call("POST", "/signup", body),
-  login: (body) => call("POST", "/login", body),
-  logout: () => call("POST", "/logout"),
-  lock: () => call("POST", "/lock"),
-  unlock: (body) => call("POST", "/unlock", body),
-  me: async () => {
+/**
+ * Over `useClient()`: writes go through `client.post` (a remote_view 403 turns the app
+ * read-only, a 401 / 423 re-reads the login). `/me` and `/setup` read the transport directly,
+ * because their 401 is an answer here ("not logged in"), not a login failure to report.
+ */
+export function clientAuthApi(client: Client): AuthApi {
+  const post = async <T>(path: string, body?: unknown): Promise<T> => {
     try {
-      return await call<Me>("GET", "/me");
+      return (await client.post<T>(`/api/auth${path}`, body)) as T;
     } catch (e) {
-      if (e instanceof AuthError && e.status === 401) return null;
-      throw e;
+      throw authError(e);
     }
-  },
-  pending: () => call("GET", "/accounts?status=pending"),
-  approve: (email, role) => call("POST", `/accounts/${encodeURIComponent(email)}/approve`, { role }),
-};
+  };
+  const read = async <T>(path: string): Promise<T | null> => {
+    const r = await client.transport.fetch(`/api/auth${path}`, { headers: { Accept: "application/json" } });
+    if (r.status === 401) return null;
+    if (!r.ok) throw new AuthError(r.status, `HTTP ${r.status}`);
+    return (await r.json()) as T;
+  };
+  return {
+    setup: async () => {
+      const s = await read<{ state: SetupState }>("/setup");
+      if (s === null) throw new AuthError(401, "setup state not readable");
+      return s.state;
+    },
+    createAdmin: (body) => post("/setup/admin", body),
+    signup: async (body) => {
+      await post("/signup", body);
+    },
+    login: (body) => post("/login", body),
+    logout: async () => {
+      await post("/logout");
+    },
+    lock: async () => {
+      await post("/lock");
+    },
+    unlock: (body) => post("/unlock", body),
+    me: () => read<Me>("/me"),
+    pending: async () => {
+      try {
+        return await client.get<Account[]>("/api/auth/accounts?status=pending");
+      } catch (e) {
+        throw authError(e);
+      }
+    },
+    approve: (email, role) => post(`/accounts/${encodeURIComponent(email)}/approve`, { role }),
+  };
+}
 
 // -- the fake client: in memory, for tests and for building the screen before the router ------
 

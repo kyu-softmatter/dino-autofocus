@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { isLoopbackHost } from "../client";
-import { type AuthApi, httpAuthApi, type Me, type SetupState } from "./api";
+import { isLoopbackHost, useClient } from "../client";
+import { type AuthApi, clientAuthApi, type Me, type SetupState } from "./api";
 import { isNotice, LoginForm, Notice, SetupForm, SignupForm } from "./forms";
 import { LockScreen } from "./LockScreen";
 import "./login.css";
@@ -34,14 +34,14 @@ type Phase =
  * setup, login or sign-up screens instead of the app. While the login is locked it keeps the
  * app mounted (work and guards go on) under the lock screen, with the shell's Abort control.
  */
-export function LoginGate({
-  api = httpAuthApi,
+function GateWith({
+  api,
   abort,
   pollMs = 30_000,
   local = isLoopbackHost(window.location.hostname),
   children,
 }: {
-  api?: AuthApi;
+  api: AuthApi;
   abort?: ReactNode;
   /** how often /me is re-read so an idle lock shows without user input */
   pollMs?: number;
@@ -167,4 +167,20 @@ export function LoginGate({
       )}
     </AuthContext.Provider>
   );
+}
+
+type GateProps = Omit<Parameters<typeof GateWith>[0], "api">;
+
+function GateOverClient(props: GateProps) {
+  const client = useClient();
+  const api = useMemo(() => clientAuthApi(client), [client]);
+  return <GateWith api={api} {...props} />;
+}
+
+/**
+ * The shell wraps the app in this (docs/screens/login.md 5.4), inside the ClientProvider. It
+ * talks to the server through the shared client; tests pass a fake `api` instead.
+ */
+export function LoginGate({ api, ...props }: GateProps & { api?: AuthApi }) {
+  return api ? <GateWith api={api} {...props} /> : <GateOverClient {...props} />;
 }

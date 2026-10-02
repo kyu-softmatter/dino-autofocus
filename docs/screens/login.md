@@ -7,7 +7,7 @@ stage B (`server/api/auth.py`, `web/src/app/login/`) and the shell (T-010) can b
 ## 1. Endpoints
 
 All under `/api/auth` (T-009 mounts `server/api/auth.py` there). JSON in and out. Errors are
-T-009's `ApiError` (`{"detail": "..."}`). "Local" means the request comes from the microscope PC
+T-009b refusals: `{"detail": {code, message}}` plus the `X-DinoAF-Refusal: <code>` header. "Local" means the request comes from the microscope PC
 (T-009's loopback check); "remote" means any other PC under remote view.
 
 | Method, path | Who | From | Body → reply |
@@ -15,7 +15,7 @@ T-009's `ApiError` (`{"detail": "..."}`). "Local" means the request comes from t
 | `GET /setup` | anyone | any | → `{state: "needs_admin_email" \| "needs_admin" \| "ready"}`. No email in the reply |
 | `POST /setup/admin` | anyone, only while state ≠ ready | local | `{name, password, email?}` → `Me` + cookie. `email` only when none is configured |
 | `POST /signup` | anyone | any | `{name, email, password}` → `201 {status: "pending"}`. Nothing else is accepted (no role field; extra fields → 422) |
-| `POST /login` | anyone | any | `{email, password}` → `Me` + cookie; `401 {detail, outcome}` with `outcome` `bad_credentials` \| `pending_approval` \| `disabled` |
+| `POST /login` | anyone | any | `{email, password}` → `Me` + cookie; `401` with `detail.code` `bad_credentials` \| `pending_approval` \| `disabled` |
 | `POST /logout` | logged in | any | → `204`, cookie cleared, control released |
 | `POST /lock` | logged in | any | → `204`. "Lock" in the user menu |
 | `POST /unlock` | logged in, locked | any | `{password}` → `Me`; `401` on a wrong password |
@@ -26,7 +26,7 @@ T-009's `ApiError` (`{"detail": "..."}`). "Local" means the request comes from t
 | `POST /accounts/{email}/role` | admin | local | `{role}` → `Account` |
 | `POST /accounts/{email}/disable` | admin | local | → `Account` |
 | `GET /control` | logged in | any | → `{holder: {user_id, name, since} \| null}` |
-| `POST /control/acquire` | operator, admin | local | → `{holder}`; `409 {detail, holder}` when someone else holds it |
+| `POST /control/acquire` | operator, admin | local | → `{holder}`; `409` (`detail.code` `control_busy`, plus top-level `holder`) when someone else holds it |
 | `POST /control/release` | the holder | local | → `204` |
 | `POST /control/revoke` | admin | local | `{reason}` → `{previous_holder}` |
 
@@ -41,7 +41,7 @@ not the check.
 
 ## 2. Cookie and session
 
-- Cookie `dino_af_session`: the T-018 login token. `HttpOnly`, `SameSite=Strict`, `Path=/`, no
+- Cookie `dinoaf_session`: the T-018 login token. `HttpOnly`, `SameSite=Strict`, `Path=/`, no
   `Max-Age` (dies with the browser) and no `Secure` (plain HTTP on the lab network; revisit if
   remote view ever leaves it). The token never appears in a reply body, a URL or a log.
 - Idle lock after 15 min without `/activity`; the session ends 12 h after login (T-018

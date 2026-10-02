@@ -236,3 +236,25 @@ describe("LoginGate on a remote PC", () => {
     }
   });
 });
+
+describe("clientAuthApi over the shared client", () => {
+  it("maps the router's refusal codes and treats a 401 from /me as logged out", async () => {
+    const { fakeTransport } = await import("../../test/fakes");
+    const { Client } = await import("../client");
+    const { clientAuthApi } = await import("./api");
+    const refusal = (code: string, message: string) => () => ({ status: 401, body: { detail: { code, message } } });
+    const fake = fakeTransport({
+      "/api/auth/me": () => ({ status: 401, body: { detail: { code: "login_required", message: "log in first" } } }),
+      "/api/auth/login": refusal("pending_approval", "Your account is waiting for an administrator's approval."),
+      "/api/auth/setup": () => ({ status: 200, body: { state: "ready" } }),
+    });
+    const api = clientAuthApi(new Client(fake.transport, "127.0.0.1"));
+    expect(await api.me()).toBeNull();
+    expect(await api.setup()).toBe("ready");
+    const err = await api.login({ email: "pat@example.test", password: "pat-pass-12" }).catch((e) => e);
+    expect(err).toMatchObject({ status: 401, outcome: "pending_approval" });
+    expect(err.message).toContain("approval");
+    const login = fake.calls.find((c) => c.path === "/api/auth/login")!;
+    expect(login.init?.method).toBe("POST");
+  });
+});
