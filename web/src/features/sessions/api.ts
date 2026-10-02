@@ -64,6 +64,8 @@ export type Permissions = Record<string, Permission>;
 
 /** Shown on every control when /api/permissions cannot be read (rule for all screens). */
 export const PERMISSION_UNAVAILABLE = "Permission check unavailable";
+/** Shown while the first permission check is loading (same on every screen). */
+export const PERMISSION_CHECKING = "Checking permissions…";
 
 export class ApiError extends Error {
   constructor(
@@ -99,6 +101,8 @@ export interface FakeOptions {
   permission?: (op: string) => Permission;
   /** make the permission check fail, as when /api/permissions cannot be read */
   permissionsDown?: boolean;
+  /** answer only these ops (a missing op counts as unavailable) */
+  answerOps?: string[];
   now?: () => string;
 }
 
@@ -212,7 +216,8 @@ export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
     },
     async permissions(ops) {
       if (opts.permissionsDown) throw new ApiError(503, "permissions unavailable");
-      return Object.fromEntries(ops.map((op) => [op, permission(op)]));
+      const asked = opts.answerOps ? ops.filter((op) => opts.answerOps!.includes(op)) : ops;
+      return Object.fromEntries(asked.map((op) => [op, permission(op)]));
     },
   };
 }

@@ -117,6 +117,17 @@ describe("sessions screen", () => {
     expect(button("Continue with this sample").disabled).toBe(true);
   });
 
+  it("treats an op missing from the answer as unavailable", async () => {
+    show(createFakeClient({ currentSample: "x", answerOps: ["session_close", "session_continue"] }));
+    await waitFor(() => expect(screen.getByText("Permission check unavailable")).toBeTruthy());
+    expect(button(/Open experiment session/).disabled).toBe(true);
+  });
+
+  it("shows the loading reason until the first check answers", () => {
+    show(createFakeClient({ currentSample: "x" }));
+    expect(screen.getByText("Checking permissions…")).toBeTruthy();
+  });
+
   it("refuses closing someone else's session with the router's reason", async () => {
     const other = fakeDetail({
       session_id: "s-other",

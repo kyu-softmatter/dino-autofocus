@@ -10,6 +10,7 @@ import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
 import {
   ApiError,
+  PERMISSION_CHECKING,
   PERMISSION_UNAVAILABLE,
   type Permissions,
   SESSION_OPS,
@@ -122,7 +123,7 @@ export default function SessionsScreen() {
 
   // shared reasons first (role, control, remote: GET /api/permissions), then this area's own
   const denied = (op: string): string | null => {
-    if (perms === null) return "Checking permissions";
+    if (perms === null) return PERMISSION_CHECKING;
     if (perms === "unavailable" || !perms[op]) return PERMISSION_UNAVAILABLE;
     return perms[op].allowed ? null : perms[op].reason ?? "Not allowed";
   };

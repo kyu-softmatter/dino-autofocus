@@ -87,7 +87,8 @@ Refusals use the ui-spec 7.0 strings:
 
 If `/api/permissions` cannot be read, every control is disabled with `"Permission check unavailable"`
 (rule for all screens); the list and the detail stay available. While the check is loading, controls are
-disabled with `"Checking permissions"`.
+disabled with `"Checking permissions…"` (same text on every screen). An op missing from the answer counts as
+`"Permission check unavailable"`.
 
 UI text is in English. Remote viewers and viewers can read everything and change nothing.
 
