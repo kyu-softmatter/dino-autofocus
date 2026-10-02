@@ -151,3 +151,10 @@
   `client.postStream(path, body) -> Response` that runs the same `check()` (401/423 re-login) and the `remote_view`
   read-only rule as `post`, then returns the raw Response for streaming. Tests for 401, 423, 403 remote_view and a
   streamed body. T-014b then switches to it.
+
+## T-010-12 (AF 실행4, after T-010-9; review AF 검토보조4) — web tests that survive a loaded machine
+
+- With vitest's default workers (24 on this desktop), runs under load hit 5 s timeouts in different App-level tests
+  (sample geometry save, assistant proposal card); `--maxWorkers=2` passes 293/293 (AF 검토, b0793db). In the vitest
+  config set `maxWorkers` to a small default (e.g. 4, overridable by env) and `testTimeout` to 15 s for the App-level
+  test files (or globally). No test logic changes. Run the whole suite twice to show it is stable.
