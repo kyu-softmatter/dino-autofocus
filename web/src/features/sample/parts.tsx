@@ -333,13 +333,13 @@ export function LoadingCheck({
         <li>
           {tick(img.done && img.ok === true)} Image:{" "}
           {img.done && img.ok === true ? (
-            `hole edge seen (${img.by ?? "?"} ${img.t ?? ""})`
+            `hole edge seen, grade computed (${img.by ?? "?"} ${img.t ?? ""})`
           ) : (
             <button disabled={imageBlocked !== null || imageStatus !== null} onClick={onImage}>
               Check with an image
             </button>
           )}
-          {img.done && img.ok === false && <Reason text={`image check failed: ${img.why ?? "no reason given"}`} />}
+          {img.done && img.ok === false && <Reason text={`image check failed (grade computed): ${img.why ?? "no reason given"}`} />}
           {imageStatus && <span className="muted"> {imageStatus}</span>}
           <Reason text={img.done && img.ok === true ? reasons.image : (imageBlocked ?? reasons.image)} />
         </li>

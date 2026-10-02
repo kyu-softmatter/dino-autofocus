@@ -4,31 +4,41 @@
  * Route rest: `?sample_id=<id>` views that sample; empty views the sample the
  * engine has open. Viewing is not opening: "Open" sends `sample_open`.
  *
- * The screen decides nothing: refusals come from the server (403 detail, the
- * access reasons) or the engine (`preflight_failed`), and the loading state
- * comes from the engine's sample view.
+ * The screen decides nothing: refusals come from the server (403 detail,
+ * /api/permissions, /api/sample/access) or the engine (`preflight_failed`), and
+ * the loading state comes from the engine's sample view. All traffic goes
+ * through the shell's client.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  type CommandIn,
+  CommandRefused,
+  type EventOut,
+  useClient,
+  useEngineEvents,
+  useEventsConnected,
+  useReadOnly,
+} from "../../app/client";
 import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
 import {
-  type CommandIn,
+  CHECKING_PERMISSIONS,
   type CurrentSample,
-  type EventOut,
   type Geometry,
   type GeometryField,
   type LoadingState,
-  type Permission,
+  PATHS,
+  type Permissions,
+  post,
+  READ_ONLY_REMOTE,
   readPermissions,
   SAMPLE_OPS,
   type SampleAccess,
   type SampleDetail,
   type SampleOp,
   type SampleSummary,
-  type SendResult,
-  useSampleApi,
 } from "./api";
 import { GeometryForm, LoadingCheck, Reason, SampleList, SampleSummaryPanel } from "./parts";
 import "./sample.css";
@@ -40,11 +50,19 @@ function sampleIdOf(rest: string): string | null {
 
 const isSampleOp = (op: unknown): op is SampleOp => (SAMPLE_OPS as readonly unknown[]).includes(op);
 
+const start = (op: SampleOp, args: Record<string, unknown> = {}): CommandIn => ({
+  kind: "start",
+  op,
+  op_id: "",
+  args,
+  origin: "human",
+});
+
 /** which control a command belongs to, so its refusal shows next to it */
-function controlOf(cmd: CommandIn): string {
-  switch (cmd.op) {
+function controlOf(op: SampleOp, args: Record<string, unknown>): string {
+  switch (op) {
     case "sample_open":
-      return `open:${String(cmd.args.sample_id)}`;
+      return `open:${String(args.sample_id)}`;
     case "sample_new":
       return "new";
     case "sample_geometry_set":
@@ -56,6 +74,16 @@ function controlOf(cmd: CommandIn): string {
   }
 }
 
+/** preflight_failed carries `checks: [{name, ok, why}]` (ui-spec 4.0) or a plain `why` */
+function failureText(ev: EventOut): string {
+  const d = ev.data ?? {};
+  if (ev.kind === "error") return `error: ${String(d.message ?? "unknown")}`;
+  if (ev.kind === "aborted") return `stopped: ${String(d.why ?? "unknown")}`;
+  const checks = Array.isArray(d.checks) ? (d.checks as { ok?: boolean; why?: string; name?: string }[]) : [];
+  const why = checks.filter((c) => c.ok === false).map((c) => c.why ?? c.name ?? "check failed");
+  return why.length > 0 ? why.join("; ") : String(d.why ?? "refused");
+}
+
 interface Selected {
   detail: SampleDetail;
   geometry: Geometry;
@@ -63,14 +91,16 @@ interface Selected {
 }
 
 export default function SampleScreen() {
-  const api = useSampleApi();
+  const client = useClient();
+  const { readOnly, why: readOnlyWhy } = useReadOnly();
+  const connected = useEventsConnected();
   const [rest, setRest] = useAreaPath();
   const [list, setList] = useState<SampleSummary[]>([]);
   const [fields, setFields] = useState<GeometryField[]>([]);
   const [current, setCurrent] = useState<CurrentSample | null>(null);
   const [selected, setSelected] = useState<Selected | null>(null);
   const [access, setAccess] = useState<SampleAccess | null>(null);
-  const [perms, setPerms] = useState<Record<SampleOp, Permission> | null>(null);
+  const [perms, setPerms] = useState<Permissions | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [imageStatus, setImageStatus] = useState<string | null>(null);
@@ -81,26 +111,35 @@ export default function SampleScreen() {
   const viewId = sampleIdOf(rest) ?? current?.sample_id ?? null;
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
+  // events in a gap are lost: re-read everything when the socket opens again
+  useEffect(() => {
+    if (connected) refresh();
+  }, [connected, refresh]);
+
   useEffect(() => {
     let live = true;
-    Promise.all([api.list(), api.fields(), api.current()])
-      .then(([l, f, c]) => {
+    Promise.all([
+      client.get<SampleSummary[]>(PATHS.list),
+      client.get<GeometryField[]>(PATHS.fields),
+      client.get<{ sample?: CurrentSample | null }>(PATHS.state),
+    ])
+      .then(([l, f, s]) => {
         if (!live) return;
         setList(l);
         setFields(f);
-        setCurrent(c);
+        setCurrent(s.sample ?? null);
       })
       .catch((e: Error) => live && setError(e.message));
     return () => {
       live = false;
     };
-  }, [api, tick]);
+  }, [client, tick]);
 
   useEffect(() => {
     let live = true;
-    void readPermissions(api, SAMPLE_OPS).then((p) => live && setPerms(p));
-    api
-      .access(viewId)
+    void readPermissions(client).then((p) => live && setPerms(p));
+    client
+      .get<SampleAccess>(PATHS.access(viewId))
       .then((a) => live && setAccess(a))
       .catch((e: Error) => live && setError(e.message));
     if (viewId === null) {
@@ -109,13 +148,17 @@ export default function SampleScreen() {
         live = false;
       };
     }
-    Promise.all([api.detail(viewId), api.geometry(viewId), api.loading(viewId)])
+    Promise.all([
+      client.get<SampleDetail>(PATHS.detail(viewId)),
+      client.get<Geometry>(PATHS.geometry(viewId)),
+      client.get<LoadingState>(PATHS.loading(viewId)),
+    ])
       .then(([detail, geometry, loading]) => live && setSelected({ detail, geometry, loading }))
       .catch((e: Error) => live && setError(e.message));
     return () => {
       live = false;
     };
-  }, [api, viewId, tick]);
+  }, [client, viewId, tick]);
 
   const setReason = useCallback((control: string, why: string | null) => {
     setReasons((r) => {
@@ -129,8 +172,8 @@ export default function SampleScreen() {
   const onEvent = useCallback(
     (ev: EventOut) => {
       const control = pending.current.get(ev.op_id);
-      const op = ev.data.op;
-      switch (ev.kind) {
+      // sample_opened and map_changed join EVENT_KINDS with T-011; until then the schema does not name them
+      switch (ev.kind as string) {
         case "sample_opened":
           setRest("");
           refresh();
@@ -139,28 +182,26 @@ export default function SampleScreen() {
           refresh();
           return;
         case "light_changed":
-          setLight(typeof ev.data.dialamp === "string" ? ev.data.dialamp : null);
-          return;
-        case "preflight_failed":
-          if (control) setReason(control, String(ev.data.why ?? "refused"));
-          if (control === "image") setImageStatus(null);
-          pending.current.delete(ev.op_id);
+          setLight(typeof ev.data?.dialamp === "string" ? ev.data.dialamp : null);
           return;
         case "started":
         case "progress":
-          if (control === "image") setImageStatus(String(ev.data.status ?? "Checking…"));
+          if (control === "image") setImageStatus(String(ev.data?.status ?? "Checking…"));
           return;
+        case "preflight_failed":
         case "aborted":
         case "error":
-          if (control) setReason(control, `stopped: ${String(ev.data.why ?? ev.data.message ?? "unknown")}`);
+          if (control) setReason(control, failureText(ev));
           if (control === "image") setImageStatus(null);
           pending.current.delete(ev.op_id);
+          refresh(); // the engine's answer to "may I" may have changed
           return;
         case "finished": {
           if (control === "image") setImageStatus(null);
           pending.current.delete(ev.op_id);
+          const op = ev.data?.op;
           if (!isSampleOp(op)) return;
-          const summary = (ev.data.summary ?? {}) as { sample_id?: unknown };
+          const summary = (ev.data?.summary ?? {}) as { sample_id?: unknown };
           if (op === "sample_new" && typeof summary.sample_id === "string") {
             setRest(`?sample_id=${encodeURIComponent(summary.sample_id)}`);
           }
@@ -171,34 +212,37 @@ export default function SampleScreen() {
     },
     [refresh, setReason, setRest],
   );
-
-  useEffect(() => api.subscribe(onEvent), [api, onEvent]);
+  useEngineEvents(onEvent);
 
   const send = useCallback(
-    async (cmd: CommandIn) => {
-      const control = controlOf(cmd);
+    async (op: SampleOp, args: Record<string, unknown> = {}) => {
+      const control = controlOf(op, args);
       setReason(control, null);
-      let res: SendResult;
       try {
-        res = await api.send(cmd);
+        const opId = await client.command(start(op, args));
+        pending.current.set(opId, control);
       } catch (e) {
-        res = { ok: false, reason: (e as Error).message };
+        setReason(control, e instanceof CommandRefused ? e.detail : String(e));
       }
-      if (res.ok) pending.current.set(res.op_id, control);
-      else setReason(control, res.reason);
     },
-    [api, setReason],
+    [client, setReason],
   );
 
   const openFolder = useCallback(async () => {
     if (!selected) return;
-    const res = await api.openFolder(selected.detail.sample_id);
-    setReason("folder", res.ok ? null : res.reason);
-  }, [api, selected, setReason]);
+    try {
+      await post(client, PATHS.openFolder(selected.detail.sample_id));
+      setReason("folder", null);
+    } catch (e) {
+      setReason("folder", e instanceof CommandRefused ? e.detail : String(e));
+    }
+  }, [client, selected, setReason]);
 
-  // the shared verdict first (ui-spec 7.0 order is the server's), then the sample-specific one
+  // ui-spec 7.0 order: read-only (shell), then the shared verdict, then the sample-specific one
+  const readOnlyText = readOnly ? (readOnlyWhy === "remote view" || !readOnlyWhy ? READ_ONLY_REMOTE : `Read-only: ${readOnlyWhy}`) : null;
   const denied = (op: SampleOp): string | null => {
-    if (perms === null) return "Checking permissions…";
+    if (readOnlyText) return readOnlyText;
+    if (perms === null) return CHECKING_PERMISSIONS;
     const p = perms[op];
     return p.allowed ? null : (p.reason ?? `${op} is not allowed now`);
   };
@@ -231,7 +275,7 @@ export default function SampleScreen() {
       <section aria-label="Samples" className="sample-panel">
         <h3>Samples</h3>
         <p>
-          <button disabled={newBlocked !== null} onClick={() => void send({ kind: "start", op: "sample_new", args: {} })}>
+          <button disabled={newBlocked !== null} onClick={() => void send("sample_new")}>
             New sample
           </button>
           <Reason text={newBlocked ?? reasons.new} />
@@ -241,7 +285,7 @@ export default function SampleScreen() {
           currentId={current?.sample_id ?? null}
           selectedId={id}
           onView={(sid) => setRest(`?sample_id=${encodeURIComponent(sid)}`)}
-          onOpen={(sid) => void send({ kind: "start", op: "sample_open", args: { sample_id: sid } })}
+          onOpen={(sid) => void send("sample_open", { sample_id: sid })}
           openBlocked={openBlocked}
           reasons={reasons}
         />
@@ -250,7 +294,7 @@ export default function SampleScreen() {
         <>
           <SampleSummaryPanel
             detail={selected.detail}
-            canOpenFolder={access?.can_open_folder === true}
+            canOpenFolder={access?.can_open_folder === true && !readOnly}
             onOpenFolder={() => void openFolder()}
             folderReason={reasons.folder}
           />
@@ -259,7 +303,7 @@ export default function SampleScreen() {
             geometry={selected.geometry}
             blocked={denied("sample_geometry_set")}
             reason={reasons.geometry}
-            onSave={(values) => void send({ kind: "start", op: "sample_geometry_set", args: { sample_id: id, values } })}
+            onSave={(values) => void send("sample_geometry_set", { sample_id: id, values })}
           />
           <LoadingCheck
             loading={selected.loading}
@@ -267,8 +311,8 @@ export default function SampleScreen() {
             imageBlocked={denied("loading_check_image")}
             reasons={reasons}
             imageStatus={imageStatus}
-            onPerson={() => void send({ kind: "start", op: "loading_confirm_person", args: { sample_id: id } })}
-            onImage={() => void send({ kind: "start", op: "loading_check_image", args: { sample_id: id } })}
+            onPerson={() => void send("loading_confirm_person", { sample_id: id })}
+            onImage={() => void send("loading_check_image", { sample_id: id })}
           />
           {light && <p className="muted">Brightfield: {light}</p>}
         </>

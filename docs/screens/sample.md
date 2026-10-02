@@ -31,7 +31,7 @@ The field list lives in **one place on each side**, so a change is one edit per 
 - server: `GET /api/sample/geometry-fields` serves that tuple as `GeometryField[]`; the response models
   carry values as `{key: GeometryValue}`, so no field name is hard-coded in `sample.py`;
 - web: the form renders from the `geometry-fields` response, labels included; no field name appears in the
-  screen code. Until gen:api, the provisional list sits only in the fake client in `features/sample/api.ts`.
+  screen code. Until T-009 serves it, the provisional list sits in `features/sample/api.ts` for the tests' fake server only.
 
 `GeometryField` = `{key, label, kind ("number" | "pair" | "choice"), unit, choices[] | null, default | null,
 safety: bool}`. Fields with `safety: true` get the safety mark (ui-spec 7.3).
