@@ -134,3 +134,8 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   Measured (AF 검토, after T-031b's run): commit charge 9.0 GB free of 81.9 GB, while physical RAM had 25.7 GB free.
   The limit is commit (mostly the ~30 open sessions), so a full suite needs commit headroom; pausing does not free
   it, closing a session or a bigger pagefile does (both are the user's).
+- User (T-012 txt reader, 실행9): three small `trajectory.txt` samples from the WSL run folders, one per layout:
+  run-20260924-001-smoke-g2k2 (2D, 98 kB), run-20260923-201-v5-k3-o3 (3D, 134 kB), and the first ~2000 lines of an
+  ABP run with theta (e.g. run-20260923-042-small-s2). Put them outside both repos (soft-matter-agents stays
+  read-only), e.g. `D:\AutoFocus\sim_samples\<run_id>\trajectory.txt`, and give the WSL source path for
+  `DINO_AF_SIM_TRAJECTORY_ROOTS`.
