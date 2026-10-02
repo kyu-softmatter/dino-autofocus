@@ -304,6 +304,7 @@ dev = [
 server = [
     { name = "anthropic" },
     { name = "fastapi" },
+    { name = "gsd" },
     { name = "pillow" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -335,6 +336,7 @@ dev = [
 server = [
     { name = "anthropic", specifier = ">=1.11.0" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "gsd", specifier = ">=5.0" },
     { name = "pillow", specifier = ">=10" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
@@ -432,6 +434,22 @@ http = [
 ]
 s3 = [
     { name = "s3fs" },
+]
+
+[[package]]
+name = "gsd"
+version = "5.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/22/16/b5298275654ab1da04e6283e6274fa9751ea0d5be36933c4e37502fda4a4/gsd-5.0.1.tar.gz", hash = "sha256:c072d1ee934864d618039f3e7448bc79f31fe1a0f1fabfdb9cd4143a7ab2376b", size = 202182, upload-time = "2026-04-07T13:46:02.904Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/42/016f93427a8b3d8821824ecbf2d8d5f8fa6e6568fbe0d07bedc0b922df9f/gsd-5.0.1-cp311-abi3-macosx_10_9_x86_64.whl", hash = "sha256:24876a703e21edc7b3074156ef8612d98c3e478cab6c62b4e139491746cc30d3", size = 265423, upload-time = "2026-04-07T13:45:55.087Z" },
+    { url = "https://files.pythonhosted.org/packages/26/21/f2d9e4954d2d2ce81e1f5d24b72c026c7dd73785e3306baf9371613ecb8c/gsd-5.0.1-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:dc9f5f3795630ea72071b3913c80296262f14b188f60b9519f252786411c9fb6", size = 267739, upload-time = "2026-04-07T13:45:56.651Z" },
+    { url = "https://files.pythonhosted.org/packages/df/dc/2ef01a7b6465f92f5fd271b8ee4f9d16422b3b3917d95958891980b4c2e1/gsd-5.0.1-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0322e804044e9e3007c1b65f142cd2597822b377899dce98d54f95f10ff6f81a", size = 595276, upload-time = "2026-04-07T13:45:58.308Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/f4/4bd2ffe70e527f49141418be227246aede645abab002963f97ed48d464be/gsd-5.0.1-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:bb9742191537b0046bc7ff8eb00ab77f48f7937e85fe895f5f143603159bd88b", size = 606056, upload-time = "2026-04-07T13:45:59.97Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/31/085c4d52d37432041a27978eaa038f254a96f49fbd37f4572e6c6e6a74e0/gsd-5.0.1-cp311-abi3-win_amd64.whl", hash = "sha256:e3fc73f2beadec36c7b48fd09f426090ca15109313c9d27073e475ccf9a44cba", size = 261384, upload-time = "2026-04-07T13:46:01.349Z" },
 ]
 
 [[package]]
