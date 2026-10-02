@@ -55,7 +55,7 @@ Response bodies are pydantic models; the TypeScript types are generated from Ope
 
 | Route | Returns |
 |---|---|
-| `GET /api/sample/list` | `SampleSummary[]`: `sample_id` (`YYYYMMDD_HHMM_n`), `created`, `fitted_at \| null`, `objectives_used[]`, `last_session {session_id, opened_at} \| null`, `awaiting_return: bool`. Newest first (last two from the T-027 reader, G8) |
+| `GET /api/sample/list` | `SampleSummary[]`: `sample_id` (`YYYYMMDD_HHMM_n`), `created`, `fitted_at \| null`, `objectives_used[]`, `last_session {session_id, opened_at} \| null`, `awaiting_return: bool`, `reserved: bool`. Newest first (last three from the T-027 reader, G8). A reserved sample (made by `sample_new`, no session yet) is listed with its id, folder and `created` from the folder; `fitted_at` and `last_session` are null, `objectives_used` is empty |
 | `GET /api/sample/geometry-fields` | `GeometryField[]` (section 2) |
 | `GET /api/sample/{sample_id}` | `SampleDetail`: the summary + `dir` (path string), `hole {centre_um, diameter_mm, fit_rms_um, n_points, arc_deg, fitted_at} \| null`, `calibration {um_per_px, objective} \| null`, `counts {scans, maps, flags}`, `can_open_folder: bool` (true only when this request is local; section 4) |
 | `GET /api/sample/{sample_id}/geometry` | `Geometry`: `{values: {key: GeometryValue}}` for every field in section 2 |
@@ -69,7 +69,7 @@ Response bodies are pydantic models; the TypeScript types are generated from Ope
 | Input (ui-spec 7.3) | Body | Who may send it |
 |---|---|---|
 | pick from the list | `{"kind": "start", "op": "sample_open", "args": {"sample_id": "<id>"}}`. Picks the sample for the next experiment session; nothing moves | Local operator with control. No session needed; with a session open for **another** sample the engine refuses (`preflight_failed`) (G4) |
-| `"New sample"` | `{"kind": "start", "op": "sample_new"}`. The engine assigns the id; it comes back in `finished.data.summary.sample_id`, then the geometry form opens | Same as `sample_open`: any session that is open must be this sample's, which a new sample never has, so `sample_new` with a session open is refused (G4) |
+| `"New sample"` | `{"kind": "start", "op": "sample_new"}`. The engine reserves the id and the folder and writes no event (G1); the id comes back in `finished.data.summary.sample_id`. The geometry form then opens, but saving it needs this sample's session, so until one is open it shows the reason `"Open an experiment session first"` (ui-spec 7.0) | Same as `sample_open`: any session that is open must be this sample's, which a new sample never has, so `sample_new` with a session open is refused (G4) |
 | geometry `"Save"` | `{"kind": "start", "op": "sample_geometry_set", "args": {"sample_id", "values": {"<key>": <value>}}}`, changed keys only. The engine stamps `by` and `t` | Local operator with control and **this sample's** open session (G4) |
 | `"Sample is on the stage"` | `{"kind": "start", "op": "loading_confirm_person", "args": {"sample_id"}}` (manual-step record) | Same as geometry save (G4) |
 | `"Check with an image"` | `{"kind": "start", "op": "loading_check_image", "args": {"sample_id"}}`. Turns on brightfield, takes one 4x frame, turns the light off; computed edge check | Same as geometry save (D15, like motion). Gate: camera, DiaLamp, 4x in place (T-028, G7) |
@@ -116,7 +116,7 @@ wrote them, and the screen re-reads the matching GET.
 
 | # | Question | Answer |
 |---|---|---|
-| G1 | Where geometry and loading entries live | The open session's `records/sample_events.jsonl` is the truth. `geometry_set` and `loading_step` are sample-event kinds written through T-019 `session.sample_event()` (T-027). `sample_new` writes a `sample_created` event and assigns the id (it runs with no session open; where that event lands is T-027's). `D:\AutoFocus\samples\<id>\` keeps the derived views (`sample.json`, `map.json`) and large files outside git. One reader in `engine/sample.py` (T-027) returns summary, detail, geometry and loading state; `sample.py` calls only that |
+| G1 | Where geometry and loading entries live | The open session's `records/sample_events.jsonl` is the truth. `geometry_set` and `loading_step` are sample-event kinds written through T-019 `session.sample_event()` (T-027). `sample_new` only reserves the id and the folder and writes no event (T-027 option (b)); when the first session for that sample opens, the engine writes `sample_created` as the first event of that session's `sample_events.jsonl`. Until then the sample is `reserved` in the list. `D:\AutoFocus\samples\<id>\` keeps the derived views (`sample.json`, `map.json`) and large files outside git. One reader in `engine/sample.py` (T-027) returns summary, detail, geometry and loading state; `sample.py` calls only that |
 | G2 | `sample_opened`, `map_changed` not in `EVENT_KINDS` | Added by T-011 |
 | G3 | The five op names | T-027 (AF 실행1) uses them as written here |
 | G4 | Who may send the five ops | All five use the existing `OPERATE` action (local operator with control). One sample per experiment session (manager, main 9052f48): `sample_open` / `sample_new` need no session and are refused when a session is open for another sample; `sample_geometry_set`, `loading_confirm_person`, `loading_check_image` need that sample's open session. This replaces the earlier "all five need an open session" |
