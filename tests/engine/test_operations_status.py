@@ -106,7 +106,7 @@ def test_registered_ops_run_under_the_runner(fake: FakeBackend, tmp_path) -> Non
         assert fake.lights["DiaLamp"] == "1"  # a status after light_set keeps the light
         assert r.snapshot()["hardware"]["last_status"]["op_id"] == sid
 
-        bad = run("light_set", mode="aura", line="UV", percent=1)
+        bad = run("light_set", mode="aura", line="VIOLET", percent=1)
         assert any(e.kind == "preflight_failed" and e.op_id == bad for e in events)
         fake.stuck.add("Aura")
         err = run("light_set", mode="aura", line="GREEN", percent=1)

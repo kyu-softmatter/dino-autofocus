@@ -29,7 +29,7 @@ import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from ..backend import Backend, Readback
+from ..backend import AURA_LINES, Backend, Readback
 from ..events import Event, EventSink, fan_out, null_sink
 from ..guards import GuardError, OpScope, lights_off, snapshot
 from ..records import OpRecord
@@ -37,8 +37,6 @@ from ..runner import OpContext, Operation, register_operation
 
 NAME = "light_set"
 MODES = ("brightfield", "aura", "off")
-# the Aura lines of the bench light engine; T-015 moves the allow-list next to the protocol
-AURA_LINES = ("VIOLET", "CYAN", "GREEN", "RED")
 MAX_PERCENT = 100.0
 
 

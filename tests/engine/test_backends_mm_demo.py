@@ -109,6 +109,7 @@ def test_info(demo):
     assert len(by_state) == 6
     assert by_state[0].label == "1-Plan Apo LmbdD20 4x" and by_state[0].magnification == 4
     assert by_state[5].free_wd_um == 130.0 and by_state[5].pixel_um == 0.065
+    assert [by_state[s].free_wd_um for s in (1, 2, 3, 4)] == [4000.0, 800.0, 160.0, 150.0]
     assert "simulated" in info.notes["z_below_range"] and "simulated" in info.notes["pfs"]
     assert info.notes["aura.CYAN"] == PROVISIONAL and "aura.GREEN" not in info.notes
     assert json.loads(demo.read_property("mm-demo", "notes")) == info.notes

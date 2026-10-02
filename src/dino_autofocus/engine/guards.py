@@ -60,7 +60,12 @@ PROVISIONAL = "unmeasured provisional"
 SAMPLE_Z_WINDOW_UM = (2800.0, 3200.0)  # measured window of the 2026-09-30 bench
 RETRACT_Z_UM, RETURN_Z_UM = 0.0, 2800.0  # change_objective.py
 WD_FRACTION = 0.4
-FREE_WD_UM = {"4x": 20000.0, "100x-Oil": 130.0}  # lens spec; add a lens only once known
+#: free working distance per lens; add a lens only once known. 4x and 100x-Oil from the
+#: 2026-09-30 run; 10x, 20x, 40x-WI, 60x-Oil are catalog values (librarian E3, read
+#: 2026-10-02, docs/microscope-pc-checklist.md). 40x-WI takes the short end of the collar
+#: range 0.16-0.20 mm: the value at the 0.17 collar it sits at is still open.
+FREE_WD_UM = {"4x": 20000.0, "10x": 4000.0, "20x": 800.0, "40x-WI": 160.0,
+              "60x-Oil": 150.0, "100x-Oil": 130.0}
 XY_BOX_MARGIN_UM = 1000.0
 
 # unmeasured provisional (checklist Q20 / Q12); every use is marked in the record
@@ -137,7 +142,7 @@ def approach_ceiling_um(key: str | None, window: tuple[float, float] = SAMPLE_Z_
                         ) -> float:
     """Highest target FocusAxis.approach() may climb to. The approach climbs without an
     image, so above RETURN_Z_UM only a lens whose known free working distance covers the
-    whole window above it may go (today the 4x). Every other lens, an unlisted key and an
+    whole window above it may go (the 4x, 10x and 20x). Every other lens, an unlisted key and an
     unreadable objective stop at RETURN_Z_UM (2800). Refused, never clamped (T-027b)."""
     wd = FREE_WD_UM.get(key) if key else None
     return window[1] if wd is not None and wd >= window[1] - RETURN_Z_UM else RETURN_Z_UM

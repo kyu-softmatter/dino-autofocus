@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from dino_autofocus.engine.backends.mock import MockBackend
-from dino_autofocus.engine.guards import PROVISIONAL
+from dino_autofocus.engine.guards import FREE_WD_UM, PROVISIONAL
 from dino_autofocus.engine.operations.objective_change import ObjectiveChange
 from dino_autofocus.engine.runner import AllowAll, Registry, Runner, RunnerConfig
 from dino_autofocus.server.api.objective import ceiling_for
@@ -119,7 +119,8 @@ def test_state_without_a_status_run_leaves_the_lens_unknown(make_client, make_en
 # -- lens rows --------------------------------------------------------------------------
 
 
-def test_lens_rows_give_the_reason_per_lens(make_client, make_engine):
+def test_lens_rows_give_the_reason_per_lens(make_client, make_engine, monkeypatch):
+    monkeypatch.delitem(FREE_WD_UM, "40x-WI")  # a lens without a value
     rows = {r["nosepiece_state"]: r for r in make_client(make_engine()).get(
         "/api/objective/lenses").json()}
     assert rows[0]["disabled_reason"] == "already on that objective" and not rows[0]["selectable"]

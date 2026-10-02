@@ -263,9 +263,10 @@ MOTION_DEVICES = frozenset({
     "Z", "XY", "Objective", "Autofocus", "Core",  # demo
 })
 
-#: Aura lines. Only GREEN was used on the bench (2026-09-30); the other names follow the
-#: demo mapping and are unmeasured provisional until read off the light engine.
-AURA_LINES = ("VIOLET", "CYAN", "GREEN", "RED")
+#: Aura lines as read off the Aura III 5-NII-WA on 2026-10-02 (docs/runs/
+#: 2026-10-02_bench-properties.json). Only GREEN has been switched on at the bench
+#: (2026-09-30); the rest are named but their use is unmeasured provisional.
+AURA_LINES = ("UV", "CYAN", "GREEN", "RED", "NIR")
 
 #: Token required (PLAN D15). Bench: Aura line on/off, line intensity (per-mille), master
 #: State; DiaLamp State and Intensity. Demo: White Light Shutter (DiaLamp) and the LED line
@@ -279,11 +280,11 @@ LIGHT_PROPERTIES = frozenset(
 )
 
 #: No token, on the backend's own camera device only (`BackendInfo.camera`): what the
-#: scripts set today. Prefer `set_exposure` / `set_roi` where they exist. The Kinetix
-#: readout-mode property is not listed until confirmed on the PC: the candidate is
-#: `ReadoutRate` ("100MHz 12bit" in the 2026-09-30 run log; docs/microscope-pc-checklist.md).
+#: scripts set today. Prefer `set_exposure` / `set_roi` where they exist. Kinetix readout:
+#: `ReadoutRate`'s allowed values depend on `Port` (2026-10-02: Port "Dynamic Range" ->
+#: only "100MHz 16bit"), so the two are listed together; set Port first.
 CAMERA_PROPERTIES = frozenset({"Exposure", "Binning", "PixelType",
-                               "OnCameraCCDXSize", "OnCameraCCDYSize"})
+                               "OnCameraCCDXSize", "OnCameraCCDYSize", "Port", "ReadoutRate"})
 
 
 def check_set_property(device: str, prop: str, token: object, *, camera: str) -> None:

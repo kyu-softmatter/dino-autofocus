@@ -112,8 +112,8 @@ uv run python -c "from pathlib import Path; from dino_autofocus.engine.backends.
 
 ## 2026-10-02 현미경 PC 결과
 
-> 이 결과에 따른 코드 수정은 아직 하지 않았다 (동결). 할 일은 `docs/tasks/BACKLOG.md` 인계 절의
-> "2026-10-02 bench results" 항목에 있다.
+> 이 결과에 따른 코드 수정 중 Aura 라인 이름, 카메라 `Port`·`ReadoutRate`, 렌즈 작동 거리 네 개는 반영했다
+> (사용자 승인, 2026-10-02). 나머지는 `docs/tasks/BACKLOG.md` 인계 절의 "2026-10-02 bench results" 항목에 있다.
 
 현미경 PC (Takatori_lab) 에서 확인했다. 저장소는 `dbfd023`. 장치 속성 전체는
 [runs/2026-10-02_bench-properties.json](runs/2026-10-02_bench-properties.json), 설정 파일 사본은

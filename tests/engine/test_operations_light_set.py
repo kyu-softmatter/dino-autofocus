@@ -14,7 +14,7 @@ from dino_autofocus.engine.operations.light_set import parse, plan, run_light_se
 @pytest.mark.parametrize("args, why", [
     ({"mode": "strobe"}, "mode"),
     ({}, "mode"),
-    ({"mode": "aura", "line": "UV", "percent": 1}, "line"),
+    ({"mode": "aura", "line": "VIOLET", "percent": 1}, "line"),  # not on the Aura
     ({"mode": "aura", "line": "GREEN"}, "percent"),
     ({"mode": "aura", "line": "GREEN", "percent": 0}, "percent"),
     ({"mode": "aura", "line": "GREEN", "percent": 101}, "percent"),
@@ -29,7 +29,7 @@ def test_allow_list_refuses(args, why) -> None:
 
 def test_refused_args_switch_nothing_and_write_nothing(fake: FakeBackend, tmp_path) -> None:
     with pytest.raises(ValueError):
-        run_light_set(fake, tmp_path, {"mode": "aura", "line": "UV", "percent": 1})
+        run_light_set(fake, tmp_path, {"mode": "aura", "line": "VIOLET", "percent": 1})
     assert fake.calls == [] and list(tmp_path.iterdir()) == []
 
 

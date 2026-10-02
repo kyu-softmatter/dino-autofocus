@@ -4,7 +4,8 @@
 
 ## HANDOVER (freeze, 2026-10-02) — read this first
 
-User decision: no new work is assigned. Work already committed or in review finishes (review → merge → push by hash);
+**Freeze lifted by the user on 2026-10-02** (after the bench results below); new work may be carded again.
+Earlier user decision: no new work is assigned. Work already committed or in review finishes (review → merge → push by hash);
 then each seat is archived. Development moves to another platform later; this section is the handover list.
 Everything below "HANDOVER" is the older working backlog and stays for history.
 
@@ -34,21 +35,24 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
   (remote viewers can call signup) that an email is registered; and login/unlock have no attempt limit. Before real
   logins or remote viewing: a neutral signup answer and a per-account and per-client attempt limit with lockout.
 
-### 2026-10-02 bench results (not carded; code unchanged)
+### 2026-10-02 bench results
+
+First three items done (user approved, freeze lifted 2026-10-02); the rest are open.
 
 Source: docs/microscope-pc-checklist.md "2026-10-02 현미경 PC 결과", docs/runs/2026-10-02_bench-properties.json,
 configs/micromanager/*.cfg (byte-exact; `.gitattributes` keeps them `-text`).
 
-- AURA lines: the Aura is "Aura III 5-NII-WA" with UV, CYAN, GREEN, RED, NIR. `engine/backend.py`
+- DONE AURA lines: the Aura is "Aura III 5-NII-WA" with UV, CYAN, GREEN, RED, NIR. `engine/backend.py`
   `AURA_LINES = ("VIOLET", "CYAN", "GREEN", "RED")` is wrong (no VIOLET; UV and NIR missing). Touches
   LIGHT_PROPERTIES, mm_real/mm_demo provisional flags, the demo label map (mm_demo_core has no UV/NIR LED),
   tests/engine/test_contract_runner.py:1041. Keep `MEASURED_AURA_LINES = ("GREEN",)`: only the names were read.
-- Camera allow-list: readout property is `ReadoutRate`, but its allowed values depend on `Port` (today
+- DONE Camera allow-list: readout property is `ReadoutRate`, but its allowed values depend on `Port` (today
   `Port=Dynamic Range` → only `100MHz 16bit`). Add `Port` and `ReadoutRate` together or neither; 9/30's
   `100MHz 12bit` came from another Port (unconfirmed).
-- FREE_WD (T-027b): catalog values from the librarian (E3): 10x 4 mm, 20x 0.8 mm, 40x WI 0.16 mm (safe end of
+- DONE FREE_WD (T-027b): catalog values from the librarian (E3): 10x 4 mm, 20x 0.8 mm, 40x WI 0.16 mm (safe end of
   0.16–0.20; value at the 0.17 collar is an open gap), 60x Oil 0.15 mm. Candidates for `guards.FREE_WD_UM` and
-  `BENCH_FREE_WD_UM` (states 1–4). Safety-relevant: widens what the guard allows; needs review and director OK.
+  `BENCH_FREE_WD_UM` (states 1–4). Effect: 10x and 20x may now approach above 2800 µm (WD ≥ the 400 µm window),
+  40x-WI/60x-Oil get sweep ceilings and become F5 targets. Still blocked on the bench by `BENCH_APPROACH`.
 - Stage Y limit is at least 20498.8 µm (one +Y 15 mm step-out, readback within 5 µm, < 30 s at 25 mm/s).
   X/Y limits are not readable as properties; mm-real still reports "unknown".
 - Core.Focus is empty in the bench cfg (`getFocusDevice()` = ""). mm-real names `ZDrive`, so fine; anything using

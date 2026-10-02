@@ -13,7 +13,7 @@ import pytest
 from dino_autofocus.engine import Command, Event
 from dino_autofocus.engine.backend import GUARD_TOKEN, Readback
 from dino_autofocus.engine.backends.mock import MockBackend
-from dino_autofocus.engine.guards import PROVISIONAL, GuardError
+from dino_autofocus.engine.guards import FREE_WD_UM, PROVISIONAL, GuardError
 from dino_autofocus.engine.operations.objective_change import (
     LOAD_KEY,
     NAME,
@@ -246,8 +246,6 @@ def test_reload_steps_out_and_back_without_rotating(make):
 
 @pytest.mark.parametrize("args, check", [
     ({"target_state": 0}, "target_differs"),  # already on 4x
-    ({"target_state": 1}, "target_working_distance"),  # 10x: no free WD in the guards yet
-    ({"target_state": 3}, "target"),  # 40x WI: no WD (and its label is not readable yet)
     ({"target_state": 9}, "target_lens"),
     ({}, "mode"),
     ({"target_state": 5, "resume": True}, "mode"),
@@ -263,6 +261,16 @@ def test_preflight_refusals(make, args, check):
     failed = sink.wait("preflight_failed", op_id)
     bad = [c["name"] for c in failed.data["checks"] if not c["ok"]]
     assert any(n.startswith(check) for n in bad), failed.data["checks"]
+    assert be.world.z_um == pytest.approx(3048.7)  # nothing moved
+
+
+@pytest.mark.parametrize("state, key", [(1, "10x"), (3, "40x-WI")])
+def test_preflight_refuses_a_lens_without_a_working_distance(make, monkeypatch, state, key):
+    monkeypatch.delitem(FREE_WD_UM, key)
+    r, sink, be = make()
+    failed = sink.wait("preflight_failed", r.submit(start(target_state=state)))
+    bad = [c["name"] for c in failed.data["checks"] if not c["ok"]]
+    assert any(n.startswith("target") for n in bad), failed.data["checks"]
     assert be.world.z_um == pytest.approx(3048.7)  # nothing moved
 
 
@@ -414,7 +422,8 @@ def test_no_session_logs_and_still_completes(make):
     assert be.world.objective.key == "4x"
 
 
-def test_unmeasured_working_distance_reason(make):
+def test_unmeasured_working_distance_reason(make, monkeypatch):
+    monkeypatch.delitem(FREE_WD_UM, "10x")
     r, sink, _ = make()
     failed = sink.wait("preflight_failed", r.submit(start(target_state=1)))
     wd = next(c for c in failed.data["checks"] if c["name"] == "target_working_distance")

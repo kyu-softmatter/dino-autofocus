@@ -210,6 +210,18 @@ def test_check_set_property_cases():
         check_set_property("Cam", "Gain", None, camera="Cam")
 
 
+def test_bench_aura_lines_and_kinetix_readout_2026_10_02():
+    """The Aura III has UV CYAN GREEN RED NIR and no VIOLET; Kinetix Port and ReadoutRate
+    are listed together (ReadoutRate's values depend on Port)."""
+    for line in ("UV", "CYAN", "GREEN", "RED", "NIR"):
+        check_set_property("Aura", line, GUARD_TOKEN, camera="Cam")
+        check_set_property("Aura", f"{line}_Intensity", GUARD_TOKEN, camera="Cam")
+    with pytest.raises(PropertyNotAllowed):
+        check_set_property("Aura", "VIOLET", GUARD_TOKEN, camera="Cam")
+    check_set_property("Cam", "Port", None, camera="Cam")
+    check_set_property("Cam", "ReadoutRate", None, camera="Cam")
+
+
 def test_refused_writes_never_reach_the_fake_device():
     b = FakeBackend()
     for args in (("ZDrive", "Position", 3000), ("DiaLamp", "State", 1), ("Foo", "Bar", 1)):

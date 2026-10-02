@@ -74,7 +74,8 @@ CAMERA_MODE = "Fluorescent Beads"
 
 #: bench Aura line -> demo LED label. Only GREEN is used on the bench so far (2026-09-30 run);
 #: the other line names are Lumencor's and are matched to the nearest demo wavelength.
-AURA_LINES = {"VIOLET": "385nm", "CYAN": "470nm", "GREEN": "550nm", "RED": "635nm"}
+#: NIR has no demo LED, so the demo refuses it.
+AURA_LINES = {"UV": "385nm", "CYAN": "470nm", "GREEN": "550nm", "RED": "635nm"}
 
 #: Ti2 nosepiece State -> Label from the run records (docs/runs/2026-09-30_substrate-scan.md,
 #: docs/operations-spec.md). The other positions have not been read on the bench yet.

@@ -187,7 +187,9 @@ def test_bench_lamp_and_set_property_allow_list(stub):
     with pytest.raises(UnguardedMotion):
         stub.set_property("DiaLamp", "State", 1)
     with pytest.raises(PropertyNotAllowed):
-        stub.set_property("Kinetix_red", "ReadoutRate", "100MHz 12bit")  # not listed yet
+        stub.set_property("Kinetix_red", "Gain", "1-Standard")  # not listed
+    with pytest.raises(PropertyNotAllowed):  # camera properties only on the camera
+        stub.set_property("Aura", "ReadoutRate", "100MHz 16bit", token=T)
     with pytest.raises(PropertyNotAllowed):  # listed, but not on this config
         stub.set_property("White Light Shutter", "State", 0, token=T)
 

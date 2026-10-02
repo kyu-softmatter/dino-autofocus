@@ -41,7 +41,7 @@ def test_plans_ascend_inside_the_window_and_under_the_100x_ceiling(fake):
     assert p.ceiling_um == pytest.approx(2985 + 0.4 * 130) and p.z_um[-1] <= p.ceiling_um
     assert p.z_um == sorted(p.z_um)
     with pytest.raises(GuardError, match="working distance"):
-        axis(fake, "3-Plan Apo 20x").plan(3000, 10, 1)
+        axis(fake, "2x").plan(3000, 10, 1)  # not in the lens table
     with pytest.raises(GuardError):
         axis(fake).plan(3400, 50, 5)
 
@@ -324,19 +324,25 @@ def _climbs_above_2800(key):
 
 @pytest.mark.parametrize("key", sorted(OBJECTIVE_LIMITS) + ["2x", None])
 def test_approach_ceiling_per_lens(fake, key):
-    """Above 2800 only a lens whose free WD covers the window may climb (today the 4x);
+    """Above 2800 only a lens whose free WD covers the window may climb (4x, 10x, 20x);
     every other lens, an unlisted key (2x) and an unreadable objective (None) are refused
     there, not clamped."""
     fake.z = 0.0
     a = FocusAxis(fake, key, allow_motion=True, sleep=lambda s: None)
     assert a.approach(2800) == 2800  # every lens may come back to the window floor
     if _climbs_above_2800(key):
-        assert key == "4x"
+        assert key in ("4x", "10x", "20x")
         assert a.approach(2850) == 2850
     else:
         with pytest.raises(GuardError, match="is above 2800 um"):
             a.approach(2850)
         assert fake.z == 2800  # refused before any move: no clamp
+
+
+def test_catalog_working_distances_set_the_sweep_ceiling(fake):
+    """2026-10-02 catalog values: the sweep ceiling is centre + 0.4 x free WD."""
+    assert axis(fake, "40x-WI").plan(2900, 10, 5).ceiling_um == pytest.approx(2900 + 0.4 * 160)
+    assert axis(fake, "60x-Oil").plan(2900, 10, 5).ceiling_um == pytest.approx(2900 + 0.4 * 150)
 
 
 def test_100x_oil_approach_to_3200_is_refused_not_clamped(fake):

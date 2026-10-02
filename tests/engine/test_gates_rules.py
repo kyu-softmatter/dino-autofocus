@@ -18,6 +18,7 @@ from dino_autofocus.engine.gates import (
     gate_rows,
     objective_options,
 )
+from dino_autofocus.engine.guards import FREE_WD_UM
 from dino_autofocus.engine.runner import PERMISSIONS
 
 ALL = ("camera", "xy_stage", "z_drive", "dia_lamp", "aura", "nosepiece", "pfs")
@@ -99,7 +100,8 @@ def test_gate_rows_put_disabled_first_and_carry_requirements():
     json.dumps(rows)
 
 
-def test_objective_options_say_why_a_position_is_not_selectable():
+def test_objective_options_say_why_a_position_is_not_selectable(monkeypatch):
+    monkeypatch.delitem(FREE_WD_UM, "40x-WI")  # a lens without a value
     opts = {o["state"]: o for o in objective_options(full())}
     assert opts[0]["reasons"] == ["already on this objective"]
     assert opts[3]["reasons"] == ["working distance of 40x-WI not in the guards' lens table"]

@@ -76,7 +76,8 @@ BENCH_RETRACT_UM = 0.0  # lowest bench z accepted: the full retract
 MEASURED_AURA_LINES = ("GREEN",)  # 2026-09-30 bench run
 #: bench lens facts by nosepiece State, from docs/runs/2026-09-30_substrate-scan.yaml
 BENCH_PIXEL_UM = {0: 1.625, 5: 0.065}
-BENCH_FREE_WD_UM = {0: 20000.0, 5: 130.0}
+#: states 1-4 are catalog values (guards.FREE_WD_UM, 2026-10-02)
+BENCH_FREE_WD_UM = {0: 20000.0, 1: 4000.0, 2: 800.0, 3: 160.0, 4: 150.0, 5: 130.0}
 
 
 def _readbacks(recs: list[DemoReadback]) -> list[Readback]:

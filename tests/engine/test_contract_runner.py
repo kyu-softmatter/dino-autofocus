@@ -1038,10 +1038,10 @@ def test_light_payload_reads_little_while_aura_is_off(make, fake):
         calls.clear()
         fake.aura_line_on("GREEN", 1, token=GUARD_TOKEN)
         fake.props[("Aura", "GREEN")] = "1"
-        for line in ("VIOLET", "CYAN", "RED"):
+        for line in ("UV", "CYAN", "RED", "NIR"):
             fake.props[("Aura", line)] = "0"
         assert r._read_lights()["aura"]["lines"] == {"GREEN": 1.0}
-        assert len(calls) == 1 + 4 + 1  # DiaLamp intensity, 4 line switches, 1 intensity
+        assert len(calls) == 1 + 5 + 1  # DiaLamp intensity, 5 line switches, 1 intensity
     finally:
         del fake.read_property
 
