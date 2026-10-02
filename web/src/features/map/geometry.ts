@@ -105,10 +105,15 @@ export function clock(t: number | null | undefined): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** Retired flags stay in the record (T-027c) but are not in play. */
+export function isRetired(f: Flag): boolean {
+  return f.retired === true || f.retired_at !== null;
+}
+
 /** Flags as drawn: a flag replaced by a newer one is hidden; retired ones only on request. */
 export function visibleFlags(flags: Flag[], showRetired: boolean): Flag[] {
   const replaced = new Set(flags.map((f) => f.replaces).filter((r): r is string => r !== null));
-  return flags.filter((f) => !replaced.has(f.flag_id) && (showRetired || f.retired_at === null));
+  return flags.filter((f) => !replaced.has(f.flag_id) && (showRetired || !isRetired(f)));
 }
 
 /**

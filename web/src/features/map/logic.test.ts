@@ -101,6 +101,16 @@ describe("scene layers", () => {
     expect(candidateMark({ ...data.candidates[SAMPLE][0], source: "person_rejected" })).toBe("cross");
   });
 
+  it("draws a retired flag only on the toggle, and then as retired, never as active", () => {
+    const flagsOf = (show: boolean) =>
+      buildScene({ ...input, showRetired: show }, ALL_LAYERS_ON).flatMap((i) => (i.kind === "flag" ? [[i.id, i.retired]] : []));
+    expect(flagsOf(false)).toEqual([["f1", false]]);
+    expect(flagsOf(true)).toEqual([
+      ["f1", false],
+      ["f0", true],
+    ]);
+  });
+
   it("colours visits by verdict only", () => {
     const visits = buildScene(input, ALL_LAYERS_ON).filter((i) => i.layer === "visits");
     expect(visits.map((v) => (v.kind === "rect" ? v.style : null))).toEqual(["visit_in_focus"]);

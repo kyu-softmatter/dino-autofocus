@@ -37,6 +37,7 @@ import {
   fitView,
   holeFitStatus,
   inBox,
+  isRetired,
   mapExtent,
   visibleCandidates,
   visibleFlags,
@@ -954,8 +955,13 @@ function FlagsPanel({
               {f.name}
             </button>{" "}
             {f.note} · {clock(f.t)} · {f.objective ?? "—"} · {f.x_um.toFixed(1)}, {f.y_um.toFixed(1)} · <EncoderZ readbackUm={f.z_um} />
-            {f.retired_at !== null && <span className="map-muted"> · retired</span>}
-            {f.retired_at === null && (
+            {isRetired(f) && (
+              <span className="map-muted" data-testid={`retired-${f.flag_id}`}>
+                {" "}· retired{f.retired_by ? ` by ${f.retired_by}` : ""}
+                {f.retired_at !== null ? ` at ${clock(f.retired_at)}` : ""}
+              </span>
+            )}
+            {!isRetired(f) && (
               <>
                 {" "}
                 <button disabled={retireDisabled !== null} onClick={() => onRetire(f.flag_id)}>
@@ -1043,7 +1049,10 @@ function CandidatesPanel({
               <button className="map-link" onClick={() => onSelect(selected === c.candidate_id ? null : c.candidate_id)}>
                 {c.candidate_id}
               </button>{" "}
-              {SOURCE_LABEL[c.source]} · {c.x_um.toFixed(1)}, {c.y_um.toFixed(1)}
+              {SOURCE_LABEL[c.source]}
+              {c.source !== "classical_candidate" && c.by ? ` by ${c.by}` : ""}
+              {c.source !== "classical_candidate" && c.decided_at != null ? ` at ${clock(c.decided_at)}` : ""}
+              {" "}· {c.x_um.toFixed(1)}, {c.y_um.toFixed(1)}
               {c.source === "classical_candidate" && (
                 <>
                   {" "}

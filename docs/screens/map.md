@@ -159,7 +159,7 @@ shows the reason. Field names in this table are assumed (G6).
 | G7 | Edge-trace diameter arg name | **Decided**: `hole_diameter_mm` (operations-spec 8절); ui-spec is fixed by its author |
 | G8 | Engine-assigned `flag_id` / `candidate_id`; decisions reference them (`decides`, `replaces`); reject = new entry with `source: "person_rejected"` | Future engine card |
 | G9 | Op names `map_flag_retire`, `candidate_confirm`, `candidate_reject` | **Fixed in T-011** as written here |
-| G10 | The fold (`records.events.fold`) keeps one entry per id: `flag_remove` drops a flag, and a `particle` event with the same id replaces its status (`candidate` / `confirmed`; `rejected` is read as `person_rejected`). So `retired_at` is null and `include_retired` returns no extra flags; `replaces` / `decides` come only from the payload | Router (T-102) maps what the fold gives. The engine ops (WP-I) decide whether retire writes `flag_remove` or a `flag_set` with `retired_at` |
+| G10 | Retired flags and decided candidates in the fold | **Closed by T-027c** (b602da5): `flag_remove` keeps the flag with `retired: True`; every flag and particle has a `history` of `{kind, by, at, status}`. `map.py` lists what is in play with `SampleView.active_flags()` / `open_candidates()` and returns the rest on `include_retired` / `include_rejected`, with `retired_by` / `retired_at` and the decision's `by` / `decided_at` taken from history. The screen shows retired flags on the toggle and rejected candidates as a grey × |
 
 Until the engine side merges, stage B tests use a fake engine with these command names and a fixture
 session folder with a `records/sample_events.jsonl` (D1) and a `mosaic.json` in the G4 shape.

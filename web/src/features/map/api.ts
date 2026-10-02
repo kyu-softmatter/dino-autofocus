@@ -94,6 +94,15 @@ export interface ResultDetail extends ResultSummary {
   mosaic: MosaicExtent | null;
 }
 
+/** One step of a flag or candidate from the fold (T-027c): who, when, what. */
+export interface HistoryEntry {
+  kind: string;
+  by: string | null;
+  /** epoch seconds */
+  at: number | null;
+  status?: string | null;
+}
+
 export interface Flag {
   flag_id: string;
   name: string;
@@ -106,6 +115,9 @@ export interface Flag {
   z_um: number | null;
   replaces: string | null;
   retired_at: number | null;
+  retired?: boolean;
+  retired_by?: string | null;
+  history?: HistoryEntry[];
 }
 
 export type CandidateSource = "classical_candidate" | "person_confirmed" | "person_rejected";
@@ -120,6 +132,9 @@ export interface Candidate {
   decides: string | null;
   t: number | null;
   by: string | null;
+  /** when the person confirmed or rejected it (from history) */
+  decided_at?: number | null;
+  history?: HistoryEntry[];
 }
 
 /**

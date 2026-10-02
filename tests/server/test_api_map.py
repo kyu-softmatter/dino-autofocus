@@ -181,6 +181,31 @@ def test_flags_and_candidates(world, make_client):
     assert {x["candidate_id"]: x["source"] for x in every}["c3"] == "person_rejected"
 
 
+def test_retired_flag_is_not_in_play_but_kept_with_its_history(world, make_client):
+    """T-027c: the fold keeps a retired flag; the default list uses active_flags()."""
+    c = make_client(world.engine)
+    assert "f0" not in {f["flag_id"] for f in c.get(f"/api/map/{SAMPLE}/flags").json()}
+    every = {f["flag_id"]: f for f in c.get(f"/api/map/{SAMPLE}/flags?include_retired=true").json()}
+    f0, f1 = every["f0"], every["f1"]
+    assert f0["retired"] is True and f0["retired_by"] == OPERATOR
+    assert f0["retired_at"] is not None and (f0["x_um"], f0["y_um"]) == (7000.0, 0.0)
+    assert [h["kind"] for h in f0["history"]] == ["flag_set", "flag_remove"]
+    assert f1["retired"] is False and f1["retired_at"] is None and f1["retired_by"] is None
+
+
+def test_decided_candidates_carry_who_and_when(world, make_client):
+    """T-027c: open_candidates() leaves out rejected ones; decisions come from history."""
+    c = make_client(world.engine)
+    shown = {x["candidate_id"]: x for x in c.get(f"/api/map/{SAMPLE}/candidates").json()}
+    assert "c3" not in shown
+    assert shown["c1"]["by"] is None and shown["c1"]["decided_at"] is None
+    assert shown["c2"]["by"] == OPERATOR and shown["c2"]["decided_at"] is not None
+    assert shown["c2"]["history"][-1]["status"] == "confirmed"
+    every = {x["candidate_id"]: x
+             for x in c.get(f"/api/map/{SAMPLE}/candidates?include_rejected=true").json()}
+    assert every["c3"]["by"] == OPERATOR and every["c3"]["decided_at"] is not None
+
+
 def test_unknown_sample_bad_ids_and_no_store(world, make_client):
     c = make_client(world.engine)
     assert c.get("/api/map/20990101_0000_1").status_code == 404

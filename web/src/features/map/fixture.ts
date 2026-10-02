@@ -105,15 +105,15 @@ export function fixture(over: Partial<FakeData> = {}): FakeData {
     flags: {
       [SAMPLE]: [
         { flag_id: "f1", name: "good field", note: "dense", t: FIT_AT + 500, objective: "4x", x_um: 8164.7, y_um: 523.4, z_um: 2988.45, replaces: null, retired_at: null },
-        { flag_id: "f0", name: "old", note: "", t: FIT_AT + 100, objective: "4x", x_um: 7000, y_um: 0, z_um: null, replaces: null, retired_at: FIT_AT + 200 },
+        { flag_id: "f0", name: "old", note: "", t: FIT_AT + 100, objective: "4x", x_um: 7000, y_um: 0, z_um: null, replaces: null, retired: true, retired_at: FIT_AT + 200, retired_by: "op@example.test" },
       ],
     },
     candidates: {
       [SAMPLE]: [
         { candidate_id: "c1", x_um: 7811, y_um: 1529, source: "classical_candidate", score: 0.7, result_id: "sample_map_20260930-200100", decides: null, t: FIT_AT + 400, by: null },
         { candidate_id: "c2", x_um: 8100, y_um: 600, source: "classical_candidate", score: 0.5, result_id: "sample_map_20260930-200100", decides: null, t: FIT_AT + 400, by: null },
-        { candidate_id: "c3", x_um: 8100, y_um: 600, source: "person_confirmed", score: null, result_id: null, decides: "c2", t: FIT_AT + 600, by: "op@example.test" },
-        { candidate_id: "c4", x_um: 9000, y_um: 900, source: "person_rejected", score: null, result_id: null, decides: "c5", t: FIT_AT + 600, by: "op@example.test" },
+        { candidate_id: "c3", x_um: 8100, y_um: 600, source: "person_confirmed", score: null, result_id: null, decides: "c2", t: FIT_AT + 600, by: "op@example.test", decided_at: FIT_AT + 600 },
+        { candidate_id: "c4", x_um: 9000, y_um: 900, source: "person_rejected", score: null, result_id: null, decides: "c5", t: FIT_AT + 600, by: "op@example.test", decided_at: FIT_AT + 660 },
       ],
     },
     ...over,

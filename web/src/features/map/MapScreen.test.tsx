@@ -158,6 +158,26 @@ describe("map screen", () => {
     await waitFor(() => expect(last(w)?.body.replaces).toBe("f1"));
   });
 
+  it("keeps a retired flag out of play until the toggle, then shows who retired it and when", async () => {
+    await mount();
+    const panel = screen.getByRole("region", { name: "Flags" });
+    await within(panel).findByRole("button", { name: "good field" });
+    expect(within(panel).queryByRole("button", { name: "old" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show retired flags" }));
+    await within(panel).findByRole("button", { name: "old" });
+    expect(screen.getByTestId("retired-f0").textContent).toMatch(/retired by op@example\.test at \d\d:\d\d$/);
+    const row = screen.getByTestId("retired-f0").closest("li") as HTMLElement;
+    expect(within(row).queryByRole("button", { name: "Retire" })).toBeNull();
+  });
+
+  it("shows who decided a candidate and when", async () => {
+    await mount();
+    const panel = screen.getByRole("region", { name: "Candidates" });
+    await waitFor(() => expect(panel.textContent).toMatch(/confirmed by op@example\.test at \d\d:\d\d/));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show rejected candidates" }));
+    await waitFor(() => expect(panel.textContent).toMatch(/rejected by op@example\.test at \d\d:\d\d/));
+  });
+
   it("toggles layers and the hidden-by-default records", async () => {
     await mount();
     const mosaic = screen.getByRole("checkbox", { name: "Mosaic" });

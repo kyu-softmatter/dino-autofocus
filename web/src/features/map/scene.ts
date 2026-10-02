@@ -4,7 +4,7 @@
  */
 
 import type { Box, Candidate, Flag, MapState, MosaicExtent } from "./api";
-import { pointBox, visibleCandidates, visibleFlags } from "./geometry";
+import { isRetired, pointBox, visibleCandidates, visibleFlags } from "./geometry";
 
 export const LAYERS = ["mosaic", "scanBox", "visits", "boundary", "candidates", "flags", "field", "target"] as const;
 export type Layer = (typeof LAYERS)[number];
@@ -90,7 +90,7 @@ export function buildScene(inp: SceneInput, on: LayerSet): Item[] {
   }
   if (on.flags) {
     for (const f of visibleFlags(inp.flags, inp.showRetired)) {
-      items.push({ layer: "flags", kind: "flag", x: f.x_um, y: f.y_um, id: f.flag_id, label: f.name, retired: f.retired_at !== null });
+      items.push({ layer: "flags", kind: "flag", x: f.x_um, y: f.y_um, id: f.flag_id, label: f.name, retired: isRetired(f) });
     }
   }
   if (on.field && inp.field) {

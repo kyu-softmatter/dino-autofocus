@@ -132,6 +132,15 @@ class ResultDetail(ResultSummary):
     mosaic: MosaicExtent | None
 
 
+class HistoryEntry(BaseModel):
+    """One step of a flag or candidate, from the fold (T-027c): who, when, what."""
+
+    kind: str  # flag_set | flag_remove | particle
+    by: str | None = None
+    at: float | None = None  # epoch seconds
+    status: str | None = None  # particle steps: candidate | confirmed | rejected
+
+
 class Flag(BaseModel):
     flag_id: str
     name: str
@@ -142,7 +151,10 @@ class Flag(BaseModel):
     y_um: float
     z_um: float | None = None  # ZDrive read-back when the flag was set
     replaces: str | None = None
+    retired: bool = False
     retired_at: float | None = None
+    retired_by: str | None = None
+    history: list[HistoryEntry] = Field(default_factory=list)
 
 
 class Candidate(BaseModel):
@@ -154,7 +166,9 @@ class Candidate(BaseModel):
     result_id: str | None = None
     decides: str | None = None
     t: float | None
-    by: str | None = None
+    by: str | None = None  # who decided (confirmed / rejected), from history
+    decided_at: float | None = None
+    history: list[HistoryEntry] = Field(default_factory=list)
 
 
 class FlagIn(BaseModel):
@@ -265,14 +279,34 @@ def _visit(v: dict[str, Any]) -> Visit | None:
                  source=source if isinstance(source, str) else None)
 
 
+def _history(rec: dict[str, Any]) -> list[HistoryEntry]:
+    out = []
+    for h in rec.get("history") or []:
+        if isinstance(h, dict):
+            st = h.get("status")
+            out.append(HistoryEntry(kind=str(h.get("kind") or ""), by=h.get("by"),
+                                    at=_epoch(h.get("at")),
+                                    status=st if isinstance(st, str) else None))
+    return out
+
+
+def _last(hist: list[HistoryEntry], kind: str, status: str | None = None) -> HistoryEntry | None:
+    return next((h for h in reversed(hist)
+                 if h.kind == kind and (status is None or h.status == status)), None)
+
+
 def _flag(fid: str, f: dict[str, Any]) -> Flag | None:
     x, y = _num(f.get("x_um")), _num(f.get("y_um"))
     if x is None or y is None:
         return None
+    hist = _history(f)
+    retired = bool(f.get("retired"))
+    gone = _last(hist, "flag_remove") if retired else None
     return Flag(flag_id=fid, name=str(f.get("name") or fid), note=str(f.get("note") or ""),
                 t=_epoch(f.get("t")), objective=f.get("objective"), x_um=x, y_um=y,
-                z_um=_num(f.get("z_um")), replaces=f.get("replaces"),
-                retired_at=_epoch(f.get("retired_at")))
+                z_um=_num(f.get("z_um")), replaces=f.get("replaces"), retired=retired,
+                retired_at=gone.at if gone else None, retired_by=gone.by if gone else None,
+                history=hist)
 
 
 _SOURCE = {"candidate": "classical_candidate", "confirmed": "person_confirmed",
@@ -285,9 +319,12 @@ def _candidate(pid: str, p: dict[str, Any]) -> Candidate | None:
         return None
     status = str(p.get("status") or "candidate")
     source = _SOURCE.get(status, "classical_candidate")
+    hist = _history(p)
+    decided = None if source == "classical_candidate" else _last(hist, "particle", status)
     return Candidate(candidate_id=pid, x_um=x, y_um=y, source=source, score=_num(p.get("score")),
                      result_id=p.get("result_id"), decides=p.get("decides"), t=_epoch(p.get("t")),
-                     by=None if source == "classical_candidate" else p.get("user_id"))
+                     by=decided.by if decided else None,
+                     decided_at=decided.at if decided else None, history=hist)
 
 
 # -- scan results in the legacy root ----------------------------------------------------
@@ -473,16 +510,17 @@ def mosaic(sample_id: str, result_id: str, eng: Engine,
 @router.get("/{sample_id}/flags", response_model=list[Flag], responses=REFUSALS)
 def flags(sample_id: str, eng: Engine, include_retired: bool = False) -> list[Flag]:
     view, _ = sample_view(eng, sample_id)
-    out = [f for f in (_flag(k, v) for k, v in view.flags.items()) if f is not None]
-    return [f for f in out if include_retired or f.retired_at is None]
+    shown = view.flags if include_retired else view.active_flags()  # T-027c: what is in play
+    return [f for f in (_flag(k, v) for k, v in shown.items()) if f is not None]
 
 
 @router.get("/{sample_id}/candidates", response_model=list[Candidate], responses=REFUSALS)
 def candidates(sample_id: str, eng: Engine, include_rejected: bool = False) -> list[Candidate]:
     view, _ = sample_view(eng, sample_id)
-    every = {**view.candidates, **view.confirmed_particles}
-    out = [c for c in (_candidate(k, v) for k, v in every.items()) if c is not None]
-    return [c for c in out if include_rejected or c.source != "person_rejected"]
+    # T-027c: open_candidates() leaves out rejected ones; confirmed particles are drawn filled
+    shown = {**(view.candidates if include_rejected else view.open_candidates()),
+             **view.confirmed_particles}
+    return [c for c in (_candidate(k, v) for k, v in shown.items()) if c is not None]
 
 
 # -- D16 writes: local operator, then the engine (control, open session) ----------------
