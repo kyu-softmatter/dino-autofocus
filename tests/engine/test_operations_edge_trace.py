@@ -474,3 +474,48 @@ def test_runner_uses_the_installed_sample_root_and_needs_its_session(live, tmp_p
     assert checks["sample"]["ok"] and checks["sample"]["read"] == str(other / SID)
     assert not checks["sample_record"]["ok"]
     assert "open experiment session" in checks["sample_record"]["why"]
+
+
+def test_runner_with_a_records_store_writes_sample_events(live, tmp_path) -> None:
+    """With the server's sample seat and an open session, the boundary and the fit are sample
+    events (boundary_clear on replace, boundary_point, hole_fit); map.json and sample.json are
+    regenerated from them."""
+    from dino_autofocus.engine.operations.sample_ops import SampleSeat, install_sample_seat
+    from dino_autofocus.engine.sample import read_sample
+    from dino_autofocus.records import ExperimentSession, FolderStore, RecordsConfig
+
+    store = FolderStore(RecordsConfig(records_root=tmp_path / "records",
+                                      data_root=tmp_path / "data"))
+    session = ExperimentSession.open(store, "u1", SID)
+    session.sample_event("boundary_point", x_um=1.0, y_um=2.0)  # an earlier trace
+    lv = live(HoleWorld(START))
+    lv.r.set_experiment_session(session.session_id, 1000.0)
+    install_sample_seat(lv.r, SampleSeat(store, tmp_path, session_for=lambda s: session))
+
+    def cmd(kind, op_id="", op="", **args):
+        from dino_autofocus.engine.events import Command
+
+        return lv.r.submit(Command(kind, op=op, op_id=op_id, args=args, user_id="u1",
+                                   session_id=session.session_id))
+
+    op_id = cmd("start", op="edge_trace", sample_id=SID, max_path_um=2500, speed_um_s=1000)
+    for key in ("replace_hole_fit", "start_trace"):
+        ask = lv.wait(lambda e, key=key: e.kind == "confirm_required" and e.op_id == op_id
+                      and e.data["key"] == key)
+        cmd("confirm", op_id, key=ask.data["key"], ok=True)
+    end = lv.wait(lambda e: e.op_id == op_id and e.kind in ("finished", "aborted", "error"))
+    assert end.kind == "finished", end.data
+    view = read_sample(store, SID, tmp_path, session.session_id)
+    pts = [[p["x_um"], p["y_um"]] for p in view.boundary]
+    assert [1.0, 2.0] not in pts and len(pts) == end.data["summary"]["n_points"] >= 6
+    assert view.hole["closed_loop"] is False and view.hole["fitted_at"]
+    assert view.hole["trace_stop"] == "travel or time limit"
+    kinds = [json.loads(line)["kind"] for line in
+             session.layout.sample_events.read_text(encoding="utf-8").splitlines()]
+    assert kinds[:2] == ["boundary_point", "boundary_clear"] and kinds[-1] == "hole_fit"
+    derived = json.loads((tmp_path / SID / "map.json").read_text(encoding="utf-8"))
+    assert derived["boundary"] == pts  # map.json regenerated from the events
+    info = json.loads((tmp_path / SID / "sample.json").read_text(encoding="utf-8"))
+    assert info["hole"]["fitted_at"] == view.hole["fitted_at"]
+    assert info["stage_camera_calibration"]["objective"] == "4x"  # kept as a sample.json key
+    assert any(e.kind == "map_changed" and e.data["what"] == "hole" for e in lv.events)

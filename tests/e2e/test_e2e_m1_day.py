@@ -183,17 +183,15 @@ def test_08_f4_edge_trace_fits_the_hole(day):
 
 
 def test_09_the_trace_lands_in_the_sample_record(day):
-    """Each traced edge point goes in through T-027's boundary_mark (the edge_trace op will
-    call it once it is registered, T-032); the hole fit itself is written as its sample
-    event here until then. The sample view must give back the traced hole and loop."""
+    """The edge_trace op wrote every traced point (`boundary_point`) and the fit (`hole_fit`)
+    as sample events through the open session itself (T-032 stage 2); map.json is the view
+    regenerated from them. The sample view must give back the traced hole and loop."""
     after(day, "edge_trace")
     s, hole = day.session, day.trace["hole"]
-    points = [list(p) for p in day.sample.load_map().boundary]  # what the trace saw
+    points = [list(p) for p in day.sample.load_map().boundary]  # derived from the events
     assert len(points) == day.trace["n_points"]
-    for x, y in points:
-        assert day.run("boundary_mark", {"sample_id": day.sample.id, "x_um": x,
-                                         "y_um": y}).kind == "finished"
-    s.sample_event("hole_fit", **hole)
+    kinds = [e.kind for e in s.events()]
+    assert kinds.count("boundary_point") == len(points) and kinds.count("hole_fit") == 1
 
     v = view(day)
     assert [[p["x_um"], p["y_um"]] for p in v.boundary] == points
@@ -255,9 +253,10 @@ def test_16_every_record_carries_the_user_and_the_session(day):
     sid = day.session.session_id
     recs = summaries(day)
     ops = [r["op"] for r in recs]
+    # boundary points come from edge_trace itself now (T-032 stage 2), not boundary_mark runs
     assert {"edge_trace", "light_set", "status", "lights_off", "sample_geometry_set",
-            "loading_confirm_person", "loading_check_image", "boundary_mark"} <= set(ops)
-    for r in recs:  # the runner's records and the edge_trace code's own record
+            "loading_confirm_person", "loading_check_image"} <= set(ops)
+    for r in recs:  # every runner record
         assert r["user_id"] == OPERATOR, r["op_id"]
         assert r["session_id"] == sid, r["op_id"]
     lay = day.session.layout

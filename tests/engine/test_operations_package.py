@@ -14,12 +14,13 @@ import dino_autofocus.engine.operations as ops
 from dino_autofocus.engine.runner import OPERATIONS, Runner, RunnerConfig
 
 # operations-spec op names (sections 1-8, ui-spec light_set) and the sample ops (T-027)
-SPEC_OPS = {"status", "scan_4x", "objective_change", "focus_100x", "edge_trace", "light_set"}
+SPEC_OPS = {"status", "scan_4x", "objective_change", "focus_100x", "edge_trace", "light_set",
+            "sample_map", "goto_xy", "map_flag", "map_flag_retire", "candidate_confirm",
+            "candidate_reject"}
 SAMPLE_OPS = {"sample_open", "sample_new", "sample_geometry_set", "loading_confirm_person",
               "loading_check_image", "boundary_mark", "boundary_undo", "boundary_reset"}
 # in the spec, not on main yet: the task that adds each (then it moves to SPEC_OPS)
-PENDING = {"hardware_scan": "T-028", "sample_map": "T-032 stage 2", "goto_xy": "T-032 stage 2",
-           "map_flag": "T-032 stage 2"}
+PENDING = {"hardware_scan": "T-028"}
 
 
 def test_every_module_in_the_package_is_imported() -> None:
