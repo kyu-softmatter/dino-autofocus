@@ -141,3 +141,9 @@
   `install_sample_seat(runner, SampleSeat(store, samples_root, session_for))`, where `session_for(session_id)` returns the
   server's open ExperimentSession object, so every writer shares one seq counter.
 - The sessions router (T-106) calls `ensure_sample_created(session, store)` on session open.
+
+## From the T-009 merge (9901bbc)
+
+- T-009b: parametrize the 422 test over SERVER_STAMPED so any future server-stamped field is covered.
+- Until T-009b lands, user_id and control_grant are always None, so a real Runner refuses every non-stop command;
+  T-009b fixes that by stamping them from the login cookie and the control object.
