@@ -116,3 +116,9 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - Gate light commands exactly like motion: operator logged in with the control token, experiment session open.
   `lights_off` as a stop stays exempt (always accepted, also when locked or remote under D13).
 - Allow-list unchanged: Aura lines; DiaLamp `State` and `Intensity` only. Every exit path turns the lights off.
+
+## Graceful shutdown (from the T-016 merge review)
+
+- `shutdown(reason)`: abort the running operation, run the normal exit path (lights off with readback,
+  records finished), stop the acquisition stream, and record the reason. The server's `POST /api/shutdown`
+  (T-009) calls it.

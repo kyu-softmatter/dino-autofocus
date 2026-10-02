@@ -71,3 +71,9 @@
   커밋 메시지 끝 `Session: AF 실행7`)
 - `uv run python -m dino_autofocus.server --dump-openapi out.json` 이 동작
 - 끝나면 `[검토요청 T-009]` 를 검토 세션에. 의존성 변경이 있다는 것을 첫 줄에 적는다
+
+## Graceful shutdown route (from the T-016 merge review)
+
+- `POST /api/shutdown`, loopback only (refused for remote viewers, including under D13). It asks the engine to
+  stop: abort the running operation, lights off with readback, finish records, then the server exits.
+  The launcher (T-026) calls it before any hard kill. Test with the fake engine.
