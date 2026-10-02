@@ -157,7 +157,7 @@ class MmDemoBackend:
             bit_depth=int(core.getProperty(cam, "BitDepth")),
             objectives=[self._objective_info(o) for o in d.objectives()],
             stage_limits=StageLimits(None, None, (BENCH_RETRACT_UM, self.zmap.bench_range_um[1])),
-            notes=self.notes(),
+            notes=self.notes(), bench=False,
         )
 
     def notes(self) -> dict[str, str]:
