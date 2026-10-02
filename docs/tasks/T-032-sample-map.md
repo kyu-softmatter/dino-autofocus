@@ -30,3 +30,8 @@
 
 - edge_trace writes a stable `hole["closed_loop"] = True | False` at finish, so `sample.hole_loop()` (T-027) need
   not match the stop text. Keep `trace_stop` and `arc_deg` as they are.
+
+## From T-027c (b602da5)
+
+- The fold now keeps retired flags and per-id history. Stage 2 uses `active_flags()` / `open_candidates()` for what
+  is in play; never treat every entry in `flags` as active.

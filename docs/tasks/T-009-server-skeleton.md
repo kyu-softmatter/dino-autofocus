@@ -168,19 +168,22 @@
 - D14: loopback /ws/events connections reported through `engine.set_local_viewers(count)`.
 - Sample seat wiring waits for T-027 (a single wiring function as the seam).
 
-## T-009c (AF 실행7, after T-009b merges; review AF 검토보조1)
+## T-009c (AF 실행7, after T-009e; review AF 검토보조3; SAFETY) — go (director, PLAN D14 5b7db24)
 
-- (a) WebSocket handshake runs the same `origin_refusal` as HTTP (a cross-site page can open a WebSocket to
+- (a) WebSocket handshake runs the same origin check as HTTP (a cross-site page can open a WebSocket to
   127.0.0.1). Test a foreign Origin refused on `/ws/events` and `/ws/frames`.
-- (b) Waits for the director (D14/X3): whether a locked loopback login keeps a viewer socket that counts for D14.
-  Options under decision: a count-only socket (lock state only) or the full read-only streams for the same login.
-  Do not implement until the decision is recorded here.
+- (b) D14, user's choice: a locked loopback login may open `/ws/events` and counts as a local viewer, also after a
+  reload, but receives lock state only (no events, no frames). An already-connected socket whose login locks stops
+  sending events and sends lock state only, so a locked page never shows data. Unlock resumes events (the client
+  reloads `/api/state`). Remote sockets never count. Tests: reload while locked keeps the count at 1 and no op
+  auto-aborts; a locked socket receives no event payload; a remote socket does not count.
 - (c) SAFETY (실행7, corrected): SameSite ignores ports, so a page served on another loopback port of the same host
   carries the `dinoaf_session` cookie and passes today's loopback origin check. If the operator holds control, it
   can send commands stamped with that grant (hardware moves). Fix: on REST and the WS handshake accept only the
   server's own origin (Origin netloc == Host) plus dev origins named explicitly (`--dev-origin`, default none; the
-  T-010 Vite proxy sets it). Tests for a foreign port, localhost vs 127.0.0.1, and a listed dev origin.
-- Status: the whole card is held until the director replies (D14 question pending); (a) and (c) do not depend on it.
+  T-010 Vite proxy sets it). Tests for a foreign port, localhost vs 127.0.0.1, a listed dev origin, and a page on
+  another loopback port holding the session cookie being refused (director). The T-009d setup-path check then
+  uses the same function.
 
 ## T-009d (AF 실행7, from T-105; review AF 검토보조3; T-105 waits for it)
 
@@ -214,3 +217,13 @@
     sample record (awaiting_return etc.) is read as usual when the operator continues.
   - Tests: an open session at start-up becomes closed with that note; the AutoCommitter is flushed and stopped at
     shutdown; the server-side Sessions holder is empty after start-up.
+
+## T-009f (AF 실행7, urgent, before T-009e; review AF 검토보조3) — area-mount test that sees real areas
+
+- T-009d's `test_every_area_module_is_mounted_under_its_name` reads `{r.path for r in app.routes}`. With FastAPI
+  0.142.2 / starlette 1.7.0, `include_router` adds one `_IncludedRouter` (path None), so area paths never appear and
+  the test fails for the first real area (실행8, T-013b on 336ec69). Check `app.openapi()["paths"]` (or request each
+  route) instead, with a temporary package holding a real router and one route. tests/server only.
+- Item 2 (from 실행13, T-105): `test_server_access.py::test_login_routes_open_to_remote_viewers` asserts 404 for
+  `POST /api/auth/{login,…,signup}` with `json={}` ("until T-018 adds them"). With T-105's router it gets 422, or 401
+  for lock/activity. Assert what the test means: a remote viewer is not refused with 403 `remote_view` on those paths.
