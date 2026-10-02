@@ -43,6 +43,20 @@ describe("status readers", () => {
     expect(readLights(null)).toBeNull();
   });
 
+  it("reads the agreed T-011 shape {dialamp: {state, intensity}, aura: {state, lines}}", () => {
+    const v = readLights({
+      dialamp: { state: "0", intensity: 608 },
+      aura: { state: "1", lines: { GREEN: 1 } },
+      verified: true,
+      records: [],
+    });
+    expect(v?.lights.map((l) => [l.name, l.on])).toEqual([
+      ["DiaLamp", false],
+      ["Aura", true],
+    ]);
+    expect(v?.verified).toBe(true);
+  });
+
   it("reads the assistant status, D7 data stage included", () => {
     expect(readAssistantStatus({ provider: "fake", connected: true, data_stage: "text" })).toEqual({
       available: true,
