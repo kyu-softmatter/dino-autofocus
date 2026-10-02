@@ -8,6 +8,7 @@ from datetime import datetime
 import pytest
 
 from dino_autofocus.records import (
+    CodeVersion,
     ExperimentSession,
     FolderStore,
     RecordsConfig,
@@ -182,3 +183,28 @@ def test_sample_event_seq_is_monotonic_within_a_session_file(store):
     assert seqs == [0, 1, 2, 3]
     st = sample_state(store, "s1")
     assert [p["seq"] for p in st.boundary] == [2] and st.notes[0]["seq"] == 3
+
+
+def test_code_version_can_be_passed_in_once(store, monkeypatch):
+    from dino_autofocus.records import session as session_mod
+
+    def boom(repo=None):
+        raise AssertionError("code_version must not run when code= is given")
+
+    monkeypatch.setattr(session_mod, "code_version", boom)
+    cv = CodeVersion("repo", "f" * 40, True)
+    s = ExperimentSession.open(store, USER, "s1", code=cv)
+    assert json.loads(s.layout.info.read_text())["code"] == {"repo": "repo", "commit": "f" * 40,
+                                                              "dirty": True, "error": None}
+
+
+def test_record_files_lists_each_record_with_its_line_count(store):
+    s = ExperimentSession.open(store, USER, "s1")
+    assert s.record_files() == []
+    s.record("scan_4x", {"tile": "r0c0"})
+    s.record("scan_4x", {"tile": "r0c1"})
+    s.manual_step("oil_loaded")
+    s.sample_event("note", text="x")
+    assert s.record_files() == [{"name": "manual_steps.jsonl", "lines": 1},
+                                {"name": "sample_events.jsonl", "lines": 1},
+                                {"name": "scan_4x.jsonl", "lines": 2}]

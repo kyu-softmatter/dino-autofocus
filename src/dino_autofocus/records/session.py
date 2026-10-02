@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from .codeversion import code_version
+from .codeversion import CodeVersion, code_version
 from .events import SampleEvent, SampleState, fold, make_event
 from .layout import (
     SCHEMA,
@@ -111,7 +111,8 @@ class ExperimentSession:
     @classmethod
     def open(cls, store: RecordsStore, user_id: str, sample_id: str, *, user_name: str = "",
              hardware_profile: str | Path | None = None, continues: str | None = None,
-             code_repo: str | Path | None = None, committer: Any | None = None,
+             code_repo: str | Path | None = None, code: CodeVersion | None = None,
+             committer: Any | None = None,
              now: Callable[[], datetime] | None = None) -> ExperimentSession:
         """Create the folder and ``session.json`` and make the first commit."""
         if not user_id:
@@ -129,7 +130,9 @@ class ExperimentSession:
         if hardware_profile is not None:
             p = Path(hardware_profile)
             hw = {"path": str(p), "sha256": sha256_file(p)}
-        cv = code_version(Path(code_repo) if code_repo is not None else None)
+        # `code`: read once at server start-up instead of two git calls per open (G4)
+        cv = code if code is not None else code_version(
+            Path(code_repo) if code_repo is not None else None)
         info = SessionInfo(session_id=sid, user_id=user_id, sample_id=sample_id,
                            started_at=now_iso(), user_name=user_name, code=asdict(cv),
                            hardware_profile=hw, continues=continues)
@@ -236,6 +239,14 @@ class ExperimentSession:
 
     def log_lines(self) -> list[dict[str, Any]]:
         return read_jsonl(self.layout.log)
+
+    def record_files(self) -> list[dict[str, Any]]:
+        """Every ``records/*.jsonl`` with its line count, by name (for the session detail view)."""
+        out = []
+        for p in sorted(self.layout.records.glob("*.jsonl")):
+            with open(p, encoding="utf-8") as f:
+                out.append({"name": p.name, "lines": sum(1 for line in f if line.strip())})
+        return out
 
     def manifest(self) -> Manifest:
         return Manifest(self.layout.manifest)
