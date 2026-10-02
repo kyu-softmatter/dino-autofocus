@@ -164,26 +164,57 @@ export class Client {
     this.events = new EventStream(transport);
   }
 
+  private authListeners = new Set<(status: number) => void>();
+
+  /**
+   * Called on any 401 (logged out) or 423 (locked) answer. The login gate uses it
+   * to re-read /me and show the login or lock screen.
+   */
+  onAuthFailure(fn: (status: number) => void): () => void {
+    this.authListeners.add(fn);
+    return () => this.authListeners.delete(fn);
+  }
+
+  private check(r: Response): void {
+    if (r.status === 401 || r.status === 423) this.authListeners.forEach((fn) => fn(r.status));
+  }
+
   async get<T = unknown>(path: string): Promise<T> {
     const r = await this.transport.fetch(path, { headers: { Accept: "application/json" } });
+    this.check(r);
     if (!r.ok) throw new CommandRefused(r.status, await detailOf(r));
     return (await r.json()) as T;
   }
 
-  /** POST /api/commands. A 403 (remote view, D13) switches the app to read-only. */
-  async command(cmd: CommandIn): Promise<string> {
-    const r = await this.transport.fetch("/api/commands", {
+  /**
+   * POST JSON to an area's own route (console submit, map writes, sessions, auth...).
+   * The same rules as `command`: a 403 switches the app to read-only, a 401 / 423
+   * re-reads the login. Returns the JSON reply, or null for an empty one (204).
+   * Engine commands go through `command`, not here.
+   */
+  async post<T = unknown>(path: string, body?: unknown): Promise<T | null> {
+    const r = await this.transport.fetch(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cmd),
+      headers: body === undefined ? { Accept: "application/json" } : { "Content-Type": "application/json", Accept: "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
+    this.check(r);
     if (r.status === 403) {
       const why = await detailOf(r);
       this.readOnly.refuse(why);
       throw new CommandRefused(403, why);
     }
     if (!r.ok) throw new CommandRefused(r.status, await detailOf(r));
-    return ((await r.json()) as components["schemas"]["CommandAccepted"]).op_id;
+    if (r.status === 204) return null;
+    const text = await r.text();
+    return text === "" ? null : (JSON.parse(text) as T);
+  }
+
+  /** POST /api/commands (engine commands). A 403 (remote view, D13) switches the app to read-only. */
+  async command(cmd: CommandIn): Promise<string> {
+    const reply = await this.post<components["schemas"]["CommandAccepted"]>("/api/commands", cmd);
+    if (!reply) throw new CommandRefused(502, "the server accepted the command but gave no op_id");
+    return reply.op_id;
   }
 }
 
