@@ -6,14 +6,13 @@ import threading
 import pytest
 
 from dino_autofocus.engine import Command, Event, GuardError, exclusive, operation
-from dino_autofocus.engine.backend import GUARD_TOKEN
 from dino_autofocus.engine.records import model_value
 
 
 def test_operation_leaves_a_record_folder_with_lights_off(fake, tmp_path):
     seen = []
     with operation(fake, tmp_path, "demo_op", sink=seen.append, args={"n": 1}) as op:
-        op.lights(fake.lamp_on(token=GUARD_TOKEN))
+        op.lamp_on()
         op.emit(Event("reading", op.op_id, {"dz": json.loads(json.dumps(
             model_value(-1.3, "head").__dict__))}))
         op.result = {"best_z_um": 3051.2}
@@ -32,7 +31,7 @@ def test_an_unverified_light_stops_the_operation_and_a_prefix_names_the_folder(f
     fake.stuck.add("DiaLamp")
     with pytest.raises(GuardError, match="DiaLamp.State wanted 1"), \
             operation(fake, tmp_path, "scan_4x", prefix="scan4x") as op:
-        op.lights(fake.lamp_on(token=GUARD_TOKEN))
+        op.lamp_on()
     assert op.op_id.startswith("scan4x_") and (tmp_path / op.op_id / "summary.json").exists()
     assert json.loads((tmp_path / op.op_id / "summary.json").read_text())["status"] == "error"
 
@@ -41,7 +40,7 @@ def test_an_unverified_light_stops_the_operation_and_a_prefix_names_the_folder(f
                                          (KeyboardInterrupt(), "aborted")])
 def test_lights_go_off_on_every_exit_path(fake, tmp_path, exc, status):
     with pytest.raises(type(exc)), operation(fake, tmp_path, "op") as op:
-        fake.aura_line_on("GREEN", 1, token=GUARD_TOKEN)
+        op.aura_line_on("GREEN", 1)
         raise exc
     s = json.loads((tmp_path / op.op_id / "summary.json").read_text())
     assert s["status"] == status and fake.lights == {"DiaLamp": "0", "Aura": "0"}
@@ -111,3 +110,18 @@ def test_a_sink_failing_on_the_error_event_keeps_the_original_error(fake, tmp_pa
     s = json.loads((tmp_path / op.op_id / "summary.json").read_text())
     assert s["status"] == "error" and "the real problem" in s["error"]
     assert "UI went away" in s["error"]
+
+
+def test_scope_light_helpers_pass_the_guard_token(fake, tmp_path):
+    with operation(fake, tmp_path, "op") as op:
+        assert all(r.verified for r in op.aura_line_on("GREEN", 1))
+        assert fake.props[("Aura", "GREEN_Intensity")] == "10" and fake.lights["Aura"] == "1"
+        assert all(r.verified for r in op.lamp_on())
+        with pytest.raises(GuardError, match="outside"):
+            op.aura_line_on("GREEN", 150)
+        with pytest.raises(GuardError, match="model output"):
+            op.aura_line_on("GREEN", model_value(5.0, "head"))
+    assert fake.lights == {"DiaLamp": "0", "Aura": "0"}
+    kinds = [json.loads(x)["kind"] for x in
+             (tmp_path / op.op_id / "log.jsonl").read_text().splitlines()]
+    assert kinds.count("light_changed") == 3  # two on, one exit-path off

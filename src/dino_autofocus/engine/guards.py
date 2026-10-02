@@ -431,6 +431,16 @@ class XYAxis:
         row, name = limits_for(label)
         return row.long_xy_um, name
 
+    def goto_rel(self, dx_um: float, dy_um: float) -> tuple[float, float]:
+        """Relative move (edge_trace steps): readback + delta becomes an absolute target and
+        goes through `goto`, so the box, the long-move rule and the readback check apply.
+        The backend's own move_xy_rel is never called from here."""
+        dx, dy = plain(dx_um, "dx"), plain(dy_um, "dy")
+        p = self.b.positions()
+        if p.x_um is None or p.y_um is None:
+            raise GuardError(f"position unreadable before a relative XY move: {p.errors}")
+        return self.goto(p.x_um + dx, p.y_um + dy)
+
     def goto(self, x_um: float, y_um: float) -> tuple[float, float]:
         x, y = plain(x_um, "x target"), plain(y_um, "y target")
         if not self.box.contains(x, y):
@@ -513,6 +523,24 @@ class OpScope:
     emit: EventSink
     result: Any = None
     answers: queue.Queue = field(default_factory=queue.Queue)
+    backend: Backend | None = None
+
+    def lamp_on(self) -> list[Readback]:
+        """Transmitted lamp on: the one legal way for an operation (D15). Off is the scope's
+        exit path, or `backend.lamp_off()` / `all_off()`, which need no token."""
+        return self.lights(self._backend().lamp_on(token=GUARD_TOKEN))
+
+    def aura_line_on(self, line: str, percent: float) -> list[Readback]:
+        """One Aura line on at `percent` (the backend converts to per-mille); lamp off first."""
+        pct = plain(percent, "Aura percent")
+        if not 0.0 < pct <= 100.0:
+            raise GuardError(f"Aura percent {pct} is outside (0, 100]")
+        return self.lights(self._backend().aura_line_on(str(line), pct, token=GUARD_TOKEN))
+
+    def _backend(self) -> Backend:
+        if self.backend is None:
+            raise GuardError("this scope has no backend (made outside operation())")
+        return self.backend
 
     def lights(self, readbacks: list[Readback]) -> list[Readback]:
         """Record a light change; any readback that does not verify stops the operation."""
@@ -548,7 +576,8 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
               user_id: str | None = None, session_id: str | None = None) -> Iterator[OpScope]:
     """One operation's record folder, events, and lights-off on every exit path.
 
-    Enter it before switching any light on, and switch lights through `scope.lights(...)`.
+    Enter it before switching any light on, and switch lights on only through
+    `scope.lamp_on()` / `scope.aura_line_on(line, percent)`, which pass the guard token.
     Set `scope.result` inside the block; it lands in summary.json. `prefix` names the
     folder (`scan4x` keeps the 2026-09-30 `scan4x_<stamp>/` layout).
 
@@ -556,7 +585,7 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
     while another operation holds the backend (the runner aborts that operation)."""
     rec = OpRecord(parent, op, start_state=snapshot(backend), prefix=prefix,
                    user_id=user_id, session_id=session_id)
-    scope = OpScope(rec.op_id, rec, fan_out(rec.sink, sink))
+    scope = OpScope(rec.op_id, rec, fan_out(rec.sink, sink), backend=backend)
     scope.emit(Event("started", rec.op_id, {"op": op, "args": args or {}, "user_id": user_id,
                                             "session_id": session_id}))
     status, error = "finished", None

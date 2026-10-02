@@ -205,3 +205,15 @@ def test_pfs_is_not_touched_without_allow_motion(fake):
     with pytest.raises(GuardError, match="allow_motion"):
         FocusAxis(fake, "4x").require_pfs_quiet()
     assert fake.pfs_enabled
+
+
+def test_relative_xy_moves_go_through_the_absolute_guard(fake):
+    xy = XYAxis(fake, XYBox.around((8026.0, 571.6), 3572), allow_motion=True)
+    assert xy.goto_rel(200.0, 0.0) == (8226.0, 571.6)  # an edge_trace step
+    assert xy.motions[-1]["target_um"] == [8226.0, 571.6]
+    with pytest.raises(GuardError, match="outside the box"):
+        xy.goto_rel(5000.0, 0.0)
+    fake.state = 5  # 100x Oil: 200 um is over its 156 um row
+    with pytest.raises(GuardError, match="needs Z retracted"):
+        xy.goto_rel(200.0, 0.0)
+    assert not any(c[0] == "move_xy_rel" for c in fake.calls)
