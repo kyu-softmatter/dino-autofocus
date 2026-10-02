@@ -1,22 +1,24 @@
 /**
  * `hardware` area (PLAN F2, ui-spec 7.2, contract docs/screens/hardware.md).
- * Shows the last detection, the gate verdict and the light read-back. Commands
- * go to the common command endpoint; refusals are drawn, not decided, here.
+ * Shows the last detection, the gate verdict and the light read-back. Talks to the
+ * server only through the shell's client; refusals are drawn, not decided, here.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { type CommandIn, CommandRefused, type EventOut, useClient, useEngineEvents, useEventsConnected, useReadOnly } from "../../app/client";
 import { useScreenContext } from "../../app/screenContext";
+import { useEngineStatus } from "../../app/status";
 import {
-  type CommandIn,
-  type EngineEvent,
   type GateRow,
   type HardwareProfileOut,
-  type LightState,
   type Permissions,
+  readGates,
+  readPermissions,
+  readProfile,
+  readStatus,
   SCREEN_OPS,
   type StatusResultOut,
-  useHardwareApi,
 } from "./api";
 import {
   blockedBy,
@@ -25,6 +27,7 @@ import {
   CurrentStatePanel,
   DevicesPanel,
   GatesPanel,
+  type LightRecord,
   LightsPanel,
   ObjectivesPanel,
   Reason,
@@ -41,10 +44,13 @@ const NOTICE_OF_OP: Record<string, NoticeKey> = {
   light_set: "lights",
 };
 
+/** After these the engine's answer to "may I" can change: re-read permissions. */
+const LIFECYCLE = new Set(["started", "finished", "aborted", "error", "preflight_failed", "refused"]);
+
 const EMPTY_PROFILE: HardwareProfileOut = { profile: null, path: null, sha256: null };
 
-function failureText(ev: EngineEvent): string {
-  const d = ev.data;
+function failureText(ev: EventOut): string {
+  const d = ev.data ?? {};
   if (ev.kind === "error") return `error: ${String(d.message ?? "unknown")}`;
   const checks = Array.isArray(d.checks) ? (d.checks as { ok?: boolean; why?: string; name?: string }[]) : [];
   const why = checks.filter((c) => c.ok === false).map((c) => c.why ?? c.name ?? "check failed");
@@ -52,14 +58,15 @@ function failureText(ev: EngineEvent): string {
 }
 
 export default function HardwareScreen() {
-  const api = useHardwareApi();
+  const client = useClient();
+  const { readOnly } = useReadOnly();
+  const connected = useEventsConnected();
+  const engine = useEngineStatus(); // positions, lights and running ops, as the status bar reads them
   const [profile, setProfile] = useState<HardwareProfileOut>(EMPTY_PROFILE);
   const [gates, setGates] = useState<GateRow[]>([]);
   const [status, setStatus] = useState<StatusResultOut | null>(null);
-  const [permissions, setPermissions] = useState<Permissions>({});
-  const [lights, setLights] = useState<{ state: LightState | null; t: number | null }>({ state: null, t: null });
-  const [zUm, setZUm] = useState<number | null | undefined>(undefined);
-  const [running, setRunning] = useState<{ op: string; op_id: string } | null>(null);
+  const [permissions, setPermissions] = useState<Permissions | null>(null); // null = first check loading
+  const [lightEvent, setLightEvent] = useState<{ records: LightRecord[]; t: number | null }>({ records: [], t: null });
   const [notices, setNotices] = useState<Partial<Record<NoticeKey, string>>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [device, setDevice] = useState<string | null>(null);
@@ -68,70 +75,60 @@ export default function HardwareScreen() {
   const [piezoPort, setPiezoPort] = useState(""); // "" skips the piezo (contract G10)
 
   const reloadProfile = useCallback(async () => {
-    const [p, g] = await Promise.all([api.profile(), api.gates()]);
-    setProfile(p);
-    setGates(g);
-  }, [api]);
+    try {
+      const [p, g] = await Promise.all([readProfile(client), readGates(client)]);
+      setProfile(p);
+      setGates(g);
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
+  }, [client]);
 
-  // re-read after anything that changes the engine's answer (start, end of an op)
+  const reloadStatus = useCallback(async () => {
+    try {
+      setStatus(await readStatus(client));
+    } catch {
+      // keep what we had; the panel says "status not run yet" if nothing
+    }
+  }, [client]);
+
   const reloadPermissions = useCallback(async () => {
-    setPermissions(await api.permissions(SCREEN_OPS));
-  }, [api]);
+    setPermissions(await readPermissions(client, SCREEN_OPS));
+  }, [client]);
 
+  // first load, and again after every (re)connect: events in a gap are lost
   useEffect(() => {
-    let live = true;
-    Promise.all([api.profile(), api.gates(), api.status(), api.state(), api.permissions(SCREEN_OPS)])
-      .then(([p, g, s, st, perms]) => {
-        if (!live) return;
-        setProfile(p);
-        setGates(g);
-        setStatus(s);
-        setPermissions(perms);
-        setRunning(st.running ?? null);
-        setZUm(st.position?.z_um);
-        if (st.lights) setLights({ state: st.lights, t: st.lights_t ?? null });
-      })
-      .catch((e: unknown) => live && setLoadError(String(e)));
-    return () => {
-      live = false;
-    };
-  }, [api]);
+    void reloadProfile();
+    void reloadStatus();
+    void reloadPermissions();
+  }, [reloadProfile, reloadStatus, reloadPermissions, connected]);
 
-  useEffect(
-    () =>
-      api.subscribe((ev) => {
-        const op = typeof ev.data.op === "string" ? ev.data.op : "";
-        switch (ev.kind) {
-          case "position":
-            setZUm(ev.data.z_um as number | null | undefined);
-            return;
-          case "light_changed":
-            setLights({ state: ev.data as unknown as LightState, t: ev.t });
-            return;
-          case "started":
-            setRunning({ op, op_id: ev.op_id });
-            void reloadPermissions();
-            return;
-          case "finished":
-          case "aborted":
-          case "error":
-          case "preflight_failed":
-            setRunning((r) => (r && (r.op_id === ev.op_id || r.op === op) ? null : r));
-            if (ev.kind === "finished" && op === "status") {
-              setStatus({ op_id: ev.op_id, t: ev.t, user_id: null, summary: (ev.data.summary ?? {}) as StatusResultOut["summary"] });
-            }
-            if (NOTICE_OF_OP[op]) {
-              const key = NOTICE_OF_OP[op];
-              const text = ev.kind === "error" || ev.kind === "preflight_failed" ? failureText(ev) : undefined;
-              setNotices((n) => ({ ...n, [key]: ev.kind === "aborted" ? `stopped: ${String(ev.data.why ?? "")}` : text }));
-            }
-            if (op === "hardware_scan" || op === "hardware_confirm") void reloadProfile();
-            void reloadPermissions();
-            return;
-        }
-      }),
-    [api, reloadProfile, reloadPermissions],
+  const onEvent = useCallback(
+    (ev: EventOut) => {
+      const data = ev.data ?? {};
+      const op = typeof data.op === "string" ? data.op : "";
+      if (ev.kind === "light_changed") {
+        setLightEvent({ records: Array.isArray(data.records) ? (data.records as LightRecord[]) : [], t: ev.t });
+        return;
+      }
+      if (!LIFECYCLE.has(ev.kind)) return;
+      void reloadPermissions();
+      if (ev.kind === "finished" && op === "status") {
+        setStatus({ op_id: ev.op_id ?? "", t: ev.t, user_id: null, summary: (data.summary ?? {}) as StatusResultOut["summary"] });
+      }
+      const key = NOTICE_OF_OP[op];
+      if (key && ev.kind !== "started") {
+        const text = ev.kind === "aborted" ? `stopped: ${String(data.why ?? "")}`
+          : ev.kind === "error" || ev.kind === "preflight_failed" ? failureText(ev)
+          : undefined;
+        setNotices((n) => ({ ...n, [key]: text }));
+      }
+      if (op === "hardware_scan" || op === "hardware_confirm") void reloadProfile();
+    },
+    [reloadPermissions, reloadProfile],
   );
+  useEngineEvents(onEvent);
 
   const details = useMemo(() => {
     const d: Record<string, unknown> = {};
@@ -147,30 +144,35 @@ export default function HardwareScreen() {
   const send = useCallback(
     async (key: NoticeKey, cmd: CommandIn) => {
       setNotices((n) => ({ ...n, [key]: undefined }));
-      const r = await api.submit(cmd);
-      if (!r.ok) setNotices((n) => ({ ...n, [key]: `refused: ${r.detail}` }));
+      try {
+        await client.command(cmd);
+      } catch (e) {
+        const detail = e instanceof CommandRefused ? e.detail : String(e);
+        setNotices((n) => ({ ...n, [key]: `refused: ${detail}` }));
+      }
     },
-    [api],
+    [client],
   );
 
-  const gateOf = (op: string) => gates.find((g) => g.op === op);
-  const blocked = (op: string) => blockedBy(permissions[op], gateOf(op));
-  const runningOp = running?.op ?? null;
+  const blocked = (op: string) => blockedBy(readOnly, permissions, op, gates.find((g) => g.op === op));
+  const runningOp = engine.running[0]?.op || null;
   const scanBlocked = blocked("hardware_scan");
   const confirmBlocked = blocked("hardware_confirm");
   const statusBlocked = blocked("status");
   const lightBlocked = blocked("light_set");
-  const offBlocked = blockedBy(permissions.lights_off);
+  const offBlocked = blockedBy(readOnly, permissions, "lights_off");
+  const start = (op: string, args: Record<string, unknown> = {}): CommandIn =>
+    ({ kind: "start", op, op_id: "", args, origin: "human" });
 
   return (
     <div className="hw-screen">
       <h2>Hardware</h2>
-      {loadError ? <p className="hw-warn">Could not load the hardware state: {loadError}</p> : null}
+      {loadError ? <p className="hw-warn">Could not load the hardware profile: {loadError}</p> : null}
 
       <section aria-label="Scan">
         <div className="hw-row">
           <button type="button" disabled={scanBlocked !== null}
-                  onClick={() => send("scan", { kind: "start", op: "hardware_scan", args: { include_properties: includeProperties, piezo_port: piezoPort } })}>
+                  onClick={() => send("scan", start("hardware_scan", { include_properties: includeProperties, piezo_port: piezoPort }))}>
             Scan hardware
           </button>
           <label>
@@ -187,13 +189,13 @@ export default function HardwareScreen() {
 
       <div className="hw-grid">
         <SummaryPanel out={profile} />
-        <CurrentStatePanel status={status} zUm={zUm} blocked={statusBlocked}
-                           onRun={() => send("status", { kind: "start", op: "status" })} />
-        <LightsPanel lights={lights.state} lightsT={lights.t} setBlocked={lightBlocked} offBlocked={offBlocked}
-                     running={runningOp}
-                     onBrightfield={() => send("lights", { kind: "start", op: "light_set", args: { mode: "brightfield" } })}
-                     onAura={(line, percent) => send("lights", { kind: "start", op: "light_set", args: { mode: "aura", line, percent } })}
-                     onOff={() => send("lights", { kind: "lights_off" })} />
+        <CurrentStatePanel status={status} zUm={engine.positions?.z_um} blocked={statusBlocked}
+                           onRun={() => send("status", start("status"))} />
+        <LightsPanel lights={engine.lights} records={lightEvent.records} lightsT={lightEvent.t}
+                     setBlocked={lightBlocked} offBlocked={offBlocked} running={runningOp}
+                     onBrightfield={() => send("lights", start("light_set", { mode: "brightfield" }))}
+                     onAura={(line, percent) => send("lights", start("light_set", { mode: "aura", line, percent }))}
+                     onOff={() => send("lights", { kind: "lights_off", op: "", op_id: "", origin: "human" })} />
         <CameraPiezoPanel out={profile} />
       </div>
       <Reason text={notices.status ?? notices.lights ?? null} />
@@ -202,7 +204,7 @@ export default function HardwareScreen() {
       <DevicesPanel devices={profile.profile?.devices ?? []} selected={device} onSelect={setDevice} />
       <ObjectivesPanel out={profile} />
       <ConfirmedPanel out={profile} blocked={confirmBlocked}
-                      onSave={(name, value) => send("confirm", { kind: "start", op: "hardware_confirm", args: { items: { [name]: value } } })} />
+                      onSave={(name, value) => send("confirm", start("hardware_confirm", { items: { [name]: value } }))} />
       <Reason text={notices.confirm ?? null} />
     </div>
   );

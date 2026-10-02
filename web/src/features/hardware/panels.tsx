@@ -5,26 +5,38 @@
 
 import { useState } from "react";
 
+import type { LightsView } from "../../app/status";
 import { EncoderZ } from "../../app/Verdict";
-import type {
-  DeviceRow,
-  GateRow,
-  HardwareProfileOut,
-  LightState,
-  Permission,
-  StatusResultOut,
+import {
+  CHECKING_PERMISSIONS,
+  type DeviceRow,
+  type GateRow,
+  type HardwareProfileOut,
+  PERMISSION_CHECK_UNAVAILABLE,
+  type Permissions,
+  READ_ONLY_REMOTE,
+  type StatusResultOut,
 } from "./api";
 
 const NOT_REPORTED = "not reported";
 
 /**
- * Why a button is off, or null. The permission reason (remote, role, control,
- * session, running op: T-009b / T-011) comes first, then this area's feature
- * gate. Both are copied from the server; nothing is worked out here.
+ * Why a button is off, or null. The order is: the shell's read-only flag (remote view), then
+ * the permission answer (role, control, session, running op: T-009b / T-011), then this area's
+ * feature gate. Every reason is copied from the shell or the server; none is worked out here.
+ * `permissions` is null while the first check is loading.
  */
-export function blockedBy(permission: Permission | undefined, gate?: GateRow): string | null {
-  if (!permission) return "checking permissions";
-  if (!permission.allowed) return permission.reason ?? "not allowed";
+export function blockedBy(
+  readOnly: boolean,
+  permissions: Permissions | null,
+  op: string,
+  gate?: GateRow,
+): string | null {
+  if (readOnly) return READ_ONLY_REMOTE;
+  if (permissions === null) return CHECKING_PERMISSIONS;
+  const p = permissions[op];
+  if (!p) return PERMISSION_CHECK_UNAVAILABLE;
+  if (!p.allowed) return p.reason ?? PERMISSION_CHECK_UNAVAILABLE;
   if (gate && !gate.enabled) return `${gate.op} is off: ${gate.reasons[0] ?? "no reason given"}`;
   return null;
 }
@@ -262,22 +274,48 @@ export function CurrentStatePanel({ status, zUm, blocked, onRun }: {
   );
 }
 
-/** ui-spec 5.2: the read-back, never the requested value. */
-export function lightText(l: LightState | null | undefined): { text: string; warn: boolean } {
-  if (!l) return { text: "Lights: no read-back yet", warn: true };
-  const bad = (l.records ?? []).filter((r) => !r.verified);
-  if (!l.verified || l.dialamp === "unknown" || l.aura.state === "unknown") {
-    const detail = bad.map((r) => `${r.device} read ${String(r.read)}, wanted ${String(r.wanted)}`).join("; ");
-    return { text: `Lights not confirmed${detail ? `: ${detail}` : ""}`, warn: true };
-  }
-  const aura = l.aura.state === "on"
-    ? `Aura ${l.aura.line ?? "?"} ${l.aura.intensity_permille != null ? l.aura.intensity_permille / 10 : "?"} %`
-    : "Aura OFF";
-  return { text: `DiaLamp ${l.dialamp === "on" ? "ON" : "OFF"} · ${aura}`, warn: false };
+/** A readback record in `light_changed.records` (T-002 `Readback`). */
+export interface LightRecord {
+  device: string;
+  property?: string;
+  wanted: unknown;
+  read: unknown;
+  verified: boolean;
 }
 
-export function LightsPanel({ lights, lightsT, setBlocked, offBlocked, running, onBrightfield, onAura, onOff }: {
-  lights: LightState | null | undefined;
+function lightPart(name: string, on: boolean, raw: unknown): string {
+  if (!on) return `${name} OFF`;
+  if (raw && typeof raw === "object") {
+    const r = raw as { line?: unknown; intensity_permille?: unknown };
+    if (typeof r.line === "string") {
+      const pct = typeof r.intensity_permille === "number" ? `${r.intensity_permille / 10} %` : "? %";
+      return `${name} ${r.line} ${pct}`;
+    }
+  }
+  return `${name} ON`;
+}
+
+/**
+ * ui-spec 5.2: the read-back, never the requested value. `view` is the shell's reading of
+ * `/api/state` and `light_changed` (`src/app/status.ts`); `records` are the last event's
+ * readback records, used to say what did not match.
+ */
+export function lightText(view: LightsView | null, records: LightRecord[] = []): { text: string; warn: boolean } {
+  if (!view || view.lights.length === 0) return { text: "Lights: no read-back yet", warn: true };
+  if (view.verified === false || view.error || view.lights.some((l) => l.on === null)) {
+    const bad = records.filter((r) => !r.verified)
+      .map((r) => `${r.device} read ${String(r.read)}, wanted ${String(r.wanted)}`);
+    const detail = bad.length > 0 ? bad
+      : view.error ? [view.error]
+      : view.lights.filter((l) => l.on === null).map((l) => `${l.name} unknown`);
+    return { text: `Lights not confirmed${detail.length > 0 ? `: ${detail.join("; ")}` : ""}`, warn: true };
+  }
+  return { text: view.lights.map((l) => lightPart(l.name, l.on === true, l.raw)).join(" · "), warn: false };
+}
+
+export function LightsPanel({ lights, records, lightsT, setBlocked, offBlocked, running, onBrightfield, onAura, onOff }: {
+  lights: LightsView | null;
+  records: LightRecord[];
   lightsT: number | null | undefined;
   setBlocked: string | null;
   offBlocked: string | null;
@@ -288,7 +326,7 @@ export function LightsPanel({ lights, lightsT, setBlocked, offBlocked, running, 
 }) {
   const [line, setLine] = useState("GREEN");
   const [percent, setPercent] = useState(1);
-  const { text, warn } = lightText(lights);
+  const { text, warn } = lightText(lights, records);
   return (
     <section aria-label="Lights">
       <h3>Lights</h3>

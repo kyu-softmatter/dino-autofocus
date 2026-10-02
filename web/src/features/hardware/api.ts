@@ -1,13 +1,12 @@
 /**
- * Temporary until gen:api (T-009): hand-written types for the hardware router
- * (docs/screens/hardware.md 1) and the common endpoints, the real client, and a
- * fake client for tests. The screen imports types and clients only from here,
- * so moving to `src/api/` is a change to this one file.
+ * Temporary until gen:api covers the hardware router (T-009): hand-written types for
+ * `/api/hardware/*` (docs/screens/hardware.md 1) and `/api/permissions` (T-009b), and the
+ * reads that use them. Commands, events and `/api/state` already go through the shell's
+ * client (`src/app/client.tsx`). When `src/api/schema.ts` has these paths, swap the types
+ * below for imports from it; nothing else changes.
  */
 
-import { createContext, useContext } from "react";
-
-// --- hardware router (`/api/hardware/*`) ---
+import type { Client } from "../../app/client";
 
 export interface DeviceRow {
   label: string;
@@ -84,24 +83,6 @@ export interface StatusResultOut {
   summary: StatusSummary;
 }
 
-// --- common endpoints (T-009) ---
-
-export interface Readback {
-  device: string;
-  property: string;
-  wanted: unknown;
-  read: unknown;
-  verified: boolean;
-}
-
-/** `light_changed` data (ui-spec 4.0). */
-export interface LightState {
-  dialamp: "on" | "off" | "unknown";
-  aura: { state: "on" | "off" | "unknown"; line?: string | null; intensity_permille?: number | null };
-  verified: boolean;
-  records?: Readback[];
-}
-
 /** `GET /api/permissions?ops=...` (T-009b, from T-011 `check()`): why a command would be refused. */
 export interface Permission {
   allowed: boolean;
@@ -113,156 +94,41 @@ export type Permissions = Record<string, Permission>;
 /** The commands this screen sends; `lights_off` is a command kind, the rest are `start` ops. */
 export const SCREEN_OPS = ["hardware_scan", "hardware_confirm", "status", "light_set", "lights_off"] as const;
 
-export interface EngineState {
-  lights?: LightState | null;
-  lights_t?: number | null;
-  running?: { op: string; op_id: string } | null;
-  position?: { z_um?: number | null } | null;
-}
-
-export interface EngineEvent {
-  kind: string;
-  op_id: string;
-  data: Record<string, unknown>;
-  t: number;
-}
-
-export type CommandIn =
-  | { kind: "start"; op: string; args?: Record<string, unknown> }
-  | { kind: "lights_off" };
-
-export type CommandResult = { ok: true; op_id: string } | { ok: false; status: number; detail: string };
-
-export interface HardwareApi {
-  profile(): Promise<HardwareProfileOut>;
-  gates(): Promise<GateRow[]>;
-  status(): Promise<StatusResultOut | null>;
-  state(): Promise<EngineState>;
-  permissions(ops: readonly string[]): Promise<Permissions>;
-  submit(cmd: CommandIn): Promise<CommandResult>;
-  /** returns the unsubscribe function */
-  subscribe(onEvent: (ev: EngineEvent) => void): () => void;
-}
-
-// --- real client ---
-
-async function getJson<T>(path: string): Promise<T> {
-  const r = await fetch(path, { headers: { Accept: "application/json" } });
-  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
-  return (await r.json()) as T;
-}
-
-/** Every op refused with one reason. */
-export function refuseAll(ops: readonly string[], reason: string): Permissions {
-  return Object.fromEntries(ops.map((op) => [op, { allowed: false, reason }]));
-}
-
-/** The rule for every screen when `/api/permissions` cannot be read. */
+/** Shared texts for every screen (screen rules from AF 업무분배보조). */
+export const CHECKING_PERMISSIONS = "Checking permissions…";
 export const PERMISSION_CHECK_UNAVAILABLE = "Permission check unavailable";
+export const READ_ONLY_REMOTE = "Read-only: remote view";
+
+export const PATHS = {
+  profile: "/api/hardware/profile",
+  gates: "/api/hardware/gates",
+  status: "/api/hardware/status",
+  permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`,
+};
 
 /**
  * When `/api/permissions` cannot be read, every control is off with the shared reason.
- * The exception is `lights_off`: a stop stays available, the same as the shell's Abort and
- * Lights off, and the server still refuses it where D2 says so.
+ * The exception is `lights_off`: a stop stays available, like the shell's Abort and Lights
+ * off. A remote screen still greys it out through the shell's read-only flag (D2).
  */
 export function permissionsUnavailable(ops: readonly string[]): Permissions {
-  const out = refuseAll(ops.filter((op) => op !== "lights_off"), PERMISSION_CHECK_UNAVAILABLE);
-  if (ops.includes("lights_off")) out.lights_off = { allowed: true, reason: null };
+  const out: Permissions = {};
+  for (const op of ops) {
+    out[op] = op === "lights_off"
+      ? { allowed: true, reason: null }
+      : { allowed: false, reason: PERMISSION_CHECK_UNAVAILABLE };
+  }
   return out;
 }
 
-export const httpHardwareApi: HardwareApi = {
-  profile: () => getJson("/api/hardware/profile"),
-  gates: () => getJson("/api/hardware/gates"),
-  status: () => getJson("/api/hardware/status"),
-  state: () => getJson("/api/state"),
-  async permissions(ops) {
-    try {
-      return await getJson<Permissions>(`/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`);
-    } catch {
-      return permissionsUnavailable(ops);
-    }
-  },
-  async submit(cmd) {
-    const r = await fetch("/api/commands", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cmd),
-    });
-    const body = (await r.json().catch(() => ({}))) as { op_id?: string; detail?: unknown };
-    if (r.ok && typeof body.op_id === "string") return { ok: true, op_id: body.op_id };
-    return { ok: false, status: r.status, detail: String(body.detail ?? `HTTP ${r.status}`) };
-  },
-  subscribe(onEvent) {
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/events`);
-    ws.onmessage = (m) => {
-      try {
-        const msg = JSON.parse(String(m.data)) as { type?: string; event?: EngineEvent };
-        if (msg.type === "event" && msg.event) onEvent(msg.event);
-      } catch {
-        // not an event message
-      }
-    };
-    return () => ws.close();
-  },
-};
-
-export const HardwareApiContext = createContext<HardwareApi>(httpHardwareApi);
-
-export function useHardwareApi(): HardwareApi {
-  return useContext(HardwareApiContext);
+export async function readPermissions(client: Client, ops: readonly string[]): Promise<Permissions> {
+  try {
+    return await client.get<Permissions>(PATHS.permissions(ops));
+  } catch {
+    return permissionsUnavailable(ops);
+  }
 }
 
-// --- fake client (tests) ---
-
-export interface FakeHardwareApi extends HardwareApi {
-  sent: CommandIn[];
-  /** deliver an event to every subscriber */
-  emit(ev: Partial<EngineEvent> & { kind: string }): void;
-  data: {
-    profile: HardwareProfileOut;
-    gates: GateRow[];
-    status: StatusResultOut | null;
-    state: EngineState;
-    /** ops missing here are allowed */
-    permissions: Permissions;
-    submitResult: CommandResult;
-  };
-}
-
-export function createFakeHardwareApi(init: Partial<FakeHardwareApi["data"]> = {}): FakeHardwareApi {
-  const subscribers = new Set<(ev: EngineEvent) => void>();
-  const data: FakeHardwareApi["data"] = {
-    profile: { profile: null, path: null, sha256: null },
-    gates: [],
-    status: null,
-    state: {},
-    permissions: {},
-    submitResult: { ok: true, op_id: "op-1" },
-    ...init,
-  };
-  const api: FakeHardwareApi = {
-    sent: [],
-    data,
-    profile: async () => data.profile,
-    gates: async () => data.gates,
-    status: async () => data.status,
-    state: async () => data.state,
-    permissions: async (ops) =>
-      Object.fromEntries(ops.map((op) => [op, data.permissions[op] ?? { allowed: true, reason: null }])),
-    async submit(cmd) {
-      api.sent.push(cmd);
-      return data.submitResult;
-    },
-    subscribe(onEvent) {
-      subscribers.add(onEvent);
-      return () => subscribers.delete(onEvent);
-    },
-    emit(ev) {
-      const full: EngineEvent = { op_id: "", data: {}, t: Date.now() / 1000, ...ev };
-      for (const s of subscribers) s(full);
-    },
-  };
-  return api;
-}
+export const readProfile = (client: Client) => client.get<HardwareProfileOut>(PATHS.profile);
+export const readGates = (client: Client) => client.get<GateRow[]>(PATHS.gates);
+export const readStatus = (client: Client) => client.get<StatusResultOut | null>(PATHS.status);

@@ -53,10 +53,21 @@ Why a button is off comes from the shared `GET /api/permissions?ops=hardware_sca
 endpoint, which returns `{op: {allowed, reason}}` (T-009b, backed by T-011 `check()`). That endpoint covers remote,
 role, control, session and the running operation. If the permission allows the op, the screen adds this area's
 own gate reason from `/api/hardware/gates`. The screen re-reads permissions after every `started`, `finished`,
-`aborted`, `error` and `preflight_failed` event. If `/api/permissions` cannot be read, every control is off with the
-reason `"Permission check unavailable"` (the rule for all screens). This screen's `"Lights off"` stays on, like the
-shell's Abort and Lights off. The lights panel follows `light_changed` only: the end of an operation does not
-mean the lights are off, because a `light_set` survives the next op (T-011). A refusal that reaches a click anyway (a 403 `detail`, or a
+`aborted`, `error`, `preflight_failed` and `refused` event, and after every reconnect.
+
+Reason texts, in order (shared by every screen):
+1. The shell's read-only flag (`useReadOnly()`, remote view) gives `"Read-only: remote view"` on every control,
+   `"Lights off"` included (D2). It comes from the shell, not from `/api/permissions`.
+2. While the first answer is loading: `"Checking permissions…"`.
+3. If the endpoint cannot be read, or an op is missing from its answer: `"Permission check unavailable"`. The
+   exception on an unreadable endpoint is this screen's `"Lights off"`: it stays on, like the shell's Abort and
+   Lights off.
+4. Otherwise, the permission's `reason`, then the gate reason.
+
+The screen talks to the server only through the shell's client (`src/app/client.tsx`: `useClient`,
+`useEngineEvents`, `useReadOnly`) and reads positions, lights and running ops with `useEngineStatus()`. It opens
+no socket of its own. The lights panel follows the light read-back only (`/api/state` and `light_changed`): the
+end of an operation does not mean the lights are off, because a `light_set` survives the next op (T-011). A refusal that reaches a click anyway (a 403 `detail`, or a
 `preflight_failed` / `error` event) is shown next to the button. Neither the router nor the screen works out
 role, control, session or remote rules itself.
 
@@ -132,7 +143,8 @@ Where each gap went (manager, main 176b4c3):
 
 - `hardware.py`: the four `GET` routes above with pydantic models, using a fake engine whose snapshot has
   the G6 shape. No command routes.
-- `web/src/features/hardware/index.tsx`, registered per the T-010 rule. Types come from `web/src/api/` only.
+- `web/src/features/hardware/index.tsx`, registered per the T-010 rule. Common types come from `web/src/api/`.
+  The router and permission types sit in `api.ts` until gen:api covers them.
   UI text in English. The screen is a default export with no props (T-010 a5fb986 `web/README.md`). It does
   not edit `src/app/` and does not import from other areas. Z is drawn with the shell's `EncoderZ`.
 - Screen context (ui-spec 7.2): `useScreenContext({device, gate, gate_reasons})` holds the selected
