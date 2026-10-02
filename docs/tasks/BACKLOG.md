@@ -44,11 +44,14 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 - Merge order: T-009b (remote_view mark) and T-010 stage 4 (client rule) before any screen router (T-100..T-106 stage B).
 
-- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag and T-027b's per-lens approach ceiling are all on main. Tell the director when they are.
+- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag, T-027b's per-lens approach ceiling (37f5c6c), the two is_bench follow-ups (guards: T-027b item 3; runner: 실행15) and T-036d (preset check on configured device labels) are all on main. Tell the director when they are.
 
 - On resume of the screen routers: T-106 (실행2) calls `ensure_sample_created(session, store)` on session open (T-027 seam).
 - T-015b merged → one bench rule: 실행1 switches `FocusAxis._simulated` and the guards to `is_bench(info)` (T-027b item 3,
   review 검토보조1); 실행15 switches `runner._on_bench` (runner.py ~1144) to it. Review 검토보조2.
+  Done when `git grep` finds no direct `BackendInfo.bench` read outside `is_bench()` (today guards.py ~353
+  `getattr(info, "bench", None)` and runner.py ~1151 `info.bench`). The lift plan to the director carries the three
+  merge hashes (T-015b, guards, runner) and that grep output (director, d960ffd).
 
 ## 후속 과제 후보
 

@@ -102,6 +102,19 @@ OBJECTIVE_LIMITS: dict[str, ObjectiveLimits] = {
 STRICTEST = ObjectiveLimits(0.0, min(r.approach_step_um for r in OBJECTIVE_LIMITS.values()))
 
 
+UNKNOWN_OBJECTIVE = "unknown objective"  # FocusAxis key when the objective cannot be read
+
+
+def approach_ceiling_um(key: str | None, window: tuple[float, float] = SAMPLE_Z_WINDOW_UM
+                        ) -> float:
+    """Highest target FocusAxis.approach() may climb to. The approach climbs without an
+    image, so above RETURN_Z_UM only a lens whose known free working distance covers the
+    whole window above it may go (today the 4x). Every other lens, an unlisted key and an
+    unreadable objective stop at RETURN_Z_UM (2800). Refused, never clamped (T-027b)."""
+    wd = FREE_WD_UM.get(key) if key else None
+    return window[1] if wd is not None and wd >= window[1] - RETURN_Z_UM else RETURN_Z_UM
+
+
 def limits_for(label_or_key: str | None) -> tuple[ObjectiveLimits, str]:
     """(row, row name) for a nosepiece label or registry key; the strictest row if unknown."""
     if label_or_key is None:
@@ -212,11 +225,27 @@ class FocusAxis:
                  window: tuple[float, float] = SAMPLE_Z_WINDOW_UM, tol_um: float = Z_TOL_UM,
                  sleep: Callable[[float], None] = time.sleep):
         self.b, self.allow_motion, self.dry_run = backend, allow_motion, dry_run
-        self.key = objective if objective in FREE_WD_UM else registry_key(objective)
+        if objective is None:
+            self.key = UNKNOWN_OBJECTIVE  # strictest: no sweep plan, approach capped at 2800
+        elif objective in FREE_WD_UM or objective in OBJECTIVE_LIMITS:
+            self.key = objective
+        else:
+            self.key = registry_key(objective)
         self.emit, self.op_id, self.window = sink, op_id, window
         self.tol, self.sleep = tol_um, sleep
         self.motions: list[dict] = []
         self._z_dry: float | None = None
+
+    @classmethod
+    def from_backend(cls, backend: Backend, **kw: Any) -> FocusAxis:
+        """The axis for the objective read back now; a read error or an unreadable label
+        gives the unknown objective (strictest)."""
+        try:
+            label = backend.nosepiece()
+            key: str | None = registry_key(label) if label else None
+        except Exception:  # noqa: BLE001 - an unreadable objective is the strictest case
+            key = None
+        return cls(backend, key, **kw)
 
     def position_um(self) -> float:
         if self.dry_run and self._z_dry is not None:
@@ -355,6 +384,14 @@ class FocusAxis:
         z = plain(target_um, "approach target")
         if not self.window[0] <= z <= self.window[1]:
             raise GuardError(f"approach target {z:.2f} um is outside the window {self.window}")
+        top = approach_ceiling_um(self.key, self.window)
+        if z > top:
+            wd = FREE_WD_UM.get(self.key)
+            raise GuardError(
+                f"approach target {z:.2f} um is above {top:.0f} um for {self.key}: its free "
+                f"working distance ({'unknown' if wd is None else f'{wd:.0f} um'}) does not "
+                f"cover the {self.window[1] - RETURN_Z_UM:.0f} um above {RETURN_Z_UM:.0f}; "
+                f"approach to {RETURN_Z_UM:.0f} and find focus with a sweep")
         if clearance is None and not self.dry_run and not self._simulated():
             raise GuardError("approach on a bench backend needs a clearance check "
                              "(clearance=callable(z_read) -> bool)")

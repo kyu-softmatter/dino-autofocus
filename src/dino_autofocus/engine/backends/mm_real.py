@@ -8,7 +8,10 @@ only when the backend opens; the piezo DLL only when the piezo is read.
   in the settings folder's settings.json (`auth.config.config_dir`), else `BENCH_CONFIG`.
   Loading applies the file's System/Startup preset (`LappMainBranch1 State 1`); AutoShutter
   goes off straight after, as mm_grab does, else every snap would switch the light on. Both
-  facts are in `config_record()`.
+  facts are in `config_record()`. **Before loading (T-036b)** the `.cfg` text is parsed and
+  the load is refused (`UnsafeConfig`, naming every device.property) if the Startup or
+  Shutdown preset or a post-init `Property` line sets a motion device; then a private copy of
+  exactly the checked bytes is loaded. What loading sets is in `config_record().notes`.
 - **Bench-flagged**: `info().bench` is True, so the guards and the runner require a
   clearance callback for `FocusAxis.approach()` on this backend.
 - **Device names** come from one `DeviceNames` (bench by default). `DEMO_DEVICES` points the
@@ -41,6 +44,7 @@ import json
 import math
 import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..backend import (
     AURA_LINES,
+    MOTION_DEVICES,
     PROVISIONAL,
     BackendInfo,
     ConfigRecord,
@@ -72,7 +77,8 @@ if TYPE_CHECKING:
     from pymmcore_plus import CMMCorePlus
 
 __all__ = ["BENCH_CONFIG", "BENCH_DEVICES", "BENCH_MOTION", "DEMO_DEVICES", "USER_CHECKS",
-           "BenchMotionLocked", "DeviceNames", "MmRealBackend", "MmUnavailable", "config_path"]
+           "BenchMotionLocked", "DeviceNames", "LoadSetting", "MmRealBackend", "MmUnavailable",
+           "UnsafeConfig", "check_load_settings", "config_path", "load_time_settings"]
 
 #: SAFETY (T-036): ships "LOCKED". Lifted only by a reviewed commit that edits this line,
 #: after T-027 and the T-011 bench check are on main. Nothing else may set or override it.
@@ -118,6 +124,65 @@ def _motion_state() -> str:
 def _require_motion_unlocked(what: str) -> None:
     if _motion_state() != "UNLOCKED":
         raise BenchMotionLocked(f"{what}: {MOTION_LOCK_REASON}")
+
+
+# ---------------------------------------------------------------- load-time settings (T-036b)
+#: presets Micro-Manager applies by itself: System/Startup right after loading; System/Shutdown
+#: is checked too in case the core applies it when it unloads
+LOAD_TIME_PRESETS = (("System", "Startup"), ("System", "Shutdown"))
+#: Core is in MOTION_DEVICES against run-time re-routing (Core.Focus / XYStage); at load its
+#: lines only assign roles, so they are recorded, not refused
+LOAD_CHECK_DEVICES = MOTION_DEVICES - {"Core"}
+
+
+class UnsafeConfig(RuntimeError):
+    """The config would set a motion device while loading (T-036b). Nothing was loaded."""
+
+
+@dataclass(frozen=True)
+class LoadSetting:
+    where: str  # "ConfigGroup System/Startup" or "post-init Property"
+    device: str
+    prop: str
+    value: str
+
+    def text(self) -> str:
+        return f"{self.where}: {self.device}.{self.prop}={self.value}"
+
+
+def load_time_settings(cfg_text: str) -> list[LoadSetting]:
+    """What loading this `.cfg` sets by itself: the `Property` lines after
+    `Property,Core,Initialize,1` and every setting of the `LOAD_TIME_PRESETS`. Pre-init
+    `Property` lines (ports, hubs) are needed to load a device and set nothing on it."""
+    out, initialized = [], False
+    for raw in cfg_text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        if parts[0] == "Property" and len(parts) >= 3:
+            value = ",".join(parts[3:])
+            if parts[1] == "Core" and parts[2] == "Initialize":
+                initialized = value == "1"
+            elif initialized:
+                out.append(LoadSetting("post-init Property", parts[1], parts[2], value))
+        elif parts[0] == "ConfigGroup" and len(parts) >= 5 and \
+                (parts[1], parts[2]) in LOAD_TIME_PRESETS:
+            out.append(LoadSetting(f"ConfigGroup {parts[1]}/{parts[2]}", parts[3], parts[4],
+                                   ",".join(parts[5:])))
+    return out
+
+
+def check_load_settings(settings: list[LoadSetting], name: str) -> None:
+    """Refuse a config that sets any motion device while loading, naming every one."""
+    bad: dict[str, list[str]] = {}
+    for s in settings:
+        if s.device in LOAD_CHECK_DEVICES:
+            bad.setdefault(s.where, []).append(f"{s.device}.{s.prop}")
+    if bad:
+        detail = "; ".join(f"{', '.join(v)} in {w}" for w, v in bad.items())
+        raise UnsafeConfig(f"{name} would move the stand while loading: {detail}. Remove "
+                           "these from the config; motion goes only through the guards")
 
 
 @dataclass(frozen=True)
@@ -186,6 +251,13 @@ class MmRealBackend:
     def open(self) -> BackendInfo:
         if self.core is not None:
             return self.info()
+        if not self.config.is_file():
+            raise MmUnavailable(f"config {self.config} does not exist")
+        # T-036b: check what loading would set before anything loads, then load a private
+        # copy of exactly the checked bytes, so a file changed in between cannot slip past
+        data = self.config.read_bytes()
+        settings = load_time_settings(data.decode("utf-8", errors="replace"))
+        check_load_settings(settings, self.config.name)
         try:
             from pymmcore_plus import CMMCorePlus, find_micromanager
         except ImportError as e:
@@ -193,27 +265,29 @@ class MmRealBackend:
         mm_dir = self.mm_dir or find_micromanager()
         if not mm_dir:
             raise MmUnavailable("no Micro-Manager install found")
-        if not self.config.is_file():
-            raise MmUnavailable(f"config {self.config} does not exist")
-        before = _sha256(self.config)
+        checked = hashlib.sha256(data).hexdigest()
         core = CMMCorePlus()  # its own core: nothing else sees half-loaded devices
-        try:
-            core.setDeviceAdapterSearchPaths([str(mm_dir)])
-            core.loadSystemConfiguration(str(self.config))
-            core.setAutoShutter(False)  # as loaded, every snap would switch the light on
-            core.waitForSystem()
-        except Exception as e:
-            core.unloadAllDevices()
-            raise MmUnavailable(f"loading {self.config} failed: {e}") from e
+        with tempfile.TemporaryDirectory(prefix="dino_af_cfg_") as tmp:
+            copy = Path(tmp) / self.config.name
+            copy.write_bytes(data)
+            try:
+                core.setDeviceAdapterSearchPaths([str(mm_dir)])
+                core.loadSystemConfiguration(str(copy))
+                core.setAutoShutter(False)  # as loaded, every snap would switch the light on
+                core.waitForSystem()
+            except Exception as e:
+                core.unloadAllDevices()
+                raise MmUnavailable(f"loading {self.config} failed: {e}") from e
         after = _sha256(self.config)
         self.core = core
         startup = "System/Startup" if "System" in core.getAvailableConfigGroups() and \
             "Startup" in core.getAvailableConfigs("System") else None
         self._config = ConfigRecord(
-            str(self.config), after,
-            None if before is None or after is None else before != after,
+            str(self.config), checked, None if after is None else after != checked,
             Readback.of("Core", "AutoShutter", 0, int(core.getAutoShutter())), startup,
-            time.time(), {"mm_dir": str(mm_dir)})
+            time.time(), {"mm_dir": str(mm_dir),
+                          "loaded": "a private copy of the checked bytes (T-036b)",
+                          "load_settings": "; ".join(s.text() for s in settings) or "none"})
         core.setExposure(self._exposure_ms)
         core.clearROI()
         self._sensor = (int(core.getImageWidth()), int(core.getImageHeight()))

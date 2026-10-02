@@ -345,6 +345,23 @@ class Sample:
 BOUNDARY_UNDO = "boundary_undo"  # drops the latest boundary point still standing
 # F5 step-out / return, written by objective_change (T-029); the latest one decides
 STEPPED_OUT, STEPPED_BACK = "objective_stepped_out", "objective_stepped_back"
+# an objective change, written by objective_change (T-029): {from_key, to_key, label}
+OBJECTIVE_CHANGED = "objective_changed"
+
+
+def objectives_used(legacy: list[str], visits: list[dict[str, Any]],
+                    other: list[dict[str, Any]]) -> list[str]:
+    """Objectives the sample has seen, in order of first use, each once: the legacy
+    sample.json list first, then field visits and objective changes in fold order."""
+    timeline = [(_order(v), [v.get("objective")]) for v in visits]
+    timeline += [(_order(o), [o.get("from_key"), o.get("to_key")]) for o in other
+                 if o.get("kind") == OBJECTIVE_CHANGED]
+    out: list[str] = []
+    for key in list(legacy) + [k for _, keys in sorted(timeline, key=lambda x: x[0])
+                               for k in keys]:
+        if key and str(key) not in out:
+            out.append(str(key))
+    return out
 
 
 def _order(rec: dict[str, Any]) -> tuple:
@@ -420,8 +437,8 @@ def read_sample(store: Any, sample_id: str, samples_root: Path = SAMPLES_ROOT,
     sessions = sessions_of_sample(store, sample_id)
     last = max(sessions, key=lambda i: i.get("started_at", ""), default=None)
     steps = [o for o in other if o.get("kind") in (STEPPED_OUT, STEPPED_BACK)]
-    objectives = sorted({str(v["objective"]) for v in state.visits if v.get("objective")}
-                        | set(info.objectives_used if info else []))
+    objectives = objectives_used(list(info.objectives_used) if info else [],
+                                 list(state.visits), other)
     return SampleView(
         sample_id=sample_id,
         exists=legacy.dir.is_dir() or bool(sessions),
