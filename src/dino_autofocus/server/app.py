@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import logging
+import pkgutil
 import threading
 from collections.abc import AsyncIterator, Sequence
 from importlib.metadata import PackageNotFoundError, version
@@ -154,6 +156,49 @@ def _http_refusal(request: Request) -> Refusal | None:
     return command_refusal(request)  # any other write: loopback, logged in, unlocked
 
 
+def hardware_root(records_root: str | Path) -> Path:
+    """The microscope's own hardware profile folder (not per session; manager, T-028)."""
+    return Path(records_root) / "microscope" / "hardware"
+
+
+def import_operations() -> list[str]:
+    """Import every module in `engine.operations`: operations register themselves in
+    `OPERATIONS` on import (WP-C). Called by `build_runner`, not at server import, so the
+    server package stays light. Returns the module names."""
+    from ..engine import operations
+
+    names = sorted(m.name for m in pkgutil.iter_modules(operations.__path__)
+                   if not m.name.startswith("_"))
+    for name in names:
+        importlib.import_module(f"{operations.__name__}.{name}")
+    return names
+
+
+def build_runner(backend: Any, *, records_root: str | Path, auth: AuthSeat | None = None,
+                 registry: Any = None, **runner_kw: Any) -> tuple[Any, Any]:
+    """The engine the server owns: a `Runner` over `backend` with every registered operation,
+    the hardware provider (T-028 `register_hardware` over `ProfileStore(<records root>/
+    microscope/hardware)`) as its `hardware=`, and T-018 device control as its control seat.
+    The registry is a copy, so building twice (tests, a restart) never re-registers into the
+    shared `OPERATIONS`. Returns `(runner, hardware)`; pass `hardware` to `create_app` too, so
+    the assistant's tool `gates=` can use `hardware.check`. `runner_kw` goes to `Runner`."""
+    from ..engine.gates import ProfileStore
+    from ..engine.operations.hardware_scan import register_hardware
+    from ..engine.runner import OPERATIONS, DeviceControlSeat, Registry, Runner
+
+    import_operations()
+    source = registry if registry is not None else OPERATIONS
+    reg = Registry()
+    hw_ops = ("hardware_scan", "hardware_confirm")
+    for name in source.names():
+        if name not in hw_ops:  # bound to this runner's profile store below
+            reg.register(source.get(name))
+    hw = register_hardware(reg, ProfileStore(hardware_root(records_root)))
+    if auth is not None:
+        runner_kw.setdefault("control", DeviceControlSeat(auth.control))
+    return Runner(backend, registry=reg, hardware=hw, **runner_kw), hw
+
+
 def install_sample_seat(engine: EngineAPI, records: Any, samples_root: Path | None,
                         sessions: SessionSeat) -> None:
     """The one seam between the server and the sample operations (T-027)."""
@@ -211,6 +256,7 @@ def create_app(
     auth: AuthSeat | None = None,
     records: Any = None,
     committer: Any = None,
+    hardware: Any = None,
     samples_root: Path | None = None,
     remote_view: bool = False,
     remote_abort: bool = True,
@@ -226,6 +272,8 @@ def create_app(
     set by the sessions router). Without it the sample operations refuse. It is also on
     `app.state.records` for the sessions router. `committer` (the T-019 AutoCommitter the
     records are written with) is flushed and stopped when the app shuts down.
+    `hardware` (from `build_runner`) is kept on `app.state.hardware`: the gates the
+    assistant's tools ask (`gates=app.state.hardware.check`, T-013b) and the screens read.
     `allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
     launcher passes this PC's host names and addresses. `dev_origins` names page origins
     besides this server's own that may write, e.g. the Vite dev server
@@ -251,6 +299,7 @@ def create_app(
     app.state.records = records
     app.state.committer = committer
     app.state.interrupted_sessions = []  # closed at start-up, for the sessions screen
+    app.state.hardware = hardware
     if records is not None:
         install_sample_seat(engine, records, samples_root, app.state.sessions)
     app.state.remote_view = remote_view
