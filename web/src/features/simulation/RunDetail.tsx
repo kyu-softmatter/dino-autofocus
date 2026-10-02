@@ -1,15 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { SimulationClient } from "./client";
 import { Graphs } from "./Graphs";
 import { useFrame, usePolled } from "./hooks";
 import { usePlayback } from "./playback";
 import { ProgressPanel } from "./Progress";
-import type { ZipEntryJson } from "./types";
+import type { RunProgressJson, ZipEntryJson } from "./types";
 import { Viewers } from "./Viewers";
 
-/** How often a running run is read again. Later the server pushes progress (T-009). */
-export const PROGRESS_MS = 2000;
+/**
+ * While a run is running its progress is pushed (`client.watchProgress`); the run's files and
+ * its series are read again at these intervals, and once more when it stops.
+ */
+export const INFO_MS = 10000;
 export const SERIES_MS = 10000;
 
 function size(bytes: number): string {
@@ -51,15 +54,25 @@ function Download({ client, runId, entries }: { client: SimulationClient; runId:
 
 export function RunDetail({ client, runId, onBack }: { client: SimulationClient; runId: string; onBack: () => void }) {
   const [running, setRunning] = useState(false);
-  const info = usePolled(runId, () => client.getRun(runId), running ? PROGRESS_MS : null);
-  const series = usePolled(runId, () => client.getSeries(runId), running ? SERIES_MS : null);
+  const [live, setLive] = useState<RunProgressJson | null>(null);
+  const ended = live !== null && live.state !== "running"; // read the files once more then
+  const info = usePolled(runId, () => client.getRun(runId), running ? INFO_MS : null, ended);
+  const series = usePolled(runId, () => client.getSeries(runId), running ? SERIES_MS : null, ended);
   const entries = usePolled(`${runId}:${info.data?.files.length ?? 0}`, () => client.zipEntries(runId), null);
 
-  const isRunning = info.data?.progress.state === "running";
-  if (isRunning !== running && info.data) setRunning(isRunning);
+  // the pushed progress is newer while the files say running; once they say it stopped, they win
+  const fromFiles = info.data?.progress ?? null;
+  const progress = fromFiles && fromFiles.state === "running" && live ? live : fromFiles;
+  const isRunning = progress?.state === "running";
+  if (isRunning !== running && progress) setRunning(isRunning);
+
+  useEffect(() => {
+    if (!running) return;
+    return client.watchProgress(runId, setLive);
+  }, [client, runId, running]);
 
   const hasTrajectory = !!info.data?.trajectory;
-  const nFrames = hasTrajectory ? (info.data?.progress.frames_saved ?? 0) : 0;
+  const nFrames = hasTrajectory ? (progress?.frames_saved ?? 0) : 0;
   const playback = usePlayback(nFrames);
   const { frame, error: frameError } = useFrame(client, runId, playback.index, hasTrajectory && nFrames > 0);
 
@@ -84,7 +97,7 @@ export function RunDetail({ client, runId, onBack }: { client: SimulationClient;
             {info.data.backend ?? "unknown backend"}
             {info.data.qid ? ` · question ${info.data.qid}` : ""} · from {info.data.source}
           </p>
-          <ProgressPanel p={info.data.progress} />
+          <ProgressPanel p={progress ?? info.data.progress} />
           <Download client={client} runId={runId} entries={entries.data} />
           {hasTrajectory ? (
             <Viewers frame={frame} nFrames={nFrames} playback={playback} error={frameError} />

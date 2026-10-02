@@ -44,7 +44,6 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 import numpy as np
-from scipy.special import erfc
 
 __all__ = [
     "OBJECTIVES",
@@ -583,6 +582,8 @@ class MockWorld:
         t = np.where(d < 0, np.float32(t_in), np.float32(t_spacer))
         near = np.abs(d) < 6 * ws + 20  # erfc / exp only where the edge reaches
         if near.any():
+            from scipy.special import erfc  # lazy: importing the mock costs no scipy (T-035b)
+
             dn = d[near].astype(np.float64)
             t[near] = (t_spacer + (t_in - t_spacer) * 0.5 * erfc(dn / (math.sqrt(2) * sig))
                        - depth * (w0 / ws) * np.exp(-0.5 * (dn / ws) ** 2))

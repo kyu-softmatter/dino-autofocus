@@ -410,6 +410,16 @@ class SampleView:
     n_events: int
     updated: str | None
 
+    def active_flags(self) -> dict[str, dict[str, Any]]:
+        """Flags not retired. `flags` keeps retired ones too (`retired`, `history`), so the
+        map can show them on a toggle (ui-spec 7.4)."""
+        return {k: f for k, f in self.flags.items() if not f.get("retired")}
+
+    def open_candidates(self) -> dict[str, dict[str, Any]]:
+        """Candidates nobody has rejected yet. `candidates` keeps rejected ones, with their
+        `history` (who and when), for the grey cross on the map."""
+        return {k: c for k, c in self.candidates.items() if c.get("status") != "rejected"}
+
     def summary(self) -> dict[str, Any]:
         """SampleSummary of docs/screens/sample.md section 3."""
         return {"sample_id": self.sample_id, "created": self.created,
