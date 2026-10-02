@@ -75,7 +75,16 @@ export interface PlanStep {
 
 export interface ObjectivePlan {
   steps: PlanStep[];
-  escape: { allowed: boolean; reason: string | null };
+  /** Y step-out for loading (PLAN v1.3): read-only from the engine, never typed */
+  escape: {
+    allowed: boolean;
+    /** engine refusal text, shown as is */
+    reason: string | null;
+    sign: "+Y" | "-Y";
+    dy_um: number;
+    /** e.g. "unmeasured provisional" */
+    mark: string;
+  };
   immersion: "dry" | "oil" | "water";
   approach_target_um: number;
   approach_step_um: number;
@@ -133,6 +142,8 @@ export interface FakeOptions {
   /** every op allowed unless set; denyAll refuses all but abort with that reason */
   denyAll?: string;
   remote?: boolean;
+  /** engine refusal of the Y step-out (e.g. a stage Y limit); default: allowed */
+  escapeRefusal?: string;
   state?: Partial<ObjectiveState>;
   lenses?: LensRow[];
   z4xFocusUm?: number | null;
@@ -189,7 +200,7 @@ export function createFakeApi(opts: FakeOptions = {}): FakeApi {
       const steps: PlanStep[] = [
         { step: 1, name: "Record XY, Z, objective; lights off", target: "" },
         { step: 2, name: "PFS off, retract Z", target: "Z -> 0 µm" },
-        ...(escape ? [{ step: 3, name: "Step out in Y", target: "Y -> y + dy" }] : []),
+        ...(escape ? [{ step: 3, name: "Step out in Y", target: "Y -> y + 15000 µm" }] : []),
         { step: 4, name: "Rotate", target: lens?.label ?? String(targetState) },
         { step: 5, name: "Load immersion", target: lens?.immersion ?? "" },
         ...(escape ? [{ step: 6, name: "Return XY", target: "XY -> start" }] : []),
@@ -197,7 +208,8 @@ export function createFakeApi(opts: FakeOptions = {}): FakeApi {
       ];
       return {
         steps,
-        escape: { allowed: false, reason: "escape distance not set" },
+        escape: { allowed: opts.escapeRefusal === undefined, reason: opts.escapeRefusal ?? null,
+          sign: "+Y", dy_um: 15000, mark: "unmeasured provisional" },
         immersion: lens?.immersion ?? "dry",
         approach_target_um: 2800,
         approach_step_um: 10,
@@ -248,7 +260,10 @@ export function createFakeApi(opts: FakeOptions = {}): FakeApi {
 // ---------- scripted events (a 4x -> 100x Oil change, ops-spec 4.2) ----------
 
 /** The seven steps of objective_change up to the loading card (steps 1-5). */
-export function scriptToLoading(opId: string): Omit<EngineEvent, "t">[] {
+export function scriptToLoading(opId: string, escape = true): Omit<EngineEvent, "t">[] {
+  const stepOut: Omit<EngineEvent, "t">[] = escape
+    ? [{ kind: "progress", op_id: opId, data: { step: 3, axis: "y", commanded: 15571.6, readback: 15571.6 } }]
+    : [];
   return [
     { kind: "started", op_id: opId, data: { op: "objective_change",
       start_state: { return_xy: [8026.0, 571.6], z_before: 3048.7, objective_before: "1-Plan Apo LmbdD20 4x" } } },
@@ -256,6 +271,7 @@ export function scriptToLoading(opId: string): Omit<EngineEvent, "t">[] {
     { kind: "light_changed", op_id: opId, data: { dialamp: "off", aura: { state: 0 }, verified: true } },
     { kind: "progress", op_id: opId, data: { step: 2, axis: "z", commanded: 0, readback: 0.0, pfs_in_range: "Out of Range" } },
     { kind: "position", op_id: opId, data: { z_um: 0.0, x_um: 8026.0, y_um: 571.6 } },
+    ...stepOut,
     { kind: "progress", op_id: opId, data: { step: 4, axis: "nosepiece", commanded: 5,
       label_read: "6-Plan Apo LmbdD0.13 100x Oil" } },
     { kind: "confirm_required", op_id: opId, data: { key: "load_immersion", kind: "manual_step",
@@ -265,10 +281,11 @@ export function scriptToLoading(opId: string): Omit<EngineEvent, "t">[] {
 }
 
 /** After "Loading done": step 7 approach in steps, then finished. */
-export function scriptAfterLoading(opId: string, nSteps = 3): Omit<EngineEvent, "t">[] {
+export function scriptAfterLoading(opId: string, nSteps = 3, escape = true): Omit<EngineEvent, "t">[] {
   const evs: Omit<EngineEvent, "t">[] = [
     { kind: "confirmed", op_id: opId, data: { key: "load_immersion", by: "operator@example.test", at: "17:50" } },
   ];
+  if (escape) evs.push({ kind: "progress", op_id: opId, data: { step: 6, axis: "xy", commanded: "8026.0, 571.6", readback: "8026.0, 571.6" } });
   for (let i = 1; i <= nSteps; i += 1) {
     const z = (2800 * i) / nSteps;
     evs.push({ kind: "progress", op_id: opId, data: { step: 7, z_um: z, target_um: 2800, step_index: i, n_steps: nSteps } });

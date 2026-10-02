@@ -101,7 +101,7 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
       <CurrentPanel state={state} zUm={change.zUm ?? state.z_um} />
       {awaiting && <ReturnBanner perm={changePerm} onReturn={() => send(startChange({ resume: true }))} />}
       <ChangePanel api={api} lenses={lenses} perm={changePerm} disabledBy={awaiting ? "Return to the sample position first" : null}
-                   onRotate={(target) => send(startChange({ target_state: target, escape: false }))}
+                   onRotate={(target, escape) => send(startChange({ target_state: target, escape }))}
                    onReload={() => send(startChange({ reload: true }))} />
       <StepsPanel view={change} confirmPerm={perm("confirm")} remote={state.remote}
                   onLoadingDone={(c) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok: true } })}
@@ -162,22 +162,25 @@ function ChangePanel({
   lenses: LensRow[];
   perm: Permission;
   disabledBy: string | null;
-  onRotate: (target: number) => void;
+  onRotate: (target: number, escape: boolean) => void;
   onReload: () => void;
 }) {
   const [target, setTarget] = useState<number | null>(null);
   const [plan, setPlan] = useState<ObjectivePlan | null>(null);
+  const [wantEscape, setWantEscape] = useState(true);
   const firstSelectable = lenses.find((l) => l.selectable)?.nosepiece_state ?? null;
   const chosen = target ?? firstSelectable;
 
   useEffect(() => {
     if (chosen === null) return;
     let live = true;
-    void api.getPlan(chosen, false).then((p) => live && setPlan(p));
+    void api.getPlan(chosen, wantEscape).then((p) => live && setPlan(p));
     return () => {
       live = false;
     };
-  }, [api, chosen]);
+  }, [api, chosen, wantEscape]);
+  // the step-out runs only when the operator keeps it on and the engine allows it
+  const escape = wantEscape && (plan?.escape.allowed ?? false);
 
   const blocked = !perm.allowed ? (perm.reason ?? "not allowed") : disabledBy ?? plan?.refusal ?? null;
   return (
@@ -195,12 +198,19 @@ function ChangePanel({
           </li>
         ))}
       </ul>
-      <p>
-        <label>
-          <input type="checkbox" checked={false} disabled readOnly /> Step out in Y for loading
-        </label>
-        <span className="reason" data-testid="escape-reason"> {plan?.escape.reason ?? "escape distance not set"}</span>
-      </p>
+      {plan && (
+        <p data-testid="escape">
+          <label>
+            <input type="checkbox" checked={escape} disabled={!plan.escape.allowed || !perm.allowed}
+                   onChange={(e) => setWantEscape(e.target.checked)} />{" "}
+            Step out {plan.escape.sign} {plan.escape.dy_um / 1000} mm for loading
+          </label>{" "}
+          <span className="muted">({plan.escape.mark})</span>
+          {!plan.escape.allowed && plan.escape.reason && (
+            <span className="reason" data-testid="escape-reason"> {plan.escape.reason}</span>
+          )}
+        </p>
+      )}
       {plan && (
         <>
           <ol className="plan" aria-label="Plan">
@@ -216,7 +226,7 @@ function ChangePanel({
           </p>
         </>
       )}
-      <button type="button" disabled={chosen === null || blocked !== null} onClick={() => chosen !== null && onRotate(chosen)}>
+      <button type="button" disabled={chosen === null || blocked !== null} onClick={() => chosen !== null && onRotate(chosen, escape)}>
         Rotate
       </button>{" "}
       <button type="button" disabled={!perm.allowed || disabledBy !== null} onClick={onReload}>

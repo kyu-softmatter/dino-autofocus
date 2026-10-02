@@ -24,17 +24,18 @@ function emitAll(api: ReturnType<typeof createFakeApi>, evs: Parameters<typeof a
 }
 
 describe("objective change", () => {
-  it("rotates with escape off and drives the seven steps from events", async () => {
+  it("rotates with the +Y step-out and drives the seven steps from events", async () => {
     const api = await setup();
     await screen.findByLabelText("Plan");
     fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
     await waitFor(() => expect(api.sent).toHaveLength(1));
-    expect(api.sent[0]).toEqual({ kind: "start", op: "objective_change", args: { target_state: 5, escape: false } });
+    expect(api.sent[0]).toEqual({ kind: "start", op: "objective_change", args: { target_state: 5, escape: true } });
 
     emitAll(api, scriptToLoading("op-1"));
     expect(screen.getByTestId("step-1").dataset.status).toBe("done");
     expect(screen.getByTestId("step-2").textContent).toContain("read 0.0");
     expect(screen.getByTestId("step-2").textContent).toContain("PFS Out of Range");
+    expect(screen.getByTestId("step-3").textContent).toContain("read 15571.6");
     expect(screen.getByTestId("step-4").textContent).toContain("6-Plan Apo LmbdD0.13 100x Oil");
     expect(screen.getByTestId("step-5").dataset.status).toBe("running");
 
@@ -47,13 +48,13 @@ describe("objective change", () => {
     expect(screen.queryByRole("dialog", { name: "Load immersion" })).toBeNull();
     expect(screen.getByTestId("step-5").textContent).toContain("operator@example.test");
     expect(screen.getByTestId("change-ended").textContent).toBe("Done");
-    expect(screen.getByTestId("step-3").dataset.status).toBe("skipped"); // no Y step-out
+    expect(screen.getByTestId("step-6").dataset.status).toBe("done");
   });
 
   it("moves the Z approach bar one event at a time, never jumping to the target", async () => {
     const api = await setup();
-    emitAll(api, scriptToLoading("op-9"));
-    const after = scriptAfterLoading("op-9", 4);
+    emitAll(api, scriptToLoading("op-9", false));
+    const after = scriptAfterLoading("op-9", 4, false);
     const bar = () => screen.getByLabelText("Z approach").querySelector("progress") as HTMLProgressElement;
     emitAll(api, after.slice(0, 3)); // confirmed, first progress, first position
     expect(bar().value).toBe(1);
@@ -74,16 +75,31 @@ describe("objective change", () => {
     await waitFor(() => expect(api.sent.at(-1)).toEqual({ kind: "start", op: "objective_change", args: { resume: true } }));
   });
 
-  it("keeps escape off with its engine reason and shows each lens reason", async () => {
+  it("shows the step-out read-only with its provisional mark, and each lens reason", async () => {
     await setup();
     await screen.findByLabelText("Plan");
-    expect(screen.getByTestId("escape-reason").textContent).toContain("escape distance not set");
-    expect(screen.getByRole("checkbox")).toHaveProperty("disabled", true);
+    const esc = screen.getByTestId("escape");
+    expect(esc.textContent).toContain("Step out +Y 15 mm");
+    expect(esc.textContent).toContain("unmeasured provisional");
+    expect(within(esc).queryByRole("textbox")).toBeNull(); // never typed
+    expect(screen.getByRole("checkbox")).toHaveProperty("checked", true);
+    expect(screen.queryByTestId("escape-reason")).toBeNull();
     const wi = screen.getByLabelText(/40x WI/);
     expect(wi).toHaveProperty("disabled", true);
     expect(screen.getByText("no working distance value")).toBeTruthy();
     expect(screen.getByText("already on that objective")).toBeTruthy();
-    expect(screen.getByText(/unmeasured provisional/)).toBeTruthy();
+    expect(screen.getAllByText(/unmeasured provisional/)).toHaveLength(2); // step-out and approach step
+  });
+
+  it("shows the engine's refusal of the step-out and rotates without it", async () => {
+    const api = await setup({ escapeRefusal: "Y step-out exceeds the stage Y limit" });
+    await screen.findByLabelText("Plan");
+    expect(screen.getByTestId("escape-reason").textContent).toContain("Y step-out exceeds the stage Y limit");
+    expect(screen.getByRole("checkbox")).toHaveProperty("disabled", true);
+    expect(screen.getByRole("checkbox")).toHaveProperty("checked", false);
+    fireEvent.click(screen.getByRole("button", { name: "Rotate" }));
+    await waitFor(() => expect(api.sent).toHaveLength(1));
+    expect(api.sent[0].args).toEqual({ target_state: 5, escape: false });
   });
 
   it("is read-only in remote view: no commands, and Loading done is never offered", async () => {

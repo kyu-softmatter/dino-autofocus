@@ -53,7 +53,7 @@ Returns the engine's `planned` payload for `objective_change` without starting i
 | Field | Notes |
 |---|---|
 | `steps[]` | seven rows `{step: 1..7, name, target}`: record; lights off; `Z -> 0`; `Y -> y + dy` (absent when `escape=false`); rotate to `label`; `load_immersion` (manual); `XY -> return_xy`; `Z approach -> approach_target_um` in `approach_step_um` steps |
-| `escape` | `{allowed: false, reason: "escape distance not set"}` until the user sets the Y sign and distance (PLAN 10절). The screen sends `escape=false` only |
+| `escape` | `{allowed, reason, sign, dy_um, mark}`: +Y, 15000 µm, `"unmeasured provisional"` (PLAN v1.3). Shown read-only with the mark; no entry field. When the engine refuses it (e.g. stage Y limit), `allowed: false` and `reason` is the engine text, shown as is, and the screen sends `escape: false` |
 | `immersion` | of the target lens |
 | `approach_target_um`, `approach_step_um` | 2800 default; step from the target lens's guards row (10 µm, `"unmeasured provisional"`). Both read-only, shown with that mark; no entry field |
 | `refusal` | preflight text if the plan itself is refused |
@@ -81,7 +81,7 @@ Disabled reasons for these buttons come from the shared `GET /api/permissions?op
 
 | Action | Command | Who |
 |---|---|---|
-| Rotate | `{kind: "start", op: "objective_change", args: {target_state, escape: false}}`. `approach_step_um` is not sent: it is a per-objective guards value, and the screen only shows the engine's value | local operator with control, session open |
+| Rotate | `{kind: "start", op: "objective_change", args: {target_state, escape}}`, `escape` true unless the operator unticks it or the engine refuses it. `approach_step_um` is not sent: it is a per-objective guards value, and the screen only shows the engine's value | local operator with control, session open |
 | Loading done | `{kind: "confirm", op_id, args: {key: "load_immersion", ok: true}}` | **local only, always**, whatever D13 allows; the server refuses it from a remote origin |
 | Return to sample position | `{kind: "start", op: "objective_change", args: {resume: true}}` (T-011) | as Rotate; the only motion op allowed while `awaiting_return` |
 | Re-load immersion | `{kind: "start", op: "objective_change", args: {reload: true}}` (name to be fixed by T-029) | as Rotate; runs steps 2, 3, 5, 6, 7 on the current lens (ops-spec 4.2 item 8) |
