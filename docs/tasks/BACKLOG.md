@@ -66,6 +66,22 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - **Waiting on the director/user:** real `light_set`/`lights_off` at M3 instead of M4; whether viewers
   may submit questions to the mock store and write flags (default: local operator only).
 
+## Engine requirements promised to the screens (for WP-C, G, I cards)
+
+- Op names are fixed by the screen contracts (list in T-011). Engine cards must use them.
+- **Sample state storage (manager decision):** boundary points, flags and candidates are append-only events
+  in the open experiment session's `records/sample_events.jsonl` (PLAN 5, T-019). The engine has one
+  reader that folds them into the current state. Legacy `sample.json` / `map.json` are derived views for
+  the old tools. Flag and candidate writes need an open session. The engine assigns `flag_id` and
+  `candidate_id`, and a reject is a new entry with source `person_rejected`.
+- WP-G: HardwareProfile gets host, config, per-device type/library/properties/write_verified, objective rows,
+  camera, piezo, positions/pfs/lights (ops-spec 5). Confirmed items are `{value, by, at}`, and profile history
+  keeps a diff. This is not added to T-002-2; it goes into the WP-G card.
+- WP-C: `light_set{mode, line, percent}` op. WP-C/WP-I: `scan_4x` writes `mosaic.npy` and `mosaic.json`
+  (orientation "stage", `M_px_per_um`, objective, `n_tiles`); `goto_xy` event payloads; `scan_box_um`
+  and `allowed_box_um` in `summary.json`.
+- Lens table owner (NA, mag, WD) is still open: checklist Q8.
+
 ## 현미경 PC 확인 항목 (총괄에 넘김)
 
 - `docs/operations-spec.md` 10절 Q1–Q21 (실행4, T-006)

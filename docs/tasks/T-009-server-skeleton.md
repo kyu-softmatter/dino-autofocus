@@ -82,3 +82,15 @@
 
 - Hardware must not depend on the graceful route alone. The server's own exit hooks (signal handlers and
   `atexit`) call the engine's all-off as well, so Ctrl+C or a normal process exit still turns lights off.
+
+## From the screen contracts (T-100/101/102 stage A, 업무분배보조)
+
+- `create_app(engine, *, agent_store=..., remote_view=...)` keeps the AgentStore on `app.state`, with an
+  `AgentStoreDep` in `server/api/__init__.py`. The dev default is `MockStore`.
+- An auth dependency that yields `(login token or None, is_local)` from the cookie plus loopback. The T-018
+  control object lives on `app.state` (a stub until T-018 merges).
+- `/api/commands` consults the engine's permission table (T-011, op -> action, needs control, needs session).
+  The server does not keep its own copy.
+- `/api/commands` refuses `map_flag`, `map_flag_retire`, `candidate_confirm`, `candidate_reject`. Those go only
+  through `server/api/map.py`, which checks `WRITE_MAP_FLAG` (D16). The common endpoint must not bypass it.
+- D13: remote POSTs stay refused except `abort`.

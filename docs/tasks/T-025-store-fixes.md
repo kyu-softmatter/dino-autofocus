@@ -20,3 +20,8 @@ Same as T-008: `src/dino_autofocus/agents/{__init__,store,mock_store,sma_files}.
 ## Done when
 
 - Common criteria, commit trailer `Session: AF 실행6`. Send `[검토요청 T-025]` to AF 검토보조1.
+
+## From the screen contracts
+
+- Add `writable: bool` to the AgentStore protocol (`MockStore` True, `SmaFiles` False), so the console submit
+  route need not test the class.

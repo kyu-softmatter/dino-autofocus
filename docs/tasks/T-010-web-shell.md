@@ -66,3 +66,8 @@
 - On the first screen, show the last shutdown's light readback from `GET /api/state` → `last_shutdown_lights`
   (T-011 fills it). Warn clearly if any light did not read back off. Second-stage commit; show nothing when
   the field is absent.
+
+## From the screen contracts
+
+- A cross-area link helper (URL scheme), for example console run -> `#/simulation?run_id=...`, so areas link
+  without importing each other.

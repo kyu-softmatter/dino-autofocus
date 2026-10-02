@@ -69,3 +69,8 @@
 - Expose this as named permissions in `roles.py` (for example `SUBMIT_QUESTION`, `WRITE_MAP_FLAG`, both
   operator-only, local-only) so the server routes check them. The UI hiding a button is not enough.
 - Tests: viewer and remote operator are refused, local operator allowed.
+
+## From the screen contracts
+
+- An audit kind for question submit (`QUESTION_SUBMITTED`), and confirm that `COMMAND_PROPOSED` and
+  `COMMAND_REJECTED` exist. `SUBMIT_QUESTION` covers both the console F1.1 submit and the prompt box.

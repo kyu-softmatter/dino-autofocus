@@ -129,3 +129,17 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - The engine marks itself running in a small state file at start and clears it on a clean shutdown. On the
   next start, if the mark is still there, record "unclean shutdown", read the lights back, and report it in
   `snapshot()` (next to `last_shutdown_lights`) before accepting any command.
+
+## From the screen contracts (T-100/101/102 stage A)
+
+- Add event kinds `map_changed`, `sample_opened`, `objective`, and command kind `update`, to EVENT_KINDS and
+  COMMAND_KINDS.
+- `snapshot()["hardware"] = {profile, profile_path, gates, last_status}`.
+- One permission table, op -> (action class, needs control token, needs open session). The server reads it
+  (T-009). Op names the screens use: `hardware_scan{include_properties, piezo_port}`, `hardware_confirm{items}`,
+  `status`, `light_set{mode, line, percent}`, `edge_trace{hole_diameter_mm, ...}`, `boundary_mark`,
+  `boundary_undo`, `boundary_reset`, `scan_4x`, `sample_map`, `goto_xy`, `map_flag`, `map_flag_retire`,
+  `candidate_confirm`, `candidate_reject`. `lights_off` and `abort` are command kinds, not `start(...)`.
+- Correction: under D13 a remote client may send `abort` only. Remote `lights_off` is refused for now
+  (abort's exit path turns the lights off). Locally anyone logged in may send `abort` and `lights_off`.
+  Pending director confirmation.
