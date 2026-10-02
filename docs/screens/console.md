@@ -95,7 +95,6 @@ no card bodies and no images (D7).
    submit to AgentStore uses the same permission (T-100 card). Please widen the docstring, or name a
    separate action if the two should differ.
 5. **T-019 / sample**: the "이 저장소의 실험" list has no read API yet; stage B links out only.
-6. **T-010 / T-012, web**: the shell routes by hash (`#/<area>`, `route.ts`) and ignores anything after
-   the area, so `#/simulation/runs/<run_id>` opens the simulation area. Request T-012 to read that suffix
-   (or name another form); until then the link opens the area without selecting the run.
+6. ~~T-010 / T-012~~: closed. The link is `#/simulation/runs/<run_id>`; the shell passes `#/<area>/<rest>`
+   through (no link helper) and T-012 stage 2 reads the suffix.
 7. ~~T-014~~: resolved by the shell's `useScreenContext` (T-010); nothing waits on T-014.
