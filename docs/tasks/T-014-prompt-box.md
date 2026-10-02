@@ -35,3 +35,9 @@
 - 공통 조건, T-010 의 npm 검사 (build, test, 타입 검사)
 - vitest: 문맥 전달, 제안 카드 확인 / 거부, 읽기 전용 모드, 연결 안 됨 표시
 - 끝나면 `[검토요청 T-014]`
+
+## After merge (220bf13, AF 검토) — T-014b follow-up for AF 실행13 (after T-105)
+
+- The prompt box POSTs through `transport.fetch`, not `useClient().post`, so 401/423 skip the shell's re-login and a
+  403 `remote_view` does not set read-only. Switch to the client. Replace the hand-written types with generated ones
+  after T-013b merges and 실행4 reruns gen:api. Review AF 검토보조4.

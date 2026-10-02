@@ -106,3 +106,17 @@ Branch `exec1/T-027b-approach-ceiling` from main's hash. Owned paths as above pl
    `sample.json`. T-029 writes the event.
 3. After T-015b merges: `FocusAxis._simulated` and the other guards' bench checks call `backend.is_bench(info)`.
    Can ride in this branch if T-015b lands first, otherwise a separate small commit.
+
+## T-027c (AF 실행1; review AF 검토보조1) — keep flag and candidate history (from T-102, map.md G10)
+
+- Today `records.events.fold()` pops a flag on `flag_remove` and overwrites a particle/candidate in place, so the
+  map screen cannot show retired flags on toggle or rejected candidates (grey ×, who and when) as ui-spec 7.4 asks.
+  The information is gone before the projection sees it, so the fix is in the fold, kept generic:
+  - flags: `flag_remove` keeps the entry with `retired: True`; every flag and particle entry gets
+    `history: [{kind, by, at}]` from the stamped events, in order.
+  - `engine/sample.py` (the only consumer of `state.flags`, ~447) projects `flags` with `retired` and `history`, and
+    candidates with `history`; anything that means "active flags" filters `retired`.
+- Owned paths for this change: `records/events.py` (fold only; tell AF 실행2, the records owner) plus the T-027
+  paths. Tests: remove then list keeps a retired flag; confirm then reject keeps both in history with by/at.
+- After merge (b602da5, AF 검토): `flag_remove` on an unknown `flag_id` makes a retired stub (before: a no-op).
+  The fold docstring does not say so yet: add one line whenever `records/events.py` is next touched. Consumers use `active_flags()` / `open_candidates()` for what is in play (T-032 stage 2, T-102).

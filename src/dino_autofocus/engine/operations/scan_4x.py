@@ -63,11 +63,12 @@ from ..guards import (
     XYAxis,
     XYBox,
     best_z_um,
+    lights_off,
     operation,
 )
 from ..mosaic import Tile, build_mosaic, save_mosaic
 from ..records import GRADE_COMPUTED, GRADE_MEASURED
-from ..runner import Operation, register_operation
+from ..runner import Aborted, Operation, register_operation
 from ..sample import SAMPLES_ROOT, Sample, SampleInfo
 
 try:  # T-027 puts the closed-loop rule next to fitted_at
@@ -546,16 +547,25 @@ def run_body(backend: Backend, sample: Sample, info: SampleInfo, a: ScanArgs, pl
 
 def _close_legacy(folder: Path) -> None:
     """Add the exit path's lights-off and end Z to scan.json, as the script's `finally` did."""
-    scan, summary = folder / "scan.json", folder / "summary.json"
-    if not scan.exists() or not summary.exists():
+    summary = folder / "summary.json"
+    if not summary.exists():
         return
-    rec = json.loads(scan.read_text(encoding="utf-8"))
     s = json.loads(summary.read_text(encoding="utf-8"))
-    rec["light_off"] = s.get("lights_off")
     end = s.get("end_state") or {}
     pos = end.get("positions") if isinstance(end, dict) else None
-    rec["z_end_um"] = pos.get("z_um") if isinstance(pos, dict) else None
-    rec["status"] = s.get("status")
+    _legacy_end(folder, s.get("lights_off"), pos.get("z_um") if isinstance(pos, dict) else None,
+                s.get("status"), "operation() exit path")
+
+
+def _legacy_end(folder: Path, light_off: dict | None, z_end_um: float | None, status: str | None,
+                by: str) -> None:
+    """End fields of the legacy scan.json: light_off readback, z_end_um, status."""
+    scan = folder / "scan.json"
+    if not scan.exists():  # stopped before the first save: no legacy record to close
+        return
+    rec = json.loads(scan.read_text(encoding="utf-8"))
+    rec["light_off"] = None if light_off is None else {**light_off, "by": by}
+    rec["z_end_um"], rec["status"] = z_end_um, status
     scan.write_text(json.dumps(rec, indent=1, default=str), encoding="utf-8")
 
 
@@ -609,5 +619,17 @@ class Scan4x(Operation):
         pl = plan(info, b.info().sensor, a, b.positions().z_um)
         if a.dry_run:
             return {"dry_run": True, "plan": pl}
-        host = Host.of_runner(self.ctx, runner_folder(self.ctx, sample, PREFIX))
-        return run_body(b, sample, info, a, pl, host)
+        folder = runner_folder(self.ctx, sample, PREFIX)
+        status = "error"
+        try:
+            result = run_body(b, sample, info, a, pl, Host.of_runner(self.ctx, folder))
+            status = "finished"
+            return result
+        except Aborted:
+            status = "aborted"
+            raise
+        finally:
+            # scan.json carries the light readback like summary.json: switch off here (no
+            # token needed) and record it; the runner's exit path follows and finds it off
+            _legacy_end(folder, lights_off(b), b.positions().z_um, status,
+                        "scan_4x exit (all off); the runner's exit path follows")

@@ -195,3 +195,34 @@ def test_light_dropout_fault_on_the_mock_is_filtered(engine, tmp_path):
     assert t["dropout_z_um"], "the injected dropout frames were not flagged"
     truth = b.world.in_focus_z(t["x_um"], t["y_um"])
     assert t["z_focus_um"] == pytest.approx(truth, abs=3.0)
+
+
+def test_scan_json_carries_the_light_readback_under_the_runner(engine, tmp_path):
+    b = mock(hole_mm=0.3, z_um=2960.0)  # one tile, already in the window
+    s = sample_for(tmp_path, b)
+    r, sink = engine(b, s)
+    op = r.submit(start("scan_4x", sample_id=s.id, margin_um=0.0, exposure_ms=500.0))
+    end = sink.wait(op, "finished", "error", "aborted")
+    assert end.kind == "finished", end.data
+    d = s.scans_4x()[-1]
+    rec = json.loads((d / "scan.json").read_text())
+    assert rec["light_off"]["verified"] and rec["light_off"]["readbacks"]
+    assert rec["status"] == "finished" and rec["z_end_um"] == pytest.approx(b.world.z_um)
+    summary = json.loads((d / "summary.json").read_text())
+    # scan_4x switched off first, so the runner's restore finds nothing to command: it reads
+    # both lights off and records no readback of its own (verified None)
+    lo = summary["lights_off"]
+    assert lo["rule"] == "restore" and lo["aura"]["state"] == lo["dialamp"]["state"] == "off"
+
+
+def test_abort_mid_scan_still_closes_scan_json(engine, tmp_path):
+    b = mock(z_um=2960.0)
+    s = sample_for(tmp_path, b)
+    r, sink = engine(b, s)
+    op = r.submit(start("scan_4x", sample_id=s.id, margin_um=0.0, exposure_ms=500.0))
+    sink.wait(op, "frame_ready")  # the first tile is saved
+    r.submit(Command("abort", op_id=op, user_id=USER, session_id=SESSION))
+    sink.wait(op, "aborted")
+    rec = json.loads((s.scans_4x()[-1] / "scan.json").read_text())
+    assert rec["status"] == "aborted" and rec["light_off"]["verified"]
+    assert 1 <= len(rec["tiles"]) < 4 and b.light_state()["Aura"] == "0"

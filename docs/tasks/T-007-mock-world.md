@@ -58,3 +58,12 @@ PLAN.md v0.2 5절의 `mock` 백엔드는 M1 의 기본 백엔드다. 그 핵심�
 - 공통 조건 (`uv run pytest`, `uv run ruff check src tests`, 소유 밖 diff 없음,
   커밋 메시지 끝 `Session: AF 실행3`)
 - 끝나면 `[검토요청 T-007]` 를 검토 세션에
+
+## T-007b (AF 실행18, reassigned from 실행3; review AF 검토보조2) — timing test that survives a loaded machine
+
+- `tests/engine/test_backends_mock_world.py::test_512_frame_renders_under_50_ms` (best of 5 under 50 ms) failed under
+  parallel load (검토보조2, `tests/engine tests/e2e`). Keep the strict bound only when `DINOAF_PERF=1` is set
+  (skip with a reason otherwise), and keep an always-on loose check (e.g. median of 5 under 500 ms) so a real
+  regression still fails.
+- Also in T-007b (manager, owned path added): one docstring line in `src/dino_autofocus/records/events.py` `fold()`
+  saying that `flag_remove` on an unknown `flag_id` leaves a retired stub (T-027c). Docstring only, no code change.

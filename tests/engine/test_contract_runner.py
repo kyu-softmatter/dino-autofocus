@@ -948,6 +948,7 @@ def test_a_failing_sink_does_not_stop_the_engine(make):
 def test_bench_backend_refuses_an_approach_without_clearance(make, fake):
     r, sink = make()
     sink.wait("finished", r.submit(start("approach_op")))  # fake backend: not the bench
+    real_info = fake.info
     info = fake.info()
     info.bench = True  # T-033: keyed on the flag, not on the backend's name
     fake.info = lambda: info
@@ -965,6 +966,11 @@ def test_bench_backend_refuses_an_approach_without_clearance(make, fake):
     ru, su = make()
     assert ru.snapshot()["backend_info"] is None
     su.wait("preflight_failed", ru.submit(start("approach_op")))
+    odd = real_info()
+    odd.kind = "home-made"  # not a simulated kind: bench even with bench=False (is_bench)
+    fake.info = lambda: odd
+    rk, sk = make()
+    sk.wait("preflight_failed", rk.submit(start("approach_op")))
     del fake.info
 
 

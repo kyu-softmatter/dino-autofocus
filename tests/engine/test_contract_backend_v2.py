@@ -27,7 +27,7 @@ import json
 from dataclasses import asdict
 
 import pytest
-from conftest import FakeBackend
+from engine_fakes import FakeBackend
 
 from dino_autofocus.engine.backend import (
     CAMERA_PROPERTIES,
@@ -252,6 +252,11 @@ class _Info:
         self.__dict__.update(kw)
 
 
+class _BadHash:
+    def __hash__(self):
+        raise RuntimeError("no hash")
+
+
 class _Unreadable:
     @property
     def kind(self):
@@ -272,6 +277,8 @@ def test_bench_field_defaults_to_true():
     (_Info(kind="mock", bench=None), True),  # not exactly False
     (_Info(kind="mock", bench=0), True),
     (_Info(kind="mm-real", bench=False), True),  # not a simulated kind
+    (_Info(kind=["mock"], bench=False), True),  # unhashable kind (T-015c)
+    (_Info(kind=_BadHash(), bench=False), True),  # hashing the kind raises
     (_Info(kind="new-backend", bench=False), True),
     (_Info(kind="mm-real", bench=True), True),
     (_Info(kind="mock", bench=True), True),

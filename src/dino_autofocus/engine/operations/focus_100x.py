@@ -59,6 +59,7 @@ DEFAULT_CENTRE_UM = 2930.0
 PARFOCAL_4X_TO_100X_UM = -60.0  # 2026-09-30, one sample; unmeasured provisional
 DARK_OFFSET_ADU = 102.0  # Kinetix_red dark offset on 2026-09-30
 SIGNAL_MIN_ADU = 50.0  # a first frame whose max is within this of the dark offset: no signal
+DEFAULT_EXPOSURE_MS = 20.0  # provisional (2026-09-30, one run)
 SETTLE_COARSE_S, SETTLE_FINE_S = 0.1, 0.15
 MAX_EXTENSIONS = 3
 METRICS = ("peak", "vollath")
@@ -73,7 +74,9 @@ class FocusArgs:
     step_um: float = 2.0
     fine_half_um: float = 3.0
     fine_step_um: float = 0.2
-    exposure_ms: float = 30.0
+    # provisional (2026-09-30, one run): 20 ms gave a clean peak without saturation; the
+    # script's default was 30
+    exposure_ms: float = DEFAULT_EXPOSURE_MS
     aura_line: str = "GREEN"
     aura_percent: float = 1.0
     metric: str = "peak"
