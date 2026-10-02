@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +30,12 @@ DEFAULT_DATA_ROOT = Path(r"D:\AutoFocus\data")
 DEFAULT_MAX_TRACKED_BYTES = 5 * 1024 * 1024
 
 SCHEMA = "dino-autofocus/experiment-session/1"
+
+#: Extra subprocess.run arguments for every git call. The app runs under pythonw (no
+#: console); on Windows a console child of a windowless parent would flash a window on the
+#: user's desktop at every auto-commit.
+NO_WINDOW: dict[str, Any] = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {})
 
 
 @dataclass(frozen=True)

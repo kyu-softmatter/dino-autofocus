@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .layout import RecordsConfig, check_id, read_json, slug
+from .layout import NO_WINDOW, RecordsConfig, check_id, read_json, slug
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,7 @@ class GitFolderStore(FolderStore):
             cmd += ["-c", f"user.name={author.name}", "-c", f"user.email={author.email}"]
         cmd += list(args)
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout_s,
-                             encoding="utf-8", errors="replace")
+                             encoding="utf-8", errors="replace", **NO_WINDOW)
         if check and out.returncode != 0:
             raise GitError(f"git {' '.join(args)}: {(out.stderr or out.stdout).strip()}")
         return out

@@ -1,6 +1,7 @@
 """The git store: one branch, path-scoped commits, background auto-commit, no push."""
 
 import subprocess
+import sys
 import threading
 
 import pytest
@@ -188,8 +189,11 @@ def test_nothing_in_the_package_pushes(cfg, tmp_path, monkeypatch):
     calls = []
     real = subprocess.run
 
+    flags = []
+
     def spy(cmd, *a, **kw):
         calls.append(list(cmd))
+        flags.append(kw.get("creationflags", 0))
         return real(cmd, *a, **kw)
 
     from dino_autofocus.records import session as session_mod
@@ -208,3 +212,5 @@ def test_nothing_in_the_package_pushes(cfg, tmp_path, monkeypatch):
     subcommands = {subcommand(c) for c in calls}
     assert subcommands <= {"init", "rev-parse", "status", "add", "diff", "commit", "log"}
     assert not subcommands & {"push", "fetch", "pull", "merge", "remote", "clone"}
+    if sys.platform == "win32":  # no console window may flash on the desktop
+        assert all(f & subprocess.CREATE_NO_WINDOW for f in flags), flags

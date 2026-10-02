@@ -23,7 +23,7 @@ from .layout import append_jsonl, now_iso, read_json, read_jsonl, write_json_ato
 from .manifest import Manifest, verify
 from .store import Author, FolderStore, GitFolderStore
 
-LIBRARIAN = Author("mock-librarian", "mock-librarian@localhost")
+LIBRARIAN = Author("mock-librarian", "mock-librarian@example.test")
 
 
 @dataclass

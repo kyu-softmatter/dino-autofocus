@@ -10,6 +10,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from .layout import NO_WINDOW
+
 CODE_REPO = Path(__file__).resolve().parents[3]  # src/dino_autofocus/records -> repo root
 
 
@@ -23,7 +25,7 @@ class CodeVersion:
 
 def _git(repo: Path, *args: str) -> str:
     out = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
-                         timeout=20, encoding="utf-8", errors="replace")
+                         timeout=20, encoding="utf-8", errors="replace", **NO_WINDOW)
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip() or f"git {args[0]} exited {out.returncode}")
     return out.stdout
