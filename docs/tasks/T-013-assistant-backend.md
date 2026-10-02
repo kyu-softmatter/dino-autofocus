@@ -108,3 +108,10 @@ The review assistant checks each condition against the branch before passing it 
 - `GET /api/assistant/status`, `POST /api/assistant/ask` (NDJSON stream over plain fetch, no socket),
   `GET /api/assistant/conversations/{id}`, `POST /api/assistant/proposals/{id}/confirm` and `/reject`.
   Permissions come from `/api/permissions?ops=submit_question,<command op>`.
+
+## T-013c (AF 실행8, after T-013b merges; review AF 검토보조3)
+
+- `POST /api/assistant/proposals/{id}/reject` is open to any local login, a viewer included. Manager decision: reject
+  needs the same permission as confirming that card (operate for motion, WRITE_MAP_FLAG for map writes; a stop card
+  stays open to anyone allowed to stop). D16: viewers do not write, and clearing an operator's card is a write.
+  Tests: a viewer's reject is refused with the same refusal shape; the operator's reject works.
