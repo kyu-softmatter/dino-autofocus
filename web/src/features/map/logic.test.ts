@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { EngineEvent } from "./api";
+import type { EngineEvent } from "./clickMove";
 import { IDLE, clickMoveReducer, clickMoveText, type Action, type ClickMove } from "./clickMove";
 import { fixture, SAMPLE } from "./fixture";
 import { diameterOff, fitView, holeFitStatus, toCanvas, toStage, visibleCandidates, visibleFlags } from "./geometry";

@@ -1,6 +1,23 @@
 /** Test data for the map screen: the 2026-09-30 sample, shaped as docs/screens/map.md section 2. */
 
-import type { FakeData } from "./api";
+import type { Candidate, Flag, MapState, Permissions, ResultDetail, ResultSummary } from "./api";
+
+/** What the fake server knows (tests/map world). */
+export interface FakeData {
+  /** raw GET /api/state */
+  snapshot: Record<string, unknown>;
+  /** ops not listed here are allowed */
+  permissions: Permissions;
+  /** make GET /api/permissions fail */
+  permissionsFail?: boolean;
+  /** ops left out of the answer */
+  permissionsOmit?: string[];
+  maps: Record<string, MapState>;
+  results: Record<string, ResultSummary[]>;
+  details: Record<string, ResultDetail>;
+  flags: Record<string, Flag[]>;
+  candidates: Record<string, Candidate[]>;
+}
 
 export const SAMPLE = "20260930_1849_1";
 /** the experiment session opened at 19:30 local; the fit below is from 19:57 */
@@ -11,9 +28,9 @@ export function fixture(over: Partial<FakeData> = {}): FakeData {
   return {
     snapshot: {
       sample: SAMPLE,
-      position: { x_um: 8026, y_um: 571.6, z_um: 3048.7 },
+      positions: { x_um: 8026, y_um: 571.6, z_um: 3048.7 },
       objective: "1-Plan Apo LmbdD20 4x",
-      running: null,
+      running: [],
     },
     permissions: {},
     maps: {

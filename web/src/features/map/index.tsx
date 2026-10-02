@@ -8,21 +8,27 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import { areaHref, useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
+import {
+  type CommandIn,
+  CommandRefused,
+  type EventOut,
+  useClient,
+  useEngineEvents,
+  useEventsConnected,
+  useReadOnly,
+} from "../../app/client";
 import { EncoderZ } from "../../app/Verdict";
 import {
-  ApiError,
-  httpMapApi,
+  mapRoutes,
+  readSnapshot,
   type Candidate,
-  type CommandIn,
-  type EngineEvent,
   type Flag,
-  type MapApi,
   type MapState,
   type Permissions,
   type ResultDetail,
   type ResultSummary,
 } from "./api";
-import { IDLE, clickMoveReducer, clickMoveText, type ClickMove } from "./clickMove";
+import { IDLE, clickMoveReducer, clickMoveText, type ClickMove, type EngineEvent } from "./clickMove";
 import {
   clock,
   diameterOff,
@@ -82,7 +88,7 @@ const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const fmt = (v: number | null, d = 0) => (v === null ? "—" : v.toFixed(d));
 
 function why(e: unknown): string {
-  if (e instanceof ApiError) return e.detail;
+  if (e instanceof CommandRefused) return e.detail;
   return e instanceof Error ? e.message : String(e);
 }
 
@@ -92,12 +98,28 @@ function sampleFromRest(rest: string): string | null {
   return id && id.trim() !== "" ? id : null;
 }
 
-export default function MapArea() {
-  const api = useMemo(() => httpMapApi(), []);
-  return <MapScreen api={api} />;
+interface LooseCommand {
+  kind: "start" | "abort" | "confirm" | "update";
+  op?: string;
+  op_id?: string;
+  args?: Record<string, unknown>;
 }
 
-export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; width?: number; height?: number }) {
+/** `update` is not in the generated CommandIn yet (T-011 adds it; docs/screens/map.md G5) */
+function toCommand(c: LooseCommand): CommandIn {
+  return { kind: c.kind as CommandIn["kind"], op: c.op ?? "", op_id: c.op_id ?? "", args: c.args ?? {}, origin: "human" };
+}
+
+const WIDTH = 640;
+const HEIGHT = 640;
+
+export default function MapScreen() {
+  const width = WIDTH;
+  const height = HEIGHT;
+  const client = useClient();
+  const api = useMemo(() => mapRoutes(client), [client]);
+  const { readOnly, why: readOnlyWhy } = useReadOnly();
+  const connected = useEventsConnected();
   const [rest] = useAreaPath();
   const pinnedSample = sampleFromRest(rest);
   const [openSample, setOpenSample] = useState<string | null>(null);
@@ -172,21 +194,28 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
     setCands(c);
   }, [api, showRetired, showRejected]);
 
+  const alive = useRef(true);
   useEffect(() => {
-    let live = true;
-    api
-      .snapshot()
-      .then((s) => {
-        if (!live) return;
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const loadSnapshot = useCallback(() => {
+    client
+      .get<Record<string, unknown>>("/api/state")
+      .then((raw) => {
+        if (!alive.current) return;
+        const s = readSnapshot(raw);
         setOpenSample(s.sample);
-        setObjective(s.objective);
+        if (s.objective) setObjective(s.objective);
         if (s.position) setPos({ x: s.position.x_um, y: s.position.y_um, z: s.position.z_um });
       })
       .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [api]);
+  }, [client]);
+
+  useEffect(loadSnapshot, [loadSnapshot]);
 
   useEffect(() => {
     setMapState(null);
@@ -305,7 +334,24 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
     [handleOpEvent, recheck],
   );
 
-  useEffect(() => api.subscribe(onEvent), [api, onEvent]);
+  const onEventOut = useCallback(
+    (ev: EventOut) => onEvent({ kind: ev.kind, op_id: ev.op_id, data: ev.data ?? {} }),
+    [onEvent],
+  );
+  useEngineEvents(onEventOut);
+
+  // events sent while the socket was down are lost: re-read everything when it comes back
+  const wasConnected = useRef(connected);
+  useEffect(() => {
+    if (connected && !wasConnected.current) {
+      loadSnapshot();
+      recheck();
+      void reloadsRef.current.reloadMap();
+      void reloadsRef.current.reloadResults();
+      void reloadsRef.current.reloadRecords();
+    }
+    wasConnected.current = connected;
+  }, [connected, recheck, loadSnapshot]);
 
   const track = useCallback(
     (op_id: string, info: OpInfo) => {
@@ -321,25 +367,25 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
     async (control: Control, op: string, args: Record<string, unknown>) => {
       setRefusal((r) => ({ ...r, [control]: undefined }));
       try {
-        const op_id = await api.command({ kind: "start", op, args });
+        const op_id = await client.command(toCommand({ kind: "start", op, args }));
         if (control === "trace" || control === "scan") setActive((a) => ({ ...a, [control]: op_id }));
         track(op_id, { control, op });
       } catch (e) {
         setRefusal((r) => ({ ...r, [control]: why(e) }));
       }
     },
-    [api, track],
+    [client, track],
   );
 
   const send = useCallback(
-    async (control: Control, cmd: CommandIn) => {
+    async (control: Control, cmd: LooseCommand) => {
       try {
-        await api.command(cmd);
+        await client.command(toCommand(cmd));
       } catch (e) {
         setRefusal((r) => ({ ...r, [control]: why(e) }));
       }
     },
-    [api],
+    [client],
   );
 
   const writeRecord = useCallback(
@@ -358,6 +404,7 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
 
   /** null when allowed; else the shared reason (the first refused op wins) */
   const reasonFor = (...want: MapOp[]): string | null => {
+    if (readOnly) return `Read-only: ${readOnlyWhy ?? "remote view"}`;
     if (perms === null) return "Checking permissions…";
     for (const op of want) {
       const p = perms[op];
@@ -418,15 +465,15 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
       if (!sampleId || moveReason) return;
       if (move.phase === "submitting" || ["planned", "confirm", "retracting", "moving"].includes(move.phase)) return;
       dispatch({ type: "click", x_um: p[0], y_um: p[1] });
-      api
-        .command({ kind: "start", op: "goto_xy", args: { sample_id: sampleId, x_um: p[0], y_um: p[1] } })
+      client
+        .command(toCommand({ kind: "start", op: "goto_xy", args: { sample_id: sampleId, x_um: p[0], y_um: p[1] } }))
         .then((op_id) => {
           ops.current.set(op_id, { control: "goto", op: "goto_xy" });
           dispatch({ type: "submitted", op_id });
         })
         .catch((e) => dispatch({ type: "submit_failed", why: why(e) }));
     },
-    [api, sampleId, moveReason, move.phase],
+    [client, sampleId, moveReason, move.phase],
   );
 
   if (!sampleId) {
@@ -470,7 +517,7 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
             move={move}
             z={pos.z}
             onAnswer={(ok) => {
-              if (move.op_id) void api.command({ kind: "confirm", op_id: move.op_id, args: { key: move.confirmKey, ok } }).catch(() => undefined);
+              if (move.op_id) void client.command(toCommand({ kind: "confirm", op_id: move.op_id, args: { key: move.confirmKey, ok } })).catch(() => undefined);
               dispatch({ type: "answered" });
             }}
             onDismiss={() => dispatch({ type: "clear" })}

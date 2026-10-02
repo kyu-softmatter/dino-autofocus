@@ -3,7 +3,12 @@
  * (docs/screens/map.md section 6). The screen never raises Z; after arrival it shows a refocus hint.
  */
 
-import type { EngineEvent } from "./api";
+/** An engine event as this screen reads it (the shared EventOut, kind widened to string). */
+export interface EngineEvent {
+  kind: string;
+  op_id: string;
+  data: Record<string, unknown>;
+}
 
 export type Phase =
   | "idle"

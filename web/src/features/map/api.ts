@@ -1,10 +1,11 @@
 /**
- * Temporary until gen:api, T-009: the map screen's API types, its HTTP client and a scripted fake.
- *
- * The shapes follow docs/screens/map.md sections 2-4. When `src/api/schema.ts` is generated from
- * the server's OpenAPI, replace the interfaces below with the generated ones; nothing else in
- * `features/map/` builds requests or parses responses, so that is a one-file change.
+ * Temporary until map.py lands in the generated types (T-009 / gen:api): the map router's response
+ * types (docs/screens/map.md section 2), the shared permissions shape, and the calls to those
+ * routes. Engine commands and events go through the shell's client (src/app/client.tsx); this file
+ * only adds the map routes, so switching to generated types is a one-file change.
  */
+
+import { type Client, CommandRefused } from "../../app/client";
 
 export interface Box {
   x0: number;
@@ -118,36 +119,6 @@ export interface Candidate {
   by: string | null;
 }
 
-/** One message on /ws/events (engine/events.py `Event`). */
-export interface EngineEvent {
-  kind: string;
-  op_id: string;
-  data: Record<string, unknown>;
-  t?: number;
-}
-
-/** POST /api/commands body (T-009 `CommandIn`). */
-export interface CommandIn {
-  kind: "start" | "abort" | "confirm" | "update";
-  op?: string;
-  op_id?: string;
-  args?: Record<string, unknown>;
-}
-
-export interface Position {
-  x_um: number | null;
-  y_um: number | null;
-  z_um: number | null;
-}
-
-/** The parts of GET /api/state (engine `snapshot()`, T-011) this screen reads. */
-export interface Snapshot {
-  sample: string | null;
-  position: Position | null;
-  objective: string | null;
-  running: string | null;
-}
-
 /**
  * One entry of the shared `GET /api/permissions?ops=a,b` (T-009b, backed by T-011's check()):
  * whether the op may be sent now and, if not, why. The screen only shows these reasons; the
@@ -160,162 +131,94 @@ export interface Permission {
 
 export type Permissions = Record<string, Permission>;
 
-export type Unsubscribe = () => void;
+/** The parts of GET /api/state (engine snapshot, T-011) this screen reads. */
+export interface Snapshot {
+  sample: string | null;
+  position: { x_um: number | null; y_um: number | null; z_um: number | null } | null;
+  objective: string | null;
+}
 
-export interface MapApi {
-  snapshot(): Promise<Snapshot>;
-  permissions(ops: readonly string[]): Promise<Permissions>;
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+export function readSnapshot(snap: Record<string, unknown>): Snapshot {
+  const p = (snap.positions ?? snap.position ?? null) as Record<string, unknown> | null;
+  return {
+    sample: str(snap.sample) ?? str((snap.sample as { sample_id?: unknown } | null)?.sample_id),
+    position: p && typeof p === "object" ? { x_um: num(p.x_um), y_um: num(p.y_um), z_um: num(p.z_um) } : null,
+    objective: str(snap.objective) ?? str(p?.objective),
+  };
+}
+
+const enc = encodeURIComponent;
+const base = (sampleId: string) => `/api/map/${enc(sampleId)}`;
+
+export const PATHS = {
+  map: base,
+  results: (id: string) => `${base(id)}/results`,
+  result: (id: string, rid: string) => `${base(id)}/results/${enc(rid)}`,
+  mosaic: (id: string, rid: string) => `${base(id)}/results/${enc(rid)}/mosaic.png`,
+  flags: (id: string, all: boolean) => `${base(id)}/flags?include_retired=${all}`,
+  candidates: (id: string, all: boolean) => `${base(id)}/candidates?include_rejected=${all}`,
+  addFlag: (id: string) => `${base(id)}/flags`,
+  retireFlag: (id: string, fid: string) => `${base(id)}/flags/${enc(fid)}/retire`,
+  decide: (id: string, cid: string, d: "confirm" | "reject") => `${base(id)}/candidates/${enc(cid)}/${d}`,
+  permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(enc).join(",")}`,
+};
+
+/**
+ * POST to a map route (D16 writes). Stopgap with the signature of the shell's coming
+ * useClient().post<T>(path, body?) (T-010 stage 3): null for 204, a 403 switches the app to
+ * read-only. Swap to client.post once it is on main.
+ */
+async function post<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
+  const r = await client.transport.fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (r.status === 204) return null;
+  let detail = `HTTP ${r.status}`;
+  let parsed: unknown = null;
+  try {
+    parsed = await r.json();
+    const d = (parsed as { detail?: unknown } | null)?.detail;
+    if (typeof d === "string") detail = d;
+  } catch {
+    // no body
+  }
+  if (r.status === 403) client.readOnly.refuse(detail);
+  if (!r.ok) throw new CommandRefused(r.status, detail);
+  return parsed as T;
+}
+
+const opIdOf = (r: { op_id?: string } | null): string => r?.op_id ?? "";
+
+export interface MapRoutes {
   mapState(sampleId: string): Promise<MapState>;
   results(sampleId: string): Promise<ResultSummary[]>;
   result(sampleId: string, resultId: string): Promise<ResultDetail>;
   mosaicUrl(sampleId: string, resultId: string): string;
   flags(sampleId: string, includeRetired: boolean): Promise<Flag[]>;
   candidates(sampleId: string, includeRejected: boolean): Promise<Candidate[]>;
-  /** common command endpoint; resolves to the op_id */
-  command(cmd: CommandIn): Promise<string>;
+  /** the one permissions call; a failure disables the controls ("Permission check unavailable") */
+  permissions(ops: readonly string[]): Promise<Permissions>;
   addFlag(sampleId: string, body: { x_um: number; y_um: number; name: string; note: string; replaces?: string }): Promise<string>;
   retireFlag(sampleId: string, flagId: string): Promise<string>;
   decideCandidate(sampleId: string, candidateId: string, decision: "confirm" | "reject"): Promise<string>;
-  subscribe(onEvent: (ev: EngineEvent) => void): Unsubscribe;
 }
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly detail: string,
-  ) {
-    super(detail);
-  }
-}
-
-// ---------------------------------------------------------------- HTTP client
-
-async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = (await res.json()) as { detail?: unknown };
-      if (typeof body.detail === "string") detail = body.detail;
-    } catch {
-      // keep statusText
-    }
-    throw new ApiError(res.status, detail);
-  }
-  return (await res.json()) as T;
-}
-
-const enc = encodeURIComponent;
-
-export function httpMapApi(base = ""): MapApi {
-  const get = <T,>(path: string) => fetch(`${base}${path}`).then((r) => json<T>(r));
-  const post = <T,>(path: string, body: unknown) =>
-    fetch(`${base}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }).then((r) => json<T>(r));
-  const opId = (r: { op_id: string }) => r.op_id;
-  const m = (sampleId: string) => `/api/map/${enc(sampleId)}`;
-
+export function mapRoutes(client: Client): MapRoutes {
   return {
-    snapshot: async () => {
-      const s = await get<Record<string, unknown>>("/api/state");
-      const pos = (s.position ?? null) as Position | null;
-      return {
-        sample: typeof s.sample === "string" ? s.sample : null,
-        position: pos,
-        objective: typeof s.objective === "string" ? s.objective : null,
-        running: typeof s.running === "string" ? s.running : null,
-      };
-    },
-    // a failure here disables the controls on screen ("Permission check unavailable")
-    permissions: (ops) => get<Permissions>(`/api/permissions?ops=${ops.map(enc).join(",")}`),
-    mapState: (id) => get<MapState>(m(id)),
-    results: (id) => get<ResultSummary[]>(`${m(id)}/results`),
-    result: (id, rid) => get<ResultDetail>(`${m(id)}/results/${enc(rid)}`),
-    mosaicUrl: (id, rid) => `${base}${m(id)}/results/${enc(rid)}/mosaic.png`,
-    flags: (id, all) => get<Flag[]>(`${m(id)}/flags?include_retired=${all}`),
-    candidates: (id, all) => get<Candidate[]>(`${m(id)}/candidates?include_rejected=${all}`),
-    command: (cmd) => post<{ op_id: string }>("/api/commands", cmd).then(opId),
-    addFlag: (id, body) => post<{ op_id: string }>(`${m(id)}/flags`, body).then(opId),
-    retireFlag: (id, fid) => post<{ op_id: string }>(`${m(id)}/flags/${enc(fid)}/retire`, {}).then(opId),
-    decideCandidate: (id, cid, d) =>
-      post<{ op_id: string }>(`${m(id)}/candidates/${enc(cid)}/${d}`, {}).then(opId),
-    subscribe: (onEvent) => {
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${proto}//${window.location.host}${base}/ws/events`);
-      ws.onmessage = (msg) => {
-        try {
-          onEvent(JSON.parse(String(msg.data)) as EngineEvent);
-        } catch {
-          // not an event; ignore
-        }
-      };
-      return () => ws.close();
-    },
-  };
-}
-
-// ---------------------------------------------------------------- scripted fake (tests)
-
-export interface FakeData {
-  snapshot: Snapshot;
-  /** ops not listed here are allowed */
-  permissions: Permissions;
-  /** make GET /api/permissions fail */
-  permissionsFail?: boolean;
-  /** ops left out of the answer */
-  permissionsOmit?: string[];
-  maps: Record<string, MapState>;
-  results: Record<string, ResultSummary[]>;
-  details: Record<string, ResultDetail>;
-  flags: Record<string, Flag[]>;
-  candidates: Record<string, Candidate[]>;
-}
-
-export interface FakeMapApi extends MapApi {
-  /** every command and record write, in order */
-  sent: { route: string; body: unknown }[];
-  /** push an event to every subscriber, as /ws/events would */
-  emit(ev: EngineEvent): void;
-  data: FakeData;
-}
-
-export function fakeMapApi(data: FakeData): FakeMapApi {
-  const subs = new Set<(ev: EngineEvent) => void>();
-  const sent: { route: string; body: unknown }[] = [];
-  let n = 0;
-  const record = (route: string, body: unknown) => {
-    sent.push({ route, body });
-    n += 1;
-    return Promise.resolve(`op-${n}`);
-  };
-  const need = <T,>(v: T | undefined, what: string): Promise<T> =>
-    v === undefined ? Promise.reject(new ApiError(404, `no ${what}`)) : Promise.resolve(v);
-
-  return {
-    data,
-    sent,
-    emit: (ev) => subs.forEach((s) => s(ev)),
-    snapshot: () => Promise.resolve(data.snapshot),
-    permissions: (ops) =>
-      data.permissionsFail
-        ? Promise.reject(new ApiError(503, "permission check failed"))
-        : Promise.resolve(Object.fromEntries(ops.filter((op) => !data.permissionsOmit?.includes(op)).map((op) => [op, data.permissions[op] ?? { allowed: true, reason: null }]))),
-    mapState: (id) => need(data.maps[id], `sample ${id}`),
-    results: (id) => Promise.resolve(data.results[id] ?? []),
-    result: (_id, rid) => need(data.details[rid], `result ${rid}`),
-    mosaicUrl: (id, rid) => `fake://${id}/${rid}/mosaic.png`,
-    flags: (id, all) => Promise.resolve((data.flags[id] ?? []).filter((f) => all || f.retired_at === null)),
-    candidates: (id, all) =>
-      Promise.resolve((data.candidates[id] ?? []).filter((c) => all || c.source !== "person_rejected")),
-    command: (cmd) => record("/api/commands", cmd),
-    addFlag: (id, body) => record(`/api/map/${id}/flags`, body),
-    retireFlag: (id, fid) => record(`/api/map/${id}/flags/${fid}/retire`, {}),
-    decideCandidate: (id, cid, d) => record(`/api/map/${id}/candidates/${cid}/${d}`, {}),
-    subscribe: (onEvent) => {
-      subs.add(onEvent);
-      return () => subs.delete(onEvent);
-    },
+    mapState: (id) => client.get<MapState>(PATHS.map(id)),
+    results: (id) => client.get<ResultSummary[]>(PATHS.results(id)),
+    result: (id, rid) => client.get<ResultDetail>(PATHS.result(id, rid)),
+    mosaicUrl: PATHS.mosaic,
+    flags: (id, all) => client.get<Flag[]>(PATHS.flags(id, all)),
+    candidates: (id, all) => client.get<Candidate[]>(PATHS.candidates(id, all)),
+    permissions: (ops) => client.get<Permissions>(PATHS.permissions(ops)),
+    addFlag: (id, body) => post<{ op_id?: string }>(client, PATHS.addFlag(id), body).then(opIdOf),
+    retireFlag: (id, fid) => post<{ op_id?: string }>(client, PATHS.retireFlag(id, fid), {}).then(opIdOf),
+    decideCandidate: (id, cid, d) => post<{ op_id?: string }>(client, PATHS.decide(id, cid, d), {}).then(opIdOf),
   };
 }
