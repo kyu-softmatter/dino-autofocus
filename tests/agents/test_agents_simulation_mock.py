@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from dino_autofocus.agents import mock_sim
+from dino_autofocus.agents import mock_sim, sma_files
 from dino_autofocus.agents.mock_sim import MockSimulation, MockTicker, make_mock_runs
 from dino_autofocus.agents.simulation import SimulationRuns, read_progress, read_series
 
@@ -111,7 +111,7 @@ def test_writes_only_under_write_dir(tmp_path: Path, monkeypatch: pytest.MonkeyP
     with pytest.raises(ValueError, match="does not write inside"):
         MockSimulation(mock_sim.PACKAGE_DIR / "agents" / "x")
     sma = tmp_path / "sma"
-    monkeypatch.setenv(mock_sim.SMA_ROOT_ENV, str(sma))
+    monkeypatch.setenv(sma_files.ROOT_ENV, str(sma))
     with pytest.raises(ValueError, match="does not write inside"):
         MockSimulation(sma / "simulation_agent" / "runs")
     s = _sim(tmp_path)

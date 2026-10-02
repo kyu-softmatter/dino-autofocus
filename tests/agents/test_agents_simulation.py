@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from dino_autofocus.agents import simulation as sim
+from dino_autofocus.agents import sma_files, store
 from dino_autofocus.agents.simulation import (
     Frame,
     NotFoundError,
@@ -338,6 +339,14 @@ def test_zip_streams_records_and_optional_trajectory(tmp_path: Path) -> None:
 # -- runs folder ------------------------------------------------------------------------------
 
 
+def test_errors_are_the_stores(runs: Path) -> None:
+    """One `except store.NotFoundError` covers the agent store and the simulation runs."""
+    assert sim.NotFoundError is store.NotFoundError and sim.FileInfo is store.FileInfo
+    assert issubclass(sim.SimulationError, store.StoreError)
+    with pytest.raises(store.NotFoundError):
+        SimulationRuns(runs, trajectory_roots=[]).info("run-29990101-001")
+
+
 def test_list_and_ids(runs: Path) -> None:
     r = SimulationRuns(runs, trajectory_roots=[], source="test")
     ids = r.run_ids()
@@ -362,7 +371,7 @@ def test_missing_runs_dir(tmp_path: Path) -> None:
 
 
 def test_default_dirs_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(sim.SMA_ROOT_ENV, str(tmp_path))
+    monkeypatch.setenv(sma_files.ROOT_ENV, str(tmp_path))
     monkeypatch.setenv(sim.TRAJECTORY_ROOTS_ENV, f"{tmp_path / 'a'}{sim.os.pathsep}{tmp_path}")
     r = SimulationRuns()
     assert r.runs_dir == tmp_path / "simulation_agent" / "runs"

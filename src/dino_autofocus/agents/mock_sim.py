@@ -30,7 +30,8 @@ from typing import Any
 
 import numpy as np
 
-from .simulation import _RUN_ID_RE, DEFAULT_SMA_ROOT, SMA_ROOT_ENV
+from .simulation import _RUN_ID_RE
+from .sma_files import default_root
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 BACKEND = "mock_sim"
@@ -350,8 +351,7 @@ class MockTicker:
 def checked_write_dir(write_dir: str | os.PathLike[str]) -> Path:
     """`write_dir`, refused when it lies in the package or the soft-matter-agents tree."""
     p = Path(write_dir).resolve()
-    env = os.environ.get(SMA_ROOT_ENV)
-    for guarded in (PACKAGE_DIR, (Path(env) if env else DEFAULT_SMA_ROOT).resolve()):
+    for guarded in (PACKAGE_DIR, default_root().resolve()):
         if p == guarded or guarded in p.parents:
             raise ValueError(f"the mock simulation does not write inside {guarded}: {p}")
     return p

@@ -19,8 +19,8 @@ Every trajectory reader returns the same `Frame`: positions, type ids, box and s
 (Canvas) and 3D (Three.js) viewers both draw it. Other per-particle fields are read only
 when asked for by name.
 
-`FileInfo` and `NotFoundError` copy the names in T-008's `agents/store.py`. When T-008 is
-merged these two definitions go and are imported from there.
+`FileInfo`, `NotFoundError` and the soft-matter-agents root are the agent store's
+(`agents.store`, `agents.sma_files`), so one `except NotFoundError` covers both.
 """
 
 from __future__ import annotations
@@ -38,8 +38,9 @@ from typing import Any, Literal, Protocol
 
 import numpy as np
 
-DEFAULT_SMA_ROOT = Path(r"D:\codes\github\soft-matter-agents")
-SMA_ROOT_ENV = "DINO_AF_SMA_ROOT"  # the same variable as agents/sma_files.py (T-008)
+from .sma_files import default_root
+from .store import FileInfo, NotFoundError, StoreError
+
 # Folders searched for a trajectory file the run folder does not hold, `os.pathsep`
 # separated. The real place on the WSL side is to be found on the microscope PC.
 TRAJECTORY_ROOTS_ENV = "DINO_AF_SIM_TRAJECTORY_ROOTS"
@@ -53,15 +54,8 @@ ProgressSource = Literal["log", "trajectory_meta", "none"]
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
-class SimulationError(Exception):
-    """Base for errors raised here."""
-
-
-class NotFoundError(SimulationError, KeyError):
-    """No run, file or frame by that name. (T-008: `store.NotFoundError`.)"""
-
-    def __str__(self) -> str:  # KeyError would print the repr of the message
-        return str(self.args[0]) if self.args else ""
+class SimulationError(StoreError):
+    """Base for errors raised here. A missing run, file or frame is `NotFoundError`."""
 
 
 class TrajectoryUnavailable(SimulationError):
@@ -70,21 +64,6 @@ class TrajectoryUnavailable(SimulationError):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
-
-
-@dataclass(frozen=True)
-class FileInfo:
-    """(T-008: `store.FileInfo`.)"""
-
-    name: str
-    size: int
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> FileInfo:
-        return cls(name=d["name"], size=d["size"])
 
 
 # -- progress ---------------------------------------------------------------------------------
@@ -751,8 +730,7 @@ class SimulationRuns:
 
 
 def default_runs_dir() -> Path:
-    env = os.environ.get(SMA_ROOT_ENV)
-    return (Path(env) if env else DEFAULT_SMA_ROOT) / "simulation_agent" / "runs"
+    return default_root() / "simulation_agent" / "runs"
 
 
 # -- helpers ----------------------------------------------------------------------------------
