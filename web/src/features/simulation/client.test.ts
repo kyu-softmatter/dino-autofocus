@@ -1,35 +1,101 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ClientError, httpClient } from "./client";
+import { CommandRefused } from "../../app/client";
+import { type EventSourceLike, serverClient } from "./client";
 import { fakeClient } from "./fakeClient";
+import type { RunProgressJson } from "./types";
 import { frameFromJson } from "./frame";
 import { parseSimRest, runRest } from "./simRoute";
 
-describe("httpClient", () => {
-  it("GETs the simulation routes", async () => {
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 }));
-    const c = httpClient("/api/simulation", fetchFn as unknown as typeof fetch);
+describe("serverClient", () => {
+  const progress = (state: string, steps: number) => ({ run_id: "r1", state, steps_taken: steps }) as unknown as RunProgressJson;
+
+  it("GETs the simulation routes through the shared client's get", async () => {
+    const get = vi.fn(async () => [] as never);
+    const c = serverClient(get, { openEvents: null });
     await c.listRuns();
     await c.getRun("run a");
     await c.getSeries("r1");
     await c.getFrame("r1", 3, ["diameter", "orientation"]);
+    await c.getFrame("r1", -1);
     await c.zipEntries("r1");
-    expect(fetchFn.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+    expect(get.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
       "/api/simulation/runs",
       "/api/simulation/runs/run%20a",
       "/api/simulation/runs/r1/series",
       "/api/simulation/runs/r1/frames/3?fields=diameter,orientation",
+      "/api/simulation/runs/r1/frames/-1",
       "/api/simulation/runs/r1/zip/entries",
     ]);
+    expect(c.source).toBe("server");
     expect(c.zipUrl("r1", false)).toBe("/api/simulation/runs/r1/zip");
     expect(c.zipUrl("r1", true)).toBe("/api/simulation/runs/r1/zip?trajectory=1");
   });
 
-  it("turns an error status into a ClientError with the server's detail", async () => {
-    const fetchFn = async () => new Response(JSON.stringify({ detail: "no simulation run x" }), { status: 404 });
-    const c = httpClient("/api/simulation", fetchFn as unknown as typeof fetch);
-    await expect(c.getRun("x")).rejects.toMatchObject({ status: 404, message: expect.stringContaining("no simulation run x") });
-    await expect(c.getRun("x")).rejects.toBeInstanceOf(ClientError);
+  it("passes the shared client's refusals through", async () => {
+    const refused = new CommandRefused(404, "no simulation run x", "not_found");
+    const c = serverClient(async () => Promise.reject(refused), { openEvents: null });
+    await expect(c.getRun("x")).rejects.toBe(refused);
+  });
+
+  class FakeEvents implements EventSourceLike {
+    static opened: FakeEvents[] = [];
+    onerror: ((ev: Event) => void) | null = null;
+    closed = false;
+    listeners: ((ev: MessageEvent) => void)[] = [];
+    constructor(readonly url: string) {
+      FakeEvents.opened.push(this);
+    }
+    addEventListener(type: string, l: (ev: MessageEvent) => void) {
+      if (type === "progress") this.listeners.push(l);
+    }
+    close() {
+      this.closed = true;
+    }
+    push(p: RunProgressJson) {
+      this.listeners.forEach((l) => l(new MessageEvent("progress", { data: JSON.stringify(p) })));
+    }
+  }
+
+  it("follows the progress stream and closes it when the run stops", () => {
+    FakeEvents.opened = [];
+    const seen: RunProgressJson[] = [];
+    const c = serverClient(vi.fn(), { openEvents: (url) => new FakeEvents(url) });
+    const stop = c.watchProgress("r1", (p) => seen.push(p));
+    const es = FakeEvents.opened[0];
+    expect(es.url).toBe("/api/simulation/runs/r1/progress/stream");
+    es.push(progress("running", 10));
+    expect(es.closed).toBe(false);
+    es.push(progress("complete", 20));
+    expect(es.closed).toBe(true); // no reconnect after the server ended the stream
+    expect(seen.map((p) => p.steps_taken)).toEqual([10, 20]);
+    stop();
+  });
+
+  it("polls through get when the stream fails, or without EventSource", async () => {
+    vi.useFakeTimers();
+    try {
+      FakeEvents.opened = [];
+      let steps = 0;
+      const get = vi.fn(async () => progress(steps < 2 ? "running" : "complete", steps++) as never);
+      const seen: RunProgressJson[] = [];
+      const c = serverClient(get, { openEvents: (url) => new FakeEvents(url), pollMs: 100 });
+      const stop = c.watchProgress("r1", (p) => seen.push(p));
+      FakeEvents.opened[0].onerror?.(new Event("error"));
+      expect(FakeEvents.opened[0].closed).toBe(true);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(get).toHaveBeenCalledWith("/api/simulation/runs/r1/progress");
+      expect(seen.map((p) => p.state)).toEqual(["running", "running", "complete"]);
+      stop();
+
+      const plain = serverClient(get, { openEvents: null, pollMs: 100 });
+      const stop2 = plain.watchProgress("r1", (p) => seen.push(p));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(seen).toHaveLength(4);
+      stop2();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
