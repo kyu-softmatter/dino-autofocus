@@ -103,3 +103,65 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 - `Command("start")` currently accepts `op=""`. Refuse an empty or unregistered operation name with a
   refusal event (events.py is yours now).
+
+## Last-shutdown light readback (ui-spec 5.2, accepted)
+
+- On every engine stop, the final light readback is already recorded. On start, load the last one and put it
+  in `snapshot()` as `last_shutdown_lights` (readback dicts plus the time and whether every light read off).
+  The web shell shows it on the first screen (T-010).
+
+## D15 (PLAN v1.1, 6beb85a): lights at M3
+
+- `light_set` and `lights_off` are available from M3, on the microscope PC in read-only mode. Nothing moves.
+- Gate light commands exactly like motion: operator logged in with the control token, experiment session open.
+  `lights_off` as a stop stays exempt locally (any logged-in user, also when locked). Remote clients may
+  send `abort` only (D13, confirmed); remote `lights_off` is refused.
+- Allow-list unchanged: Aura lines; DiaLamp `State` and `Intensity` only. Every exit path turns the lights off.
+
+## Graceful shutdown (from the T-016 merge review)
+
+- `shutdown(reason)`: abort the running operation, run the normal exit path (lights off with readback,
+  records finished), stop the acquisition stream, and record the reason. The server's `POST /api/shutdown`
+  (T-009) calls it.
+
+## Shutdown safety (director)
+
+- `shutdown(reason)` runs `lights_off` FIRST, then aborts and finishes records.
+- The engine marks itself running in a small state file at start and clears it on a clean shutdown. On the
+  next start, if the mark is still there, record "unclean shutdown", read the lights back, and report it in
+  `snapshot()` (next to `last_shutdown_lights`) before accepting any command.
+
+## From the screen contracts (T-100/101/102 stage A)
+
+- Add event kinds `map_changed`, `sample_opened`, `objective`, and command kind `update`, to EVENT_KINDS and
+  COMMAND_KINDS.
+- `snapshot()["hardware"] = {profile, profile_path, gates, last_status}`.
+- One permission table, op -> (action class, needs control token, needs open session). The server reads it
+  (T-009). Op names the screens use: `hardware_scan{include_properties, piezo_port}`, `hardware_confirm{items}`,
+  `status`, `light_set{mode, line, percent}`, `edge_trace{hole_diameter_mm, ...}`, `boundary_mark`,
+  `boundary_undo`, `boundary_reset`, `scan_4x`, `sample_map`, `goto_xy`, `map_flag`, `map_flag_retire`,
+  `candidate_confirm`, `candidate_reject`. `lights_off` and `abort` are command kinds, not `start(...)`.
+- Correction: under D13 a remote client may send `abort` only. Remote `lights_off` is refused for now
+  (abort's exit path turns the lights off). Locally anyone logged in may send `abort` and `lights_off`.
+  Confirmed by the director. Tests: a remote abort ends with lights off (readback recorded); a remote
+  `lights_off` is refused with a clear reason.
+
+## From the sessions screen contract (T-106 stage A, 85b25ad)
+
+- `set_experiment_session(session_id | None, started_at | None)`: the server calls it on open, close and
+  continue. The engine uses it for rule 12 (refuse motion without an open session) and for the "re-trace
+  every session" check.
+- Event kind `session_changed {session_id, started_at, state}` on the event stream.
+
+## Control grant (from T-105)
+
+- The control grant arrives attached to the Command by the server, never from the browser. The engine checks
+  the grant against the control object (T-018) and ignores any token-like field supplied in command args.
+
+## From the objective screen contract (T-104 stage A)
+
+- Event kind `objective` (label, state, readback) in EVENT_KINDS.
+- `plan(cmd) -> dict`: run an operation's `plan` step only, with no hardware calls, for the screen's GET plan.
+- Session and sample rule (manager decision, answers 실행1): one sample per experiment session (T-019 as
+  written). `sample_open` and `sample_new` run with no session open (they pick the sample for the next
+  session; nothing moves); with a session open they refuse unless the sample is the session's own.

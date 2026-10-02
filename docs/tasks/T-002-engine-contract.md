@@ -221,3 +221,25 @@ T-002 는 열 개가 넘는 과제의 선행이다. 한 번에 끝내지 말고 
   정지는 항상 받음) 은 T-011 이 구현한다.
 - 측정 전 임시 상수 (큰 XY 이동 문턱, z_safe, F5 이탈 거리 등) 는 코드에서 **"unmeasured provisional"**
   로 표시하고, 그 값이 가드 판단에 쓰인 기록에도 같은 표시를 남겨 실측값과 구분한다.
+
+## Long-XY threshold (PLAN fa2bdcd, section 5 Guards, option (a)). Required in stage 2 before merge
+
+- The threshold lives in ONE per-objective table inside `guards.py`, as data (not code branches). It moves
+  to the person-owned limits file (soft-matter-agents `envelope/`) at integration.
+- Remove the caller override completely. Operations cannot pass `long_move_um`.
+- Values follow free working distance: 4x (20 mm WD) allows tile moves at sample Z (keeps the 2026-09-30
+  scan); 100x Oil (130 µm WD) needs Z retracted beyond min(FOV, 1 mm). Other objectives: derive from their
+  WD in `configs/ti2_*.yaml`, or use the strictest value if unsure.
+- The objective comes from readback. If it cannot be read or is not in the table, use the strictest value
+  (retract first). Fixtures cover both cases.
+- Every table value is marked "unmeasured provisional". The motion record's basis field names the table
+  row, never "caller".
+
+## T-002-4: guarded light-on helpers (from the T-015 pre-review, 검토보조1)
+
+- Owner AF 실행1. After T-002 stages 2 and 3 and T-015 part 1 have merged, in that order.
+- Add `OpScope.lamp_on()` and `OpScope.aura_line_on(line, percent)` in `guards.py`. They pass the op's control
+  token to the backend (T-015 signatures), so operations have one legal way to switch a light on (D15).
+  Lights are switched off by the existing exit path.
+- Tests on FakeBackend. Review: AF 검토보조1.
+- T-015 (실행12) may edit the token calls in `tests/engine/test_contract_records.py` and `test_contract.py`.
