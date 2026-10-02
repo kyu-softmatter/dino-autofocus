@@ -170,3 +170,8 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 - Optional `FrameSource.latest_frame() -> (uint16 ndarray, meta) | None`, read by the server on `frame_ready`.
   The engine keeps only the newest frame for it. `EngineAPI.shutdown(reason)` is blocking (lights off first).
+
+## Sample block in the snapshot (from T-106, G9)
+
+- `snapshot()["sample"] = {sample_id, reserved, session_id}`, so the server can open a session for the current
+  sample.

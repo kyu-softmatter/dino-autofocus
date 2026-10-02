@@ -51,6 +51,11 @@ git -C D:\codes\github\dino-autofocus worktree add ..\dino-autofocus-wt\execN -b
 - **다른 세션의 worktree 는 건드리지 않는다.** 그 안의 파일을 쓰거나, `git -C <남의 worktree>` 로 add, checkout,
   restore, reset, stash, commit 같은 명령을 돌리지 않는다. 허용되는 것은 status, log, diff, show 같은 읽기뿐이다.
   검토는 자기 검토용 worktree 에서 그 브랜치를 받아서 한다 (2026-10-01, exec13 의 ui-spec.md 가 바뀐 사건).
+- **브랜치는 그 주인 세션만 움직인다.** 남의 브랜치를 `update-ref`, `branch -f`, `fetch`/`push` 로 옮기지 않는다.
+  체크아웃된 브랜치를 밖에서 옮기면 그 worktree 의 인덱스만 옛 상태로 남아, 다음 커밋이 새 커밋들을 되돌린다
+  (2026-10-01, exec13 과 exec1 에서 같은 모양으로 두 번). 내 브랜치를 main 에 맞추는 것은 내 worktree 안에서 `git merge main` 으로 한다.
+- **임시 인덱스(`GIT_INDEX_FILE`)는 자기 scratchpad 안의 파일만 가리킨다.** 검토의 `commit-tree` 는 객체만 만들고 참조를 바꾸지 않는다.
+- **커밋 전에 `git diff --cached --stat` 를 본다.** 내가 올리지 않은 변경이나 최근 커밋을 되돌리는 변경이 보이면 커밋하지 말고 매니저에게 알린다.
 - **테스트는 자기 worktree 의 `.venv` 로만 돌린다.** 공유 폴더의 `.venv` 를 여러 세션이 함께 쓰면 멈출 수 있다.
 - 공유 폴더(`D:\codes\github\dino-autofocus`)는 검토 세션과 매니저, 총괄만 쓴다.
 - 커밋은 경로를 지정한다. `git add -A` 와 `git commit --amend` 는 쓰지 않는다.

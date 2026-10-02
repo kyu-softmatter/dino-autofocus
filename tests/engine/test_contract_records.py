@@ -6,13 +6,14 @@ import threading
 import pytest
 
 from dino_autofocus.engine import Command, Event, GuardError, exclusive, operation
+from dino_autofocus.engine.backend import GUARD_TOKEN
 from dino_autofocus.engine.records import model_value
 
 
 def test_operation_leaves_a_record_folder_with_lights_off(fake, tmp_path):
     seen = []
     with operation(fake, tmp_path, "demo_op", sink=seen.append, args={"n": 1}) as op:
-        op.lights(fake.lamp_on())
+        op.lights(fake.lamp_on(token=GUARD_TOKEN))
         op.emit(Event("reading", op.op_id, {"dz": json.loads(json.dumps(
             model_value(-1.3, "head").__dict__))}))
         op.result = {"best_z_um": 3051.2}
@@ -31,7 +32,7 @@ def test_an_unverified_light_stops_the_operation_and_a_prefix_names_the_folder(f
     fake.stuck.add("DiaLamp")
     with pytest.raises(GuardError, match="DiaLamp.State wanted 1"), \
             operation(fake, tmp_path, "scan_4x", prefix="scan4x") as op:
-        op.lights(fake.lamp_on())
+        op.lights(fake.lamp_on(token=GUARD_TOKEN))
     assert op.op_id.startswith("scan4x_") and (tmp_path / op.op_id / "summary.json").exists()
     assert json.loads((tmp_path / op.op_id / "summary.json").read_text())["status"] == "error"
 
@@ -40,7 +41,7 @@ def test_an_unverified_light_stops_the_operation_and_a_prefix_names_the_folder(f
                                          (KeyboardInterrupt(), "aborted")])
 def test_lights_go_off_on_every_exit_path(fake, tmp_path, exc, status):
     with pytest.raises(type(exc)), operation(fake, tmp_path, "op") as op:
-        fake.aura_line_on("GREEN", 1)
+        fake.aura_line_on("GREEN", 1, token=GUARD_TOKEN)
         raise exc
     s = json.loads((tmp_path / op.op_id / "summary.json").read_text())
     assert s["status"] == status and fake.lights == {"DiaLamp": "0", "Aura": "0"}
