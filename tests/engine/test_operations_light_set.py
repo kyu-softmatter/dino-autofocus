@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import FakeBackend
+from engine_fakes import FakeBackend
 
 from dino_autofocus.engine.operations.light_set import parse, plan, run_light_set
 
