@@ -94,3 +94,12 @@
 - `/api/commands` refuses `map_flag`, `map_flag_retire`, `candidate_confirm`, `candidate_reject`. Those go only
   through `server/api/map.py`, which checks `WRITE_MAP_FLAG` (D16). The common endpoint must not bypass it.
 - D13: remote POSTs stay refused except `abort`.
+
+## From the login screen contract (T-105 stage A, db0a4d1)
+
+- Remote viewers must be able to log in (PLAN 5). Exempt exactly `POST /api/auth/{login, logout, unlock,
+  activity, signup}` from the loopback-only write rule. None of them reaches the engine.
+- Export the loopback rule as a dependency (e.g. `IsLocal`) so `server/api/auth.py` reuses it.
+- A cookie check on `/ws/*` and every other `/api/*` router. Abort and the stop path stay open (D13/D2).
+- The control token never reaches the browser. The server attaches the operator's grant to the engine
+  Command, and the browser sees only `has_control`.

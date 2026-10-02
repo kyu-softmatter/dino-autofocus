@@ -151,3 +151,8 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
   continue. The engine uses it for rule 12 (refuse motion without an open session) and for the "re-trace
   every session" check.
 - Event kind `session_changed {session_id, started_at, state}` on the event stream.
+
+## Control grant (from T-105)
+
+- The control grant arrives attached to the Command by the server, never from the browser. The engine checks
+  the grant against the control object (T-018) and ignores any token-like field supplied in command args.

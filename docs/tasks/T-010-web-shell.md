@@ -71,3 +71,11 @@
 
 - A cross-area link helper (URL scheme), for example console run -> `#/simulation?run_id=...`, so areas link
   without importing each other.
+
+## From the login screen contract (T-105 stage A, db0a4d1)
+
+- Route guard: call `GET /api/auth/me`. On 401 or locked, render `app/login`'s `LoginGate`; any later 401
+  returns to it. No `#/login` route.
+- Status bar: user name and role, a "remote · read only" badge, the control holder with Take / Release, and a
+  user menu (Log out, Lock, Approve accounts for admins).
+- Activity hook for the idle lock: `POST /api/auth/activity` on input, throttled to once per 30 s.
