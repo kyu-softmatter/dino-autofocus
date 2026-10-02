@@ -6,20 +6,30 @@ Read only. Scans, confirmations, status and lights are engine commands and go th
 gates, objective_options} plus the runner's last_status and error, T-011). The
 router reshapes it for the screen and never evaluates a gate or a permission itself (F2.2,
 PLAN.md 6 rule 2). Login and remote rules are the app's middleware (server/api/__init__.py).
+
+`/config` is the one read that is not the snapshot: it parses a Micro-Manager `.cfg` file
+(`engine.mm_config_tree`, text only, no core) so the screen can list what the config declares,
+with the hub tree, and join it with the scan. Only files from a fixed list are read: the cfg
+the last scan loaded, the cfg mm-real would load (`mm_real.config_path()`), and the repo's
+`configs/micromanager/*.cfg`.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from ...engine.mm_config_tree import read_cfg
 from . import Engine, Refusal
 
 router = APIRouter()
 
 NOT_REPORTED = "not reported"
+#: the repo's Micro-Manager configs (src/dino_autofocus/server/api -> repo root)
+REPO_MM_CONFIGS = Path(__file__).resolve().parents[4] / "configs" / "micromanager"
 
 
 class DeviceRow(BaseModel):
@@ -129,6 +139,36 @@ class StatusResultOut(BaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
 
 
+class ConfigChoice(BaseModel):
+    path: str
+    name: str
+    source: str  # "scanned" (the last scan loaded it) | "server" (mm-real's choice) | "repo"
+
+
+class ConfigDevice(BaseModel):
+    label: str
+    library: str
+    adapter: str
+    parent: str | None = None  # the device it hangs under; None = top level
+    link: str | None = None  # "parent" (Parent line) | "port" (serial port) | "inferred"
+    port: str | None = None  # Port / Connection setting, also when no device is that port
+    roles: list[str] = Field(default_factory=list)  # Core roles (Camera, Focus, ...)
+    state_labels: dict[str, str] = Field(default_factory=dict)
+    preinit: dict[str, str] = Field(default_factory=dict)
+    line: int = 0
+
+
+class ConfigTreeOut(BaseModel):
+    path: str | None  # the file parsed; None when no config file is found
+    sha256: str | None = None
+    source: str | None = None
+    available: list[ConfigChoice] = Field(default_factory=list)
+    devices: list[ConfigDevice] = Field(default_factory=list)
+    startup: list[str] = Field(default_factory=list)  # System/Startup preset, "dev.prop=value"
+    warnings: list[str] = Field(default_factory=list)
+    error: str | None = None  # the file could not be read
+
+
 # -- reshaping the engine's state -------------------------------------------------------
 
 
@@ -232,6 +272,39 @@ def gate_rows(raw: Any) -> list[GateRow]:
     return sorted(rows, key=lambda r: (r.enabled, r.op))
 
 
+def _same(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return str(a) == str(b)
+
+
+def config_choices(hw: dict[str, Any]) -> list[ConfigChoice]:
+    """The cfg files `/config` may read, best first, each once, existing files only."""
+    found: list[tuple[Path, str]] = []
+    raw = hw.get("profile")
+    cfg = raw.get("config") if isinstance(raw, dict) else None
+    scanned = cfg.get("path") if isinstance(cfg, dict) else None
+    if isinstance(scanned, str) and scanned.lower().endswith(".cfg"):
+        found.append((Path(scanned), "scanned"))
+    try:
+        from ...engine.backends.mm_real import config_path
+
+        found.append((config_path(), "server"))
+    except Exception:  # noqa: BLE001 - a broken settings file must not break the list
+        pass
+    if REPO_MM_CONFIGS.is_dir():
+        found += [(p, "repo") for p in sorted(REPO_MM_CONFIGS.glob("*.cfg"))]
+    out: list[ConfigChoice] = []
+    kept: list[Path] = []
+    for path, source in found:
+        if not path.is_file() or any(_same(path, k) for k in kept):
+            continue
+        kept.append(path)
+        out.append(ConfigChoice(path=str(path), name=path.name, source=source))
+    return out
+
+
 # -- routes -----------------------------------------------------------------------------
 
 
@@ -284,4 +357,37 @@ def status(eng: Engine) -> StatusResultOut | None:
         t=float(last.get("t", 0.0)),
         user_id=last.get("user_id"),
         summary=last.get("summary") or {},
+    )
+
+
+@router.get(
+    "/config",
+    response_model=ConfigTreeOut,
+    responses={404: {"description": "path is not one of the listed config files"}},
+)
+def config(eng: Engine, path: str | None = None) -> ConfigTreeOut:
+    """The devices a Micro-Manager `.cfg` declares, with the hub each hangs under. `path`
+    picks one of `available`; without it, the first (the scanned cfg when there is one)."""
+    choices = config_choices(_hardware(eng))
+    if path is None:
+        chosen = choices[0] if choices else None
+    else:
+        chosen = next((c for c in choices if c.path == path), None)
+        if chosen is None:
+            raise Refusal(404, "unknown_config", f"{path!r} is not a listed config").http()
+    if chosen is None:
+        return ConfigTreeOut(path=None, error="no Micro-Manager config found")
+    try:
+        tree, sha = read_cfg(Path(chosen.path))
+    except OSError as e:
+        return ConfigTreeOut(path=chosen.path, source=chosen.source, available=choices,
+                             error=f"{type(e).__name__}: {e}")
+    return ConfigTreeOut(
+        path=chosen.path,
+        sha256=sha,
+        source=chosen.source,
+        available=choices,
+        devices=[ConfigDevice(**d) for d in tree.to_dict()["devices"]],
+        startup=tree.startup,
+        warnings=tree.warnings,
     )

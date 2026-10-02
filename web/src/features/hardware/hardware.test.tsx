@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { Client, ClientProvider } from "../../app/client";
 import { ScreenContextProvider, useCurrentScreenContext } from "../../app/screenContext";
 import { fakeTransport, type Route } from "../../test/fakes";
-import { type GateRow, type HardwareProfileOut, PATHS, type Permissions, SCREEN_OPS } from "./api";
+import { type ConfigTreeOut, type GateRow, type HardwareProfileOut, PATHS, type Permissions, SCREEN_OPS } from "./api";
 import HardwareScreen from "./index";
 
 const PROFILE: HardwareProfileOut = {
@@ -25,6 +25,33 @@ const PROFILE: HardwareProfileOut = {
     camera: { bit_depth: 12 },
     human_confirmed: {},
   },
+};
+
+const DEV = (label: string, library: string, adapter: string, over: Partial<NonNullable<ConfigTreeOut["devices"]>[number]> = {}) =>
+  ({ label, library, adapter, parent: null, link: null, port: null, roles: [], state_labels: {}, preinit: {}, line: 1, ...over });
+
+// as GET /api/hardware/config serves a small dual-camera cfg
+const CONFIG: ConfigTreeOut = {
+  path: "C:/mm/bench.cfg",
+  sha256: "cd".repeat(32),
+  source: "scanned",
+  available: [
+    { path: "C:/mm/bench.cfg", name: "bench.cfg", source: "scanned" },
+    { path: "D:/repo/configs/micromanager/DMD_dualcam_LUNF.cfg", name: "DMD_dualcam_LUNF.cfg", source: "repo" },
+  ],
+  devices: [
+    DEV("Ti2-E__0", "NikonTi2", "Ti2-E__0"),
+    DEV("ZDrive", "NikonTi2", "ZDrive", { parent: "Ti2-E__0", link: "parent", roles: ["Focus"] }),
+    DEV("XYStage", "NikonTi2", "XYStage", { parent: "Ti2-E__0", link: "parent" }),
+    DEV("COM10", "SerialManager", "COM10", { preinit: { BaudRate: "115200" } }),
+    DEV("CSUW1-Hub", "CSUW1", "CSUW1-Hub", { parent: "COM10", link: "port", port: "COM10" }),
+    DEV("CSUW1-Port", "CSUW1", "CSUW1-Port", { parent: "CSUW1-Hub", link: "inferred",
+        state_labels: { "0": "blue_only", "1": "blue_red", "2": "red_only" } }),
+    DEV("Kinetix_red", "PVCAM", "Camera-2", { roles: ["Camera"] }),
+  ],
+  startup: [],
+  warnings: [],
+  error: null,
 };
 
 function requires(over: Partial<GateRow["requires"]> = {}): GateRow["requires"] {
@@ -62,6 +89,7 @@ interface Opts {
   gates?: GateRow[];
   profile?: HardwareProfileOut;
   commands?: Route;
+  config?: ConfigTreeOut;
 }
 
 /** The screen on the shell's client over a fake transport: no network, no socket, no window. */
@@ -75,6 +103,9 @@ function setup(o: Opts = {}) {
     [PATHS.profile]: () => ({ status: 200, body: o.profile ?? PROFILE }),
     [PATHS.gates]: () => ({ status: 200, body: o.gates ?? GATES }),
     [PATHS.status]: () => ({ status: 200, body: null }),
+    [PATHS.config()]: () => ({ status: 200, body: o.config ?? CONFIG }),
+    [PATHS.config(CONFIG.available![1].path)]: () =>
+      ({ status: 200, body: { ...CONFIG, path: CONFIG.available![1].path, source: "repo", devices: [DEV("NIDAQHub", "NIDAQ", "NIDAQHub")] } }),
     [PATHS.permissions(SCREEN_OPS)]: o.permissions ?? (() => ({ status: 200, body: world.permissions })),
     "/api/commands": o.commands ?? (() => ({ status: 200, body: { op_id: "op-1" } })),
   });
@@ -320,6 +351,73 @@ describe("hardware screen", () => {
       area: "hardware",
       gate: "sample_map",
       gate_reasons: ["xy_stage detected but its state did not read back"],
+    });
+  });
+
+  describe("configured hardware", () => {
+    const tree = async () => within(await screen.findByRole("list", { name: "Config devices" }));
+    const SCANNED: HardwareProfileOut = {
+      ...PROFILE,
+      profile: { ...PROFILE.profile!, config: { path: "C:/mm/bench.cfg", sha256: "cd".repeat(32) } },
+    };
+
+    it("lists the config's devices under their hubs, with the scan's state", async () => {
+      setup({ profile: SCANNED });
+      const t = await tree();
+      // Ti2-E__0 has a problem below it (XYStage reads nothing back), so it starts open
+      expect(await t.findByRole("button", { name: "Collapse Ti2-E__0" })).toBeTruthy();
+      const xy = t.getByRole("button", { name: "XYStage" }).closest(".hw-cfg-row")!;
+      expect(xy.textContent).toContain("Loaded, read failed");
+      const z = t.getByRole("button", { name: "ZDrive" }).closest(".hw-cfg-row")!;
+      expect(z.textContent).toContain("Connected");
+      const hub = t.getByRole("button", { name: "Ti2-E__0" }).closest(".hw-cfg-row")!;
+      expect(hub.textContent).toContain("Not loaded");
+      expect(hub.textContent).toContain("2 parts · 1 with problems");
+      const summary = screen.getByLabelText("Connection summary").textContent ?? "";
+      expect(summary).toContain("7 devices · 2 connected");
+      expect(summary).toContain("1 read failed");
+      expect(summary).toContain("4 not loaded");
+    });
+
+    it("expands a closed hub on request and shows a device's details", async () => {
+      setup({ profile: SCANNED });
+      const t = await tree();
+      // COM10's subtree is all "not loaded", a problem too, so it starts open; close and reopen it
+      fireEvent.click(await t.findByRole("button", { name: "Collapse COM10" }));
+      expect(t.queryByRole("button", { name: "CSUW1-Hub" })).toBeNull();
+      fireEvent.click(t.getByRole("button", { name: "Expand COM10" }));
+      expect(t.getByRole("button", { name: "Collapse CSUW1-Hub" })).toBeTruthy(); // a problem below
+      fireEvent.click(t.getByRole("button", { name: "CSUW1-Port" }));
+      const node = t.getByRole("button", { name: "CSUW1-Port" }).closest("li")!;
+      expect(node.textContent).toContain("0: blue_only · 1: blue_red · 2: red_only");
+      expect(node.textContent).toContain("inferred");
+      await waitFor(() => expect(screen.getByTestId("ctx").textContent).toContain("CSUW1-Port"));
+    });
+
+    it("says nothing was checked before the first scan, and the check runs the scan", async () => {
+      const s = setup({ profile: { profile: null, path: null, sha256: null } });
+      const t = await tree();
+      expect(t.getAllByText("Not checked")).toHaveLength(3); // the roots; with no problems known, hubs start closed
+      expect(screen.getByText(/Not checked yet/)).toBeTruthy();
+      const check = button("Check connections");
+      await waitFor(() => expect(isDisabled(check)).toBe(false));
+      fireEvent.click(check);
+      await waitFor(() => expect(s.sent()).toHaveLength(1));
+      expect(s.sent()[0]).toMatchObject({ kind: "start", op: "hardware_scan", args: { include_properties: true } });
+    });
+
+    it("warns when the scan loaded another config", async () => {
+      setup(); // PROFILE has no config path
+      await tree();
+      expect(screen.getByText(/The last scan loaded a different config/)).toBeTruthy();
+    });
+
+    it("reads another config when one is picked", async () => {
+      const s = setup({ profile: SCANNED });
+      await tree();
+      fireEvent.change(screen.getByLabelText("Config file"), { target: { value: CONFIG.available![1].path } });
+      expect(await screen.findByRole("button", { name: "NIDAQHub" })).toBeTruthy();
+      expect(s.calls.some((c) => c.path === PATHS.config(CONFIG.available![1].path))).toBe(true);
     });
   });
 });
