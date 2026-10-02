@@ -24,9 +24,16 @@ T-018 role.
 | `GET /` `?user=&sample=&status=open\|closed` | everyone, remote included | `store.list_sessions()`, filtered in the router | `[SessionSummary]`, oldest first |
 | `GET /current` | everyone | `open_session(store)`, `open_session_started_at(store)` | `SessionSummary \| null`, plus `started_at` |
 | `GET /{id}` `?log_tail=200` | everyone | `ExperimentSession.load(store, id)`: `.info`, `.log_lines()[-n:]`, `.manifest()`; record files listed from `layout.records` | `SessionDetail` |
-| `POST /` `{sample_id}` | local operator or admin | `ExperimentSession.open(store, user_id, sample_id, user_name=, hardware_profile=, committer=)` | `SessionDetail`, 201 |
+| `POST /` `{sample_id?}` | local operator or admin | `ExperimentSession.open(store, user_id, <current sample>, user_name=, hardware_profile=, committer=)` | `SessionDetail`, 201 |
 | `POST /{id}/close` `{note}` | local; the session's own user, or admin | `ExperimentSession.load(...).close(note)` | `SessionDetail` |
-| `POST /{id}/continue` | local operator or admin | `ExperimentSession.continue_from(store, id, user_id, ...)` | `SessionDetail` of the new session, 201 |
+| `POST /{id}/continue` | local operator or admin | engine `sample_open(<that session's sample>)`, then `ExperimentSession.continue_from(store, id, user_id, ...)` | `SessionDetail` of the new session, 201 |
+
+**One sample per experiment session** (manager rule, main 9052f48; T-027). The sample is chosen first, by
+the engine's `sample_open` or `sample_new` while no session is open; nothing moves. `POST /` opens the
+session for that current sample. An optional `sample_id` in the body must match it, otherwise the request
+is refused. `continue` reopens the earlier session's sample: the server runs `sample_open` for it (allowed
+because no session is open) and then opens the new session with `continues` set. While a session is open,
+the engine refuses `sample_open` and `sample_new` for any other sample.
 
 `SessionSummary`: `session_id, user_id, user_name, sample_id, status, started_at, closed_at, continues,
 reflected`.
@@ -50,6 +57,8 @@ Refusals use the ui-spec 7.0 strings:
 | Write to a closed session (`SessionClosedError`) | 409 | `"Session <id> is closed (read-only)"` |
 | Closing someone else's session, not admin | 403 | `"Only <user> or an admin can close this session"` |
 | Unknown id | 404 | `"No experiment session <id>"` |
+| No current sample (nothing opened with `sample_open` / `sample_new`) | 409 | `"Open or create a sample first"` |
+| Body `sample_id` differs from the current sample | 409 | `"The current sample is <current>; open <sample_id> first"` |
 | Bad sample id (`ValueError`) | 422 | the error text |
 
 ## 3. What the shell shows (T-010)
@@ -65,7 +74,7 @@ Refusals use the ui-spec 7.0 strings:
 |---|---|
 | List | Columns: id, user, sample, status, started, closed, continues, reflected. Filters: user, sample, status. Opening a row shows its detail |
 | Detail | Fields of `session.json` (code commit, dirty, hardware hash as recorded); log tail; record files with line counts; manifest summary and entries; reflected or not |
-| Actions | `"Open experiment session"` with a sample id, `"Close"` with a note, `"Continue with this sample"` (F7.4). They are disabled with the reason from section 2 when remote, when the user is a viewer, or when the session is closed |
+| Actions | `"Open experiment session for <current sample>"` (no sample field: the sample is picked in the `sample` area), `"Close"` with a note, `"Continue with this sample"` on a closed session (F7.4, reopens that sample). They are disabled with the reason from section 2 when remote, when the user is a viewer, when no sample is current, when a session is already open, or when the session is closed |
 
 UI text is in English. Remote viewers and viewers can read everything and change nothing.
 
@@ -73,19 +82,21 @@ UI text is in English. Remote viewers and viewers can read everything and change
 
 | # | Gap | Proposal | Owner |
 |---|---|---|---|
-| G1 | The engine needs to know the open session (rule 12, re-trace rule) | The server calls `engine.set_experiment_session(session_id, started_at)` after open, close and continue, and once at start-up from `GET /current`. Alternatively the engine reads `open_session_started_at(store)` itself | T-002 / T-011 |
-| G2 | There is no event when a session opens or closes, so the status bar would need polling | Add a `session_changed` event kind (`session_id`, `status`) on `/ws/events` | T-002 events |
+| G1 | The engine needs to know the open session (rule 12, re-trace rule, the one-sample rule) | The server calls `engine.set_experiment_session(session_id, sample_id, started_at)` after open, close and continue, and once at start-up from `GET /current` | T-011 (assigned) |
+| G2 | There is no event when a session opens or closes, so the status bar would need polling | Add a `session_changed` event kind (`session_id`, `sample_id`, `status`) on `/ws/events` | T-011 (assigned) |
 | G3 | T-019 does not stop a second open session | The router refuses with 409. A store-level check is optional | T-106 (router) |
-| G4 | `ExperimentSession.open` reads the code version with two git calls on every open (about 1 s on a loaded PC) | T-019 small change: accept `code=` so the server reads it once at start-up | T-019 (listed in its review) |
-| G5 | Listing record files and their line counts has no T-019 function | A small `ExperimentSession.record_files()` helper | T-019 small fix, listed in the T-106 review |
+| G4 | `ExperimentSession.open` reads the code version with two git calls on every open (about 1 s on a loaded PC) | Accept `code=` so the server reads it once at start-up | T-106 stage B, change to `records/` listed in its review |
+| G5 | Listing record files and their line counts has no T-019 function | A small `ExperimentSession.record_files()` helper | T-106 stage B, change to `records/` listed in its review |
 | G6 | `reflected` comes from the mock librarian's `librarian/reflected.jsonl`. The real librarian's ledger format is decided at integration | Show `reflected` as true, false or unknown (null when no ledger exists) | integration (PLAN 10절) |
-| G7 | Which `hardware_profile.json` to hash at open (F2.1 file path) | Take the path from the hardware area's settings (T-101) | T-101 |
-| G8 | The logged-in user id and name | Use T-105's auth dependency. Until it merges, tests use a fake user | T-105 |
+| G7 | Which `hardware_profile.json` to hash at open (F2.1 file path) | `profile_path` from T-011's `snapshot()["hardware"]` block | T-011 (answered) |
+| G8 | The logged-in user id and name | Use T-105's auth dependency. Until it merges, tests use a fake user | T-105 (answered) |
+| G9 | Where the server reads the current sample | The `sample` block of T-011's `snapshot()` (set by `sample_open` / `sample_new`, T-027) | T-011 / T-027 |
 
 ## 6. Stage B tests (outline)
 
 - **pytest** (`TestClient`, a `FolderStore` and a `GitFolderStore` under `tmp_path`): open, close, list
-  filters, detail fields, continue, a second open gets 409, a write after close gets 409, remote POST gets
+  filters, detail fields, continue (reopens the same sample), open with no current sample or a different
+  sample gets 409, a second open gets 409, a write after close gets 409, remote POST gets
   403, viewer gets 403, and the handler returns while a slow fake committer is still blocked.
 - **vitest**: list and detail render, and open, close and continue are disabled with the reason in
   read-only mode.
