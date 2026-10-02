@@ -59,7 +59,7 @@ The code commit, the dirty flag and the hardware-profile sha256 are shown **as r
 
 Refusals use the ui-spec 7.0 strings:
 
-| Case | Status | Body `reason` | Decided by |
+| Case | Status | Body `detail` (FastAPI) | Decided by |
 |---|---|---|---|
 | Any shared rule (remote view under D13, viewer role, control, ...) | 403 | the shared check's `reason`, e.g. `"Read-only: remote view"`, `"Needs the operator role"` | `/api/permissions` (T-009b) |
 | Another session is already open | 409 | `"<id> is open; close it first"` | router |

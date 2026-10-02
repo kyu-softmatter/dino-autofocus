@@ -1,28 +1,31 @@
 // The `sessions` area: experiment sessions (PLAN F7), contract docs/screens/sessions.md.
 //
 // Route rest forms:  ""  the list;  "<session_id>"  the list with that session's detail.
-// The data comes from `SessionsClientContext` (a fake until the T-106 router is on main).
+// Data goes through the shell's shared client (useClient, useReadOnly, useEventsConnected);
+// the /api/sessions shapes are temporary in api.ts until gen:api.
 // Disabled actions stay visible with their reason next to them (ui-spec 7.0).
 
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { CommandRefused, useClient, useEventsConnected, useReadOnly } from "../../app/client";
 import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
 import {
-  ApiError,
-  PERMISSION_CHECKING,
-  PERMISSION_UNAVAILABLE,
+  blockedBy,
+  PATHS,
   type Permissions,
+  postJson,
+  readCurrentSample,
+  readPermissions,
   SESSION_OPS,
   type SessionDetail,
   type SessionFilter,
   type SessionStatus,
   type SessionSummary,
-  SessionsClientContext,
 } from "./api";
 
 function errorText(e: unknown): string {
-  if (e instanceof ApiError) return e.reason;
+  if (e instanceof CommandRefused) return e.detail;
   return e instanceof Error ? e.message : String(e);
 }
 
@@ -39,7 +42,9 @@ function shortHash(h: string | null | undefined): string {
 }
 
 export default function SessionsScreen() {
-  const client = useContext(SessionsClientContext);
+  const client = useClient();
+  const { readOnly } = useReadOnly();
+  const connected = useEventsConnected();
   const [rest, setRest] = useAreaPath();
   const selectedId = rest.split("?")[0] || null;
 
@@ -47,8 +52,8 @@ export default function SessionsScreen() {
   const [list, setList] = useState<SessionSummary[]>([]);
   const [current, setCurrent] = useState<SessionSummary | null>(null);
   const [sample, setSample] = useState<string | null>(null);
-  // null while loading; "unavailable" when /api/permissions cannot be read (every control off)
-  const [perms, setPerms] = useState<Permissions | "unavailable" | null>(null);
+  // null until the first answer; readPermissions turns an unreadable check into "unavailable" for all
+  const [perms, setPerms] = useState<Permissions | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -58,11 +63,12 @@ export default function SessionsScreen() {
   useEffect(() => {
     let live = true;
     // permissions load on their own: if they fail, the list and detail stay available
-    client
-      .permissions(SESSION_OPS)
-      .then((p) => live && setPerms(p))
-      .catch(() => live && setPerms("unavailable"));
-    Promise.all([client.list(filter), client.current(), client.currentSample()])
+    readPermissions(client, SESSION_OPS).then((p) => live && setPerms(p));
+    Promise.all([
+      client.get<SessionSummary[]>(PATHS.list(filter)),
+      client.get<SessionSummary | null>(PATHS.current),
+      readCurrentSample(client),
+    ])
       .then(([l, c, s]) => {
         if (!live) return;
         setList(l);
@@ -73,7 +79,9 @@ export default function SessionsScreen() {
     return () => {
       live = false;
     };
-  }, [client, filter, version]);
+    // `connected`: re-read after the event socket comes back (events in the gap are lost).
+    // A session_changed event (T-011, G2) will bump `version` once it is in the event kinds.
+  }, [client, filter, version, connected]);
 
   useEffect(() => {
     let live = true;
@@ -82,7 +90,7 @@ export default function SessionsScreen() {
       return;
     }
     client
-      .detail(selectedId)
+      .get<SessionDetail>(PATHS.detail(selectedId))
       .then((d) => live && setDetail(d))
       .catch((e) => {
         if (!live) return;
@@ -104,13 +112,13 @@ export default function SessionsScreen() {
   useScreenContext(ctx);
 
   const act = useCallback(
-    async (run: () => Promise<SessionDetail>) => {
+    async (run: () => Promise<SessionDetail | null>) => {
       setBusy(true);
       setError(null);
       try {
         const d = await run();
         setNote("");
-        setRest(d.session_id);
+        if (d) setRest(d.session_id);
         setVersion((v) => v + 1);
       } catch (e) {
         setError(errorText(e));
@@ -122,11 +130,7 @@ export default function SessionsScreen() {
   );
 
   // shared reasons first (role, control, remote: GET /api/permissions), then this area's own
-  const denied = (op: string): string | null => {
-    if (perms === null) return PERMISSION_CHECKING;
-    if (perms === "unavailable" || !perms[op]) return PERMISSION_UNAVAILABLE;
-    return perms[op].allowed ? null : perms[op].reason ?? "Not allowed";
-  };
+  const denied = (op: string): string | null => blockedBy(readOnly, perms, op);
   const openReason =
     denied("session_open") ??
     (current ? `${current.session_id} is open; close it first` : null) ??
@@ -149,7 +153,7 @@ export default function SessionsScreen() {
         {current ? `Open: ${current.session_id} · ${current.sample_id}` : "No experiment session"}
       </p>
       <div>
-        <button disabled={busy || !!openReason} onClick={() => act(() => client.open())}>
+        <button disabled={busy || !!openReason} onClick={() => act(() => postJson<SessionDetail>(client, PATHS.open))}>
           {sample ? `Open experiment session for ${sample}` : "Open experiment session"}
         </button>{" "}
         <Reason text={openReason} />
@@ -282,13 +286,13 @@ export default function SessionsScreen() {
             <label>
               Note <input value={note} onChange={(e) => setNote(e.target.value)} disabled={!!closeReason} />
             </label>{" "}
-            <button disabled={busy || !!closeReason} onClick={() => act(() => client.close(detail.session_id, note))}>
+            <button disabled={busy || !!closeReason} onClick={() => act(() => postJson<SessionDetail>(client, PATHS.close(detail.session_id), { note }))}>
               Close
             </button>{" "}
             <Reason text={closeReason} />
           </div>
           <div>
-            <button disabled={busy || !!continueReason} onClick={() => act(() => client.continueFrom(detail.session_id))}>
+            <button disabled={busy || !!continueReason} onClick={() => act(() => postJson<SessionDetail>(client, PATHS.continueFrom(detail.session_id)))}>
               Continue with this sample
             </button>{" "}
             <Reason text={continueReason} />

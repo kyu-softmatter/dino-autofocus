@@ -1,9 +1,8 @@
-// Temporary until gen:api, T-009: hand-written types and a fake client for /api/sessions.
-// The shapes follow docs/screens/sessions.md section 2. When the server router lands, replace
-// the types with the generated ones from src/api/ and the fake with a fetch client; the screen
-// only depends on the `SessionsClient` interface below.
+// Temporary until gen:api, T-009: the /api/sessions and /api/permissions shapes are hand-written
+// here (docs/screens/sessions.md section 2) because the router is not on main yet. Everything goes
+// through the shell's shared client (src/app/client.tsx); this file opens no connection of its own.
 
-import { createContext } from "react";
+import { type Client, CommandRefused } from "../../app/client";
 
 export type SessionStatus = "open" | "closed";
 
@@ -47,15 +46,29 @@ export interface SessionFilter {
   status?: SessionStatus;
 }
 
+export const PATHS = {
+  list: (f: SessionFilter = {}) => {
+    const q = (["user", "sample", "status"] as const)
+      .filter((k) => f[k])
+      .map((k) => `${k}=${encodeURIComponent(String(f[k]))}`)
+      .join("&");
+    return q ? `/api/sessions?${q}` : "/api/sessions";
+  },
+  current: "/api/sessions/current",
+  detail: (id: string) => `/api/sessions/${encodeURIComponent(id)}`,
+  open: "/api/sessions",
+  close: (id: string) => `/api/sessions/${encodeURIComponent(id)}/close`,
+  continueFrom: (id: string) => `/api/sessions/${encodeURIComponent(id)}/continue`,
+  /** the engine snapshot; its `sample` block is {sample_id, reserved, session_id} (T-011, G9) */
+  state: "/api/state",
+  permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`,
+};
+
+// -- permissions (one shared check, T-009b over T-011 check()) -----------------------------
+
 /** Op names this area asks the shared permission check about (fixed, sessions.md section 2). */
 export const SESSION_OPS = ["session_open", "session_close", "session_continue"] as const;
-export type SessionOp = (typeof SESSION_OPS)[number];
 
-/**
- * One entry of `GET /api/permissions?ops=a,b` (T-009b over T-011 check(): the single permission
- * table plus engine state). Role, control, experiment-session and remote rules live there only;
- * this screen shows `reason` and never works those rules out itself.
- */
 export interface Permission {
   allowed: boolean;
   reason: string | null;
@@ -66,164 +79,60 @@ export type Permissions = Record<string, Permission>;
 export const PERMISSION_UNAVAILABLE = "Permission check unavailable";
 /** Shown while the first permission check is loading (same on every screen). */
 export const PERMISSION_CHECKING = "Checking permissions…";
+/** Shown when the shell says this browser is a remote viewer (useReadOnly). */
+export const READ_ONLY_REMOTE = "Read-only: remote view";
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly reason: string,
-  ) {
-    super(reason);
+/** The shared answer, or every op refused with PERMISSION_UNAVAILABLE when it cannot be read. */
+export async function readPermissions(client: Client, ops: readonly string[]): Promise<Permissions> {
+  try {
+    return await client.get<Permissions>(PATHS.permissions(ops));
+  } catch {
+    return Object.fromEntries(ops.map((op) => [op, { allowed: false, reason: PERMISSION_UNAVAILABLE }]));
   }
 }
 
-export interface SessionsClient {
-  list(filter?: SessionFilter): Promise<SessionSummary[]>;
-  current(): Promise<SessionSummary | null>;
-  detail(id: string): Promise<SessionDetail>;
-  /** opens the session for the engine's current sample */
-  open(): Promise<SessionDetail>;
-  close(id: string, note: string): Promise<SessionDetail>;
-  continueFrom(id: string): Promise<SessionDetail>;
-  /** the engine's current sample: snapshot()["sample"].sample_id (T-011) */
-  currentSample(): Promise<string | null>;
-  /** stands in for GET /api/permissions until T-009b lands */
-  permissions(ops: readonly string[]): Promise<Permissions>;
+/**
+ * Why `op` is off, or null. Order: remote view (shell), still checking, the shared check's reason.
+ * An op missing from the answer counts as unavailable. Area rules come after this, in the screen.
+ */
+export function blockedBy(readOnly: boolean, permissions: Permissions | null, op: string): string | null {
+  if (readOnly) return READ_ONLY_REMOTE;
+  if (permissions === null) return PERMISSION_CHECKING;
+  const p = permissions[op];
+  if (!p) return PERMISSION_UNAVAILABLE;
+  return p.allowed ? null : p.reason ?? PERMISSION_UNAVAILABLE;
 }
 
-// -- fake ----------------------------------------------------------------------------------
+// -- router writes ---------------------------------------------------------------------------
 
-export interface FakeOptions {
-  sessions?: SessionDetail[];
-  currentSample?: string | null;
-  /** the logged-in user (fake auth, T-105) */
-  user?: { user_id: string; role: "admin" | "operator" | "viewer" };
-  /** the shared check's answer for every op; default: all allowed */
-  permission?: (op: string) => Permission;
-  /** make the permission check fail, as when /api/permissions cannot be read */
-  permissionsDown?: boolean;
-  /** answer only these ops (a missing op counts as unavailable) */
-  answerOps?: string[];
-  now?: () => string;
+/**
+ * POST JSON to this area's router through the shared transport, with the signature of the shell's
+ * coming `useClient().post<T>(path, body?) -> Promise<T | null>` (T-010 stage 3, null for 204).
+ * Swap to `client.post` when that merges. Until then a 403 here stays an area refusal (for example
+ * the session owner rule) and does not switch the app to read-only.
+ */
+export async function postJson<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
+  const r = await client.transport.fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!r.ok) {
+    let detail = `HTTP ${r.status}`;
+    try {
+      const b = (await r.json()) as { detail?: unknown };
+      if (typeof b.detail === "string") detail = b.detail;
+    } catch {
+      // keep the status text
+    }
+    throw new CommandRefused(r.status, detail);
+  }
+  if (r.status === 204) return null;
+  return (await r.json()) as T;
 }
 
-export const ALLOW_ALL = (): Permission => ({ allowed: true, reason: null });
-
-export function denyAll(reason: string) {
-  return (): Permission => ({ allowed: false, reason });
+/** The engine's current sample from the snapshot, or null (T-011 adds the `sample` block). */
+export async function readCurrentSample(client: Client): Promise<string | null> {
+  const s = await client.get<{ sample?: { sample_id?: string | null } | null }>(PATHS.state);
+  return s.sample?.sample_id ?? null;
 }
-
-export function fakeDetail(p: Partial<SessionDetail> & Pick<SessionDetail, "session_id" | "sample_id">): SessionDetail {
-  return {
-    user_id: "operator@example.test",
-    user_name: "Operator",
-    status: "closed",
-    started_at: "2026-10-01T09:05:00-07:00",
-    closed_at: "2026-10-01T11:40:00-07:00",
-    continues: null,
-    reflected: null,
-    code: { repo: "D:/AutoFocus/dino-autofocus", commit: "0".repeat(40), dirty: false, error: null },
-    hardware_profile: null,
-    sma_run_id: null,
-    close_note: "",
-    log_tail: [],
-    records: [],
-    manifest: { files: 0, bytes: 0, by_where: {}, entries: [] },
-    ...p,
-  };
-}
-
-function summary(d: SessionDetail): SessionSummary {
-  const { session_id, user_id, user_name, sample_id, status, started_at, closed_at, continues, reflected } = d;
-  return { session_id, user_id, user_name, sample_id, status, started_at, closed_at, continues, reflected };
-}
-
-/** In-memory stand-in for the server, following the refusals in sessions.md section 2. */
-export function createFakeClient(opts: FakeOptions = {}): SessionsClient {
-  const sessions: SessionDetail[] = (opts.sessions ?? []).map((s) => ({ ...s }));
-  let sample = opts.currentSample ?? null;
-  const user = opts.user ?? { user_id: "operator@example.test", role: "operator" as const };
-  const permission = opts.permission ?? ALLOW_ALL;
-  const now = opts.now ?? (() => new Date().toISOString());
-  let n = 0;
-
-  const find = (id: string) => {
-    const s = sessions.find((x) => x.session_id === id);
-    if (!s) throw new ApiError(404, `No experiment session ${id}`);
-    return s;
-  };
-  const guard = (op: SessionOp) => {
-    const p = permission(op);
-    if (!p.allowed) throw new ApiError(403, p.reason ?? "Not allowed");
-  };
-  const openFor = (sampleId: string, continues: string | null) => {
-    const open = sessions.find((x) => x.status === "open");
-    if (open) throw new ApiError(409, `${open.session_id} is open; close it first`);
-    n += 1;
-    const d = fakeDetail({
-      session_id: `fake-${n}`,
-      sample_id: sampleId,
-      user_id: user.user_id,
-      status: "open",
-      started_at: now(),
-      closed_at: null,
-      continues,
-      log_tail: [{ t: now(), level: "info", msg: "session opened" }],
-    });
-    sessions.push(d);
-    return { ...d };
-  };
-
-  return {
-    async list(f = {}) {
-      return sessions
-        .filter((s) => (!f.user || s.user_id === f.user) && (!f.sample || s.sample_id === f.sample))
-        .filter((s) => !f.status || s.status === f.status)
-        .map(summary);
-    },
-    async current() {
-      const open = sessions.filter((s) => s.status === "open");
-      return open.length ? summary(open[open.length - 1]) : null;
-    },
-    async detail(id) {
-      return { ...find(id) };
-    },
-    async open() {
-      guard("session_open");
-      if (!sample) throw new ApiError(409, "Open or create a sample first");
-      return openFor(sample, null);
-    },
-    async close(id, note) {
-      guard("session_close");
-      const s = find(id);
-      if (s.status === "closed") throw new ApiError(409, `Session ${id} is closed (read-only)`);
-      // area rule, kept in the router: a session belongs to the user who opened it
-      if (user.role !== "admin" && s.user_id !== user.user_id) {
-        throw new ApiError(403, `Only ${s.user_id} or an admin can close this session`);
-      }
-      s.status = "closed";
-      s.closed_at = now();
-      s.close_note = note;
-      return { ...s };
-    },
-    async continueFrom(id) {
-      guard("session_continue");
-      const prev = find(id);
-      sample = prev.sample_id; // the server runs sample_open for it first
-      return openFor(prev.sample_id, id);
-    },
-    async currentSample() {
-      return sample;
-    },
-    async permissions(ops) {
-      if (opts.permissionsDown) throw new ApiError(503, "permissions unavailable");
-      const asked = opts.answerOps ? ops.filter((op) => opts.answerOps!.includes(op)) : ops;
-      return Object.fromEntries(asked.map((op) => [op, permission(op)]));
-    },
-  };
-}
-
-/** The client the screen uses until the router is on main: a fake with no sessions. */
-export const defaultClient: SessionsClient = createFakeClient();
-
-/** Tests and, later, the app provide the real client here. */
-export const SessionsClientContext = createContext<SessionsClient>(defaultClient);
