@@ -25,6 +25,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.requests import HTTPConnection
 
+from .api import is_local
 from .schemas import (
     EngineAPI,
     Event,
@@ -96,7 +97,8 @@ def install(
             if stopped():
                 return WsError(status=503, detail="the server is shutting down")
             try:
-                op_id = await asyncio.to_thread(engine.submit, msg.command.to_engine())
+                cmd = msg.command.to_engine(remote=not is_local(conn))
+                op_id = await asyncio.to_thread(engine.submit, cmd)
             except ValueError as e:
                 return WsError(status=400, detail=str(e))
             return WsAccepted(op_id=op_id)

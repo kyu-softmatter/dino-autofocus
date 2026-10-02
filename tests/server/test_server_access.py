@@ -87,3 +87,32 @@ def test_login_routes_open_to_remote_viewers(engine, make_client):
     assert c.post("/api/auth/login/extra", json={}).status_code == 403
     foreign = c.post("/api/auth/login", json={}, headers={"origin": "https://example.com"})
     assert foreign.status_code == 403
+
+
+@pytest.mark.parametrize("field,value", [("remote", False), ("control_grant", "stolen"),
+                                         ("user_id", "admin@example.test"),
+                                         ("confirmed_by", "admin@example.test"),
+                                         ("origin", "assistant"), ("session_id", "s9")])
+def test_body_cannot_stamp_commands(field, value, engine, make_client):
+    """A remote viewer cannot clear `remote` (D13), and nobody can hand in a control grant,
+    an identity, a confirmation or a session: those are the server's (T-011, T-018)."""
+    c = make_client(engine, remote=True, remote_view=True)
+    r = c.post("/api/commands", json={"kind": "abort", "op_id": "a", field: value})
+    assert r.status_code == 422
+    with c.websocket_connect("/ws/events") as ws:
+        ws.send_text(json.dumps({"type": "command",
+                                 "command": {"kind": "abort", "op_id": "a", field: value}}))
+        assert json.loads(ws.receive_text())["status"] == 422
+    assert engine.commands == []
+
+
+def test_server_marks_remote_commands(engine, make_client):
+    make_client(engine, remote=True, remote_view=True).post(
+        "/api/commands", json={"kind": "abort", "op_id": "a"})
+    make_client(engine).post("/api/commands", json={"kind": "abort", "op_id": "b"})
+    with make_client(engine, remote=True, remote_view=True) as c, \
+            c.websocket_connect("/ws/events") as ws:
+        ws.send_text(json.dumps({"type": "command", "command": {"kind": "abort", "op_id": "c"}}))
+        ws.receive_text()
+    assert [(x.op_id, x.remote, x.control_grant, x.origin) for x in engine.commands] == \
+        [("a", True, None, "human"), ("b", False, None, "human"), ("c", True, None, "human")]

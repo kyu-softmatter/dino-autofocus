@@ -10,7 +10,6 @@ from .common import (
     EventKind,
     EventOut,
     Health,
-    Origin,
     ShutdownAccepted,
     ShutdownIn,
     WsAccepted,
@@ -32,7 +31,7 @@ from .contract import (
 __all__ = [
     "COMMAND_KINDS", "EVENT_KINDS", "ORIGINS", "SERVER_STAMPED", "WS_MODELS", "ApiError",
     "Command", "CommandAccepted", "CommandIn", "CommandKind", "EngineAPI", "Event", "EventKind",
-    "EventOut", "FrameSource", "Health", "Origin", "ShutdownAccepted", "ShutdownIn",
+    "EventOut", "FrameSource", "Health", "ShutdownAccepted", "ShutdownIn",
     "WsAccepted", "WsCommand", "WsError",
     "WsEvent", "WsFrame",
 ]

@@ -33,7 +33,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..agents import AgentStore, MockStore
 from . import static, ws
-from .api import Engine, command_refusal, include_area_routers, origin_refusal
+from .api import Engine, command_refusal, include_area_routers, is_local, origin_refusal
 from .schemas import (
     WS_MODELS,
     ApiError,
@@ -159,7 +159,7 @@ def create_app(
         if stopper.done:
             raise HTTPException(status_code=503, detail="the server is shutting down")
         try:
-            op_id = eng.submit(cmd.to_engine())
+            op_id = eng.submit(cmd.to_engine(remote=not is_local(request)))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         return CommandAccepted(op_id=op_id)
