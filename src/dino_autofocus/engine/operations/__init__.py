@@ -21,6 +21,8 @@ MODULES = (
     "scan_4x",
     "focus_100x",
     "objective_change",
+    "z_retract",
+    "hardware_scan",  # defines the hardware ops; the server registers them (register_hardware)
     "sample_ops",
 )
 
