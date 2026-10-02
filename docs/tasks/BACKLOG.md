@@ -11,6 +11,10 @@
 
 권한은 앞 과제가 main 에 병합된 뒤 넘긴다.
 
+`web/src/api/schema.ts` (generated): only T-010 (실행4) commits it. Screen-router branches keep their wire types in
+their own `api.ts`; after each router merges, 실행4 reruns `gen:api` and the area swaps to the generated types in a
+small follow-up (screen manager rule, 2026-10-02).
+
 요청 접수:
 - T-022 (실행16): `dependencies` 에 `three`, `devDependencies` 에 `@types/three`. 래퍼 (@react-three/fiber 등) 없음.
   T-010 1차 골격 병합 뒤 package.json 권한자가 넣는다.
@@ -33,6 +37,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - **Quota pause (director, after the 19:20 outage):** active 실행1, 3, 4, 6, 7, 10, 11, 12, 15, 17 + AF 검토,
   검토보조1, 2. Paused: 실행2, 5, 8, 9, 13, 14, 16 (after T-037 commit), 18, 19, 20, 검토보조3, 4, 업무분배보조.
   Resume all when T-009b and T-010 stage 4 merge, then tell the director. No broadcasts.
+  **Done 2026-10-02 (T-009b bb9935f):** resumed 업무분배보조 (resumes its own screen seats), 실행8, 9, 16, 검토보조3, 4.
 - T-009 reviews go to 검토보조1 while 검토보조3 is paused.
 - T-009 and T-010 first skeletons merged → tell AF 업무분배보조 (screen stage B starts).
 - 실행14 (T-020) or 실행5 (T-004) review cleared → offer the seat to AF 업무분배보조 for T-103 / T-104.
@@ -44,7 +49,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 - Merge order: T-009b (remote_view mark) and T-010 stage 4 (client rule) before any screen router (T-100..T-106 stage B).
 
-- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag, T-027b's per-lens approach ceiling (37f5c6c), the two is_bench follow-ups (guards: T-027b item 3; runner: 실행15), T-015c (is_bench never raises) and T-036d (preset check on configured device labels) are all on main. Tell the director when they are.
+- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag, T-027b's per-lens approach ceiling (37f5c6c), the two is_bench follow-ups (guards: T-027b item 3; runner: 실행15), T-015c (is_bench never raises), T-029c (step-out intent written first) and T-036d (preset check on configured device labels) are all on main. Tell the director when they are.
 
 - On resume of the screen routers: T-106 (실행2) calls `ensure_sample_created(session, store)` on session open (T-027 seam).
 - T-015b merged → one bench rule: 실행1 switches `FocusAxis._simulated` and the guards to `is_bench(info)` (T-027b item 3,
@@ -119,3 +124,10 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - 임시 가드 값 (T-015): 큰 XY 이동 문턱 min(렌즈 시야, 1 mm), z_safe 0 µm, F5 이탈 거리 기본값 없음
 - Microscope PC: free working distance (`FREE_WD_UM`) for 10x, 20x, 40x WI, 60x before they become rotation targets (T-029).
 - Microscope PC (T-036b, b7c8c98): the bench cfg passes `check_load_settings` (no motion device in System/Startup, System/Shutdown or post-init Property lines), and whether the core applies System/Shutdown at unload.
+- Watch (2026-10-02): a native crash / hang in the full pytest run under heavy parallel load, seen three times
+  (실행5, 검토보조2 hang at 25%, AF 검토 Windows fatal exception); reruns pass. No test or native frame captured yet.
+  Reviewers keep the full pytest log (faulthandler on). When a frame names a module, card a fix.
+  Diagnosed (AF 검토, full log on d544ea9 + T-029b): three crashes in one run at unrelated places (platform WMI
+  query 0x8007000e, a .pyc read 0xc000070a, pure Python in engine/sample.py 0xc000070a) = machine-wide memory /
+  commit-charge exhaustion, not a code bug (same code as docs/integration-notes.md). 0xc000070a / 0x8007000e in a
+  test run means "rerun when the machine is quieter", not a failure. Run-limit rule proposed to the director.

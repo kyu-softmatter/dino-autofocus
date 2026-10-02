@@ -54,7 +54,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from . import records as op_records
-from .backend import AURA_LINES, Frame, Positions
+from .backend import AURA_LINES, Frame, Positions, is_bench
 from .events import Command, Event, EventSink
 
 log = logging.getLogger(__name__)
@@ -1135,20 +1135,17 @@ class Runner:
         if aw and op.cls.motion and not op.instance.returns_to_sample():
             checks.append({"name": "awaiting_return", "ok": False, "want": "sample returned",
                            "read": aw.get("op_id"), "why": AWAITING_WHY})
-        if op.cls.approaches and op.instance.clearance() is None:
-            bench = self._on_bench()
-            if bench is not False:
-                checks.append({"name": "approach_clearance", "ok": False,
-                               "want": "a clearance callback", "read": {"bench": bench},
-                               "why": "on the bench an approach needs a clearance check"})
+        if op.cls.approaches and op.instance.clearance() is None and self._on_bench():
+            checks.append({"name": "approach_clearance", "ok": False,
+                           "want": "a clearance callback", "read": {"bench": True},
+                           "why": "on the bench an approach needs a clearance check"})
         return checks
 
-    def _on_bench(self) -> bool | None:
-        """`BackendInfo.bench` (T-033: True on mm-real), from the start() read or, if that
-        failed, a fresh one. None when unknown, which the clearance check treats as the
-        bench: the strict side."""
-        info = self._info or self._read_info()
-        return None if info is None else bool(info.bench)
+    def _on_bench(self) -> bool:
+        """The shared rule `backend.is_bench` (T-015b) on the start() info or, if that read
+        failed, a fresh one. No info, an unknown kind or a missing flag is the bench: the
+        strict side."""
+        return is_bench(self._info or self._read_info())
 
     def _read_info(self) -> Any:
         try:

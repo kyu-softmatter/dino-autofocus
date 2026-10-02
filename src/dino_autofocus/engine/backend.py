@@ -241,14 +241,16 @@ def is_bench(info: Any) -> bool:
     False only when `info` is readable, its `kind` is in `SIMULATED_KINDS` and its `bench`
     is exactly False. Everything else is the bench: no info (a failed `info()` read),
     an unreadable field, a missing `bench`, any other kind, or any other `bench` value.
+    Any error while deciding (e.g. an unhashable `kind`) also means the bench (T-015c).
     """
     if info is None:
         return True
     try:
         kind, bench = info.kind, getattr(info, "bench", True)
-    except Exception:  # noqa: BLE001 - unreadable means the strict side
+        simulated = kind in SIMULATED_KINDS and bench is False
+    except Exception:  # noqa: BLE001 - any error means the strict side
         return True
-    return not (kind in SIMULATED_KINDS and bench is False)
+    return not simulated
 
 
 # ---------------------------------------------------------------- set_property allow-list

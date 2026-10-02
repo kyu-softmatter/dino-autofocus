@@ -62,3 +62,10 @@
   `{from_key, to_key, label}` through `session.sample_event()`. Use the literal kind until T-027b adds the
   `OBJECTIVE_CHANGED` constant to `engine/sample.py`, then switch to it at your next `git merge main`. Do not edit
   `sample.py`.
+
+## T-029c (AF 실행3, after T-029b merges; review AF 검토보조1; lock-lift prerequisite)
+
+- SAFETY: write `objective_stepped_out` before the Y step-out goto (intent first), not after it succeeds, so a move
+  that fails part-way still leaves `awaiting_return` set after a restart. `objective_stepped_back` stays after the
+  return, written only once the readback confirms the stage is back. Test: a backend that fails mid step-out leaves
+  `read_sample().awaiting_return` True.

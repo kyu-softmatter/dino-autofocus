@@ -11,7 +11,9 @@ import pytest
 from test_backends_mm_real import DEMO_STARTUP_MOTION, open_on_demo
 
 from dino_autofocus.engine.backends.mm_real import (
+    BENCH_DEVICES,
     DEMO_DEVICES,
+    DeviceNames,
     LoadSetting,
     MmRealBackend,
     UnsafeConfig,
@@ -118,3 +120,54 @@ def test_a_clean_copy_opens_and_records_what_loading_set():
         assert b.config_record().changed_during_load is False
     finally:
         b.close()
+
+
+# -- T-036d: motion devices under other labels
+
+RENAMED = """Property,Core,Initialize,0
+Device,TIZDrive,NikonTi2,ZDrive
+Device,TIXYStage,NikonTi2,XYStage
+Property,Core,Initialize,1
+"""
+
+
+def test_a_renamed_stage_is_refused_by_the_configured_label():
+    text = RENAMED + "ConfigGroup,System,Startup,TIZDrive,Position,3000\n"
+    check_load_settings(load_time_settings(text), "x.cfg")  # fixed names alone miss it
+    with pytest.raises(UnsafeConfig, match=r"TIZDrive.Position in ConfigGroup System/Startup"):
+        check_load_settings(load_time_settings(text), "x.cfg",
+                            DeviceNames(z="TIZDrive", xy="TIXYStage"))
+
+
+def test_a_renamed_stage_is_refused_by_the_cfgs_own_core_role():
+    text = (RENAMED + "Property,Core,Focus,TIZDrive\n"
+            "ConfigGroup,System,Startup,TIZDrive,Position,3000\n")
+    with pytest.raises(UnsafeConfig) as e:
+        check_load_settings(load_time_settings(text), "x.cfg")  # no DeviceNames at all
+    assert "TIZDrive.Position in ConfigGroup System/Startup" in str(e.value)
+    with pytest.raises(UnsafeConfig) as e:
+        check_load_settings(load_time_settings(text), "x.cfg", BENCH_DEVICES)
+    msg = str(e.value)
+    assert "TIZDrive.Position in ConfigGroup System/Startup" in msg
+    assert "role mismatch: Core.Focus is 'TIZDrive' but this backend drives 'ZDrive' as z" in msg
+
+
+def test_a_role_mismatch_alone_is_refused_and_matching_roles_pass():
+    text = RENAMED + "Property,Core,Focus,TIZDrive\nProperty,Core,XYStage,TIXYStage\n"
+    with pytest.raises(UnsafeConfig) as e:
+        check_load_settings(load_time_settings(text), "x.cfg", BENCH_DEVICES)
+    assert "Core.Focus is 'TIZDrive'" in str(e.value)
+    assert "Core.XYStage is 'TIXYStage'" in str(e.value)
+    check_load_settings(load_time_settings(text), "x.cfg",
+                        DeviceNames(z="TIZDrive", xy="TIXYStage"))
+    with pytest.raises(UnsafeConfig, match=r"Core.AutoFocus is 'PFS' but this backend drives None"):
+        check_load_settings(load_time_settings(HEAD + "Property,Core,AutoFocus,PFS\n"), "x.cfg",
+                            DeviceNames(pfs=None))
+
+
+def test_open_uses_the_backends_device_names(tmp_path):
+    text = RENAMED + "ConfigGroup,System,Startup,TIZDrive,Position,3000\n"
+    b = MmRealBackend(write(tmp_path, text), devices=DeviceNames(z="TIZDrive", xy="TIXYStage"))
+    with pytest.raises(UnsafeConfig, match="TIZDrive.Position"):
+        b.open()
+    assert b.core is None
