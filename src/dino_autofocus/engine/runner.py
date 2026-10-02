@@ -174,6 +174,22 @@ class AllowAll:
         return True
 
 
+class DeviceControlSeat:
+    """T-018 `auth.DeviceControl` behind the Control seat: the grant must be the live one
+    and belong to the user who sends the command. Duck-typed, so the engine imports no
+    auth code; `DeviceControl.check` raises a PermissionError (`ControlError`) when not."""
+
+    def __init__(self, control: Any):
+        self._control = control
+
+    def check(self, user_id: str | None, grant: str | None) -> bool:
+        try:
+            g = self._control.check(grant)
+        except PermissionError:
+            return False
+        return user_id is not None and g.user_id.lower() == user_id.lower()
+
+
 class AcquisitionStream(Protocol):
     """The engine-owned continuous acquisition (live view). Not an operation."""
 

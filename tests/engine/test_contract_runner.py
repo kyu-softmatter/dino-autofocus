@@ -21,6 +21,7 @@ from dino_autofocus.engine.runner import (
     PERMISSIONS,
     AllowAll,
     CommandRefused,
+    DeviceControlSeat,
     EngineAPI,
     Operation,
     Registry,
@@ -1107,6 +1108,41 @@ def test_closing_the_session_switches_everything_off(make, fake):
     assert r.wait_idle(T) and fake.lights == {"DiaLamp": "0", "Aura": "0"}
     off = next(e for e in sink.events if e.kind == "planned" and e.op_id.startswith("lights_off"))
     assert off.data["args"] == {"why": "session closed"}
+
+
+def test_the_real_t018_control_object_gates_motion(make, tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from dino_autofocus.auth import AccountStore, DeviceControl, LoginSessions
+    from dino_autofocus.auth import config as auth_config
+
+    monkeypatch.setenv(auth_config.CONFIG_DIR_ENV, str(tmp_path / "config"))
+    monkeypatch.delenv(auth_config.ADMIN_EMAIL_ENV, raising=False)
+    users = json.loads((Path(__file__).parents[1] / "auth" / "fixtures" / "users.json")
+                       .read_text(encoding="utf-8"))["users"]
+    store = AccountStore(tmp_path / "config" / "accounts.json")
+    store.seed(users, "seed-pass-1234")  # the auth fixtures' test password
+    logins = LoginSessions(store, idle_lock_s=600, max_age_s=3600)
+    devices = DeviceControl(logins)
+    operator = next(u["email"] for u in users if u.get("role") == "operator")
+    login = logins.login(operator, "seed-pass-1234").token
+    grant = devices.acquire(login, local=True)
+
+    r, sink = make(control=DeviceControlSeat(devices))
+    as_op = Command("start", op="steps", user_id=operator, session_id=SESSION)
+    assert "does not hold equipment control" in refuse(r, as_op).why
+    as_op.control_grant = "forged"
+    refuse(r, as_op)
+    someone = Command("start", op="steps", user_id="viewer@example.test", session_id=SESSION,
+                      control_grant=grant.token)
+    refuse(r, someone)  # the live grant, but not theirs
+    as_op.control_grant = grant.token
+    sink.wait("finished", r.submit(as_op))
+    devices.release(login)
+    again = Command("start", op="steps", user_id=operator, session_id=SESSION,
+                    control_grant=grant.token)
+    refuse(r, again)  # released: the old grant no longer works
+    sink.wait("finished", r.submit(Command("lights_off")))  # stops need none of it
 
 
 def test_registry_refuses_reserved_and_duplicate_names():
