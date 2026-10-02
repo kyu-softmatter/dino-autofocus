@@ -35,6 +35,11 @@ is refused. `continue` reopens the earlier session's sample: the server runs `sa
 because no session is open) and then opens the new session with `continues` set. While a session is open,
 the engine refuses `sample_open` and `sample_new` for any other sample.
 
+`sample_new` writes no event (T-027). When the first session for a sample opens, the **engine** writes
+`sample_created` as the first event in that session's `records/sample_events.jsonl`, from the
+`set_experiment_session` hook (G1). The session-open path in the router only calls that hook after
+`ExperimentSession.open`; it never writes sample events itself.
+
 `SessionSummary`: `session_id, user_id, user_name, sample_id, status, started_at, closed_at, continues,
 reflected`.
 
