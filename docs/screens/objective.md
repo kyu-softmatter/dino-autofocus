@@ -55,7 +55,7 @@ Returns the engine's `planned` payload for `objective_change` without starting i
 | `steps[]` | seven rows `{step: 1..7, name, target}`: record; lights off; `Z -> 0`; `Y -> y + dy` (absent when `escape=false`); rotate to `label`; `load_immersion` (manual); `XY -> return_xy`; `Z approach -> approach_target_um` in `approach_step_um` steps |
 | `escape` | `{allowed: false, reason: "escape distance not set"}` until the user sets the Y sign and distance (PLAN 10절). The screen sends `escape=false` only |
 | `immersion` | of the target lens |
-| `approach_target_um`, `approach_step_um` | 2800 default; step value is open (ops-spec 10 Q) |
+| `approach_target_um`, `approach_step_um` | 2800 default; step from the target lens's guards row (10 µm, `"unmeasured provisional"`). Both read-only, shown with that mark; no entry field |
 | `refusal` | preflight text if the plan itself is refused |
 
 ### `GET /api/objective/focus100x/defaults`
@@ -81,7 +81,7 @@ Shape is `engine.events.Command`. `origin="human"`; `user_id` and `session_id` a
 
 | Action | Command | Who |
 |---|---|---|
-| Rotate | `{kind: "start", op: "objective_change", args: {target_state, escape: false, approach_target_um, approach_step_um}}` | local operator with control, session open |
+| Rotate | `{kind: "start", op: "objective_change", args: {target_state, escape: false}}`. `approach_step_um` is not sent: it is a per-objective guards value, and the screen only shows the engine's value | local operator with control, session open |
 | Loading done | `{kind: "confirm", op_id, args: {key: "load_immersion", ok: true}}` | **local only, always**, whatever D13 allows; the server refuses it from a remote origin |
 | Return to sample position | `{kind: "start", op: "objective_change", args: {resume: true}}` (T-011) | as Rotate; the only motion op allowed while `awaiting_return` |
 | Re-load immersion | `{kind: "start", op: "objective_change", args: {reload: true}}` (name to be fixed by T-029) | as Rotate; runs steps 2, 3, 5, 6, 7 on the current lens (ops-spec 4.2 item 8) |
@@ -122,5 +122,5 @@ Refusals come back synchronously from `POST /api/commands` (403 remote, permissi
 | 5 | Lens rows with reasons | T-028: `objective_options()` returns the rows with the engine's reason per lens |
 | 6 | `progress.data` keys for steps 2–6 | T-029 fixes them. Proposed here: `{step, axis, commanded, readback}`, plus `pfs_in_range` at step 2 and `label_read` at step 4 |
 | 7 | `lights_off` from a remote client | Settled (D2, T-011 text fixed): remote clients send `abort` only |
-| 8 | `approach_step_um` | A guards value marked `"unmeasured provisional"`; the number comes from the director. The form shows it read-only |
+| 8 | `approach_step_um` | Settled: per-objective guards column, 10 µm, `"unmeasured provisional"`. Read-only on screen; never in the rotate args unless the engine echoes it back |
 | 9 | 4x focus plane at the current XY | Goes to the WP-C focus port. Until it exists, `focus100x/defaults` returns `z_4x_focus_um: null` and `centre_um: null`, and the form shows the centre as `"not set"`; the operator types it, and C11 still applies |
