@@ -32,13 +32,14 @@ export interface SendResult {
 
 // ---------- read endpoints (docs/screens/objective.md section 1) ----------
 
-export interface Access {
-  /** false: remote view, viewer role, no control, or no experiment session */
-  can_command: boolean;
-  /** first disabled reason (ui-spec 7.0), e.g. "Read-only: remote view" */
+/** One op's permission from GET /api/permissions?ops=a,b (T-009b, T-011 check()). */
+export interface Permission {
+  allowed: boolean;
+  /** first disabled reason (ui-spec 7.0), shown as is, e.g. "Read-only: remote view" */
   reason: string | null;
-  remote: boolean;
 }
+
+export type Permissions = Record<string, Permission>;
 
 export interface ObjectiveState {
   nosepiece_state: number;
@@ -49,7 +50,8 @@ export interface ObjectiveState {
   immersion_loaded_this_session: { loaded: boolean; immersion: string; at: string; by: string } | null;
   awaiting_return: { since: string; return_xy_um: [number, number]; objective_before: string } | null;
   running: { op_id: string; op: string; step: number; n_steps: number } | null;
-  access: Access;
+  /** this browser is a remote viewer (Loading done is never offered then) */
+  remote: boolean;
 }
 
 export interface LensRow {
@@ -102,6 +104,8 @@ export interface ObjectiveApi {
   getLenses(): Promise<LensRow[]>;
   getPlan(targetState: number, escape: boolean): Promise<ObjectivePlan>;
   getFocusDefaults(centreUm?: number): Promise<Focus100xDefaults>;
+  /** GET /api/permissions?ops=... : the screen shows these reasons and never computes them */
+  getPermissions(ops: string[]): Promise<Permissions>;
   send(cmd: Command): Promise<SendResult>;
   /** /ws/events; returns unsubscribe */
   subscribe(onEvent: (ev: EngineEvent) => void): () => void;
@@ -126,7 +130,9 @@ export const FAKE_LENSES: LensRow[] = [
 ];
 
 export interface FakeOptions {
-  access?: Partial<Access>;
+  /** every op allowed unless set; denyAll refuses all but abort with that reason */
+  denyAll?: string;
+  remote?: boolean;
   state?: Partial<ObjectiveState>;
   lenses?: LensRow[];
   z4xFocusUm?: number | null;
@@ -140,11 +146,23 @@ export interface FakeApi extends ObjectiveApi {
   emit(ev: Omit<EngineEvent, "t"> & { t?: number }): void;
 }
 
+/**
+ * TEMPORARY stand-in for GET /api/permissions (T-009b). The only place the fake
+ * decides permissions; the screen just shows what it returns.
+ */
+export function fakePermissions(ops: string[], denyAll?: string): Permissions {
+  const out: Permissions = {};
+  for (const op of ops) {
+    const allowed = denyAll === undefined || op === "abort";
+    out[op] = { allowed, reason: allowed ? null : denyAll };
+  }
+  return out;
+}
+
 export function createFakeApi(opts: FakeOptions = {}): FakeApi {
   const listeners = new Set<(ev: EngineEvent) => void>();
   const sent: Command[] = [];
   let n = 0;
-  const access: Access = { can_command: true, reason: null, remote: false, ...opts.access };
   const state: ObjectiveState = {
     nosepiece_state: 0,
     label: "1-Plan Apo LmbdD20 4x",
@@ -155,7 +173,7 @@ export function createFakeApi(opts: FakeOptions = {}): FakeApi {
     awaiting_return: null,
     running: null,
     ...opts.state,
-    access,
+    remote: opts.remote ?? false,
   };
   const z4x = opts.z4xFocusUm === undefined ? null : opts.z4xFocusUm;
   return {
@@ -204,11 +222,14 @@ export function createFakeApi(opts: FakeOptions = {}): FakeApi {
         immersion_loaded_this_session: state.immersion_loaded_this_session?.loaded ?? false,
       };
     },
+    async getPermissions(ops: string[]) {
+      return fakePermissions(ops, opts.denyAll);
+    },
     async send(cmd: Command) {
       sent.push(cmd);
       if (opts.onSend) return opts.onSend(cmd);
-      if (!access.can_command && cmd.kind !== "abort") {
-        return { ok: false, refused: access.reason ?? "refused" };
+      if (opts.denyAll !== undefined && cmd.kind !== "abort") {
+        return { ok: false, refused: opts.denyAll };
       }
       n += 1;
       return { ok: true, op_id: cmd.op_id ?? `op-${n}` };

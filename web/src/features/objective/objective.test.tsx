@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { ScreenContextProvider } from "../../app/screenContext";
 import { createFakeApi, type FakeOptions, scriptAfterLoading, scriptToLoading } from "./api";
-import { ObjectiveView } from "./ObjectiveView";
+import { COMPUTED_GRADE, ObjectiveView } from "./ObjectiveView";
 
 function wrap(children: ReactNode) {
   return <ScreenContextProvider area="objective">{children}</ScreenContextProvider>;
@@ -87,7 +87,7 @@ describe("objective change", () => {
   });
 
   it("is read-only in remote view: no commands, and Loading done is never offered", async () => {
-    const api = await setup({ access: { can_command: false, remote: true, reason: "Read-only: remote view" } });
+    const api = await setup({ denyAll: "Read-only: remote view", remote: true });
     await screen.findByLabelText("Plan");
     expect(screen.getAllByText("Read-only: remote view").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Rotate" })).toHaveProperty("disabled", true);
@@ -97,7 +97,7 @@ describe("objective change", () => {
   });
 
   it("never offers Loading done to a remote client, even one allowed to command", async () => {
-    const api = await setup({ access: { can_command: true, remote: true, reason: null } });
+    const api = await setup({ remote: true });
     emitAll(api, scriptToLoading("op-4"));
     expect(screen.queryByRole("button", { name: "Loading done" })).toBeNull();
   });
@@ -135,7 +135,7 @@ describe("100x focus", () => {
     expect(screen.getByTestId("ceiling-line")).toBeTruthy();
     expect(document.querySelectorAll('circle[data-saturated="true"]')).toHaveLength(1);
     const result = screen.getByTestId("focus-result");
-    expect(result.textContent).toContain("classical");
+    expect(result.textContent).toContain(COMPUTED_GRADE);
     expect(result.textContent).toContain("Z 2989.42 µm");
     expect(result.textContent).toContain("reduce exposure");
   });

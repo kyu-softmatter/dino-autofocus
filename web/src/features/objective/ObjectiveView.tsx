@@ -8,6 +8,8 @@ import type {
   Focus100xDefaults,
   LensRow,
   ObjectiveApi,
+  Permission,
+  Permissions,
   ObjectivePlan,
   ObjectiveState,
 } from "./api";
@@ -33,6 +35,8 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
   const [change, dispatchChange] = useReducer(reduceChange, undefined, initialChange);
   const [focus, dispatchFocus] = useReducer(reduceFocus, undefined, initialFocus);
   const [message, setMessage] = useState<string | null>(null);
+  const [perms, setPerms] = useState<Permissions>({});
+  const [permsTick, setPermsTick] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -41,12 +45,22 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
     const off = api.subscribe((ev: EngineEvent) => {
       dispatchChange(ev);
       dispatchFocus(ev);
+      // engine state changed: permissions (busy, awaiting return) may have changed too
+      if (["started", "finished", "aborted", "error"].includes(ev.kind)) setPermsTick((n) => n + 1);
     });
     return () => {
       live = false;
       off();
     };
   }, [api]);
+
+  useEffect(() => {
+    let live = true;
+    void api.getPermissions(PERMISSION_OPS).then((p) => live && setPerms(p));
+    return () => {
+      live = false;
+    };
+  }, [api, permsTick]);
 
   const send = useCallback(
     async (cmd: Command) => {
@@ -68,14 +82,15 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
   useScreenContext(details);
 
   if (state === null) return <p className="muted">Loading objective…</p>;
-  const access = state.access;
+  const perm = (op: string): Permission => perms[op] ?? { allowed: false, reason: "checking permissions" };
+  const changePerm = perm("objective_change");
   const awaiting = state.awaiting_return !== null || change.ended?.state === "awaiting_return";
 
   return (
     <div className="objective">
-      {!access.can_command && (
+      {!changePerm.allowed && changePerm.reason && (
         <p className="readonly" role="status">
-          {access.reason ?? "Read-only"}
+          {changePerm.reason}
         </p>
       )}
       {message && (
@@ -84,20 +99,23 @@ export function ObjectiveView({ api }: { api: ObjectiveApi }) {
         </p>
       )}
       <CurrentPanel state={state} zUm={change.zUm ?? state.z_um} />
-      {awaiting && <ReturnBanner access={access} onReturn={() => send(startChange({ resume: true }))} />}
-      <ChangePanel api={api} lenses={lenses} access={access} disabledBy={awaiting ? "Return to the sample position first" : null}
+      {awaiting && <ReturnBanner perm={changePerm} onReturn={() => send(startChange({ resume: true }))} />}
+      <ChangePanel api={api} lenses={lenses} perm={changePerm} disabledBy={awaiting ? "Return to the sample position first" : null}
                    onRotate={(target) => send(startChange({ target_state: target, escape: false }))}
                    onReload={() => send(startChange({ reload: true }))} />
-      <StepsPanel view={change} access={access}
+      <StepsPanel view={change} confirmPerm={perm("confirm")} remote={state.remote}
                   onLoadingDone={(c) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok: true } })}
                   onAnswer={(c, ok) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok } })}
                   onAbort={(opId) => send({ kind: "abort", op_id: opId })} />
-      <Focus100xPanel api={api} access={access} view={focus} disabledBy={awaiting ? "Return to the sample position first" : null}
+      <Focus100xPanel api={api} perm={perm("focus_100x")} confirmPerm={perm("confirm")} view={focus} disabledBy={awaiting ? "Return to the sample position first" : null}
                       onStart={(args) => send({ kind: "start", op: "focus_100x", args })}
                       onAnswer={(c, ok) => send({ kind: "confirm", op_id: c.opId, args: { key: c.key, ok } })} />
     </div>
   );
 }
+
+/** ops whose permission the screen asks for (GET /api/permissions) */
+const PERMISSION_OPS = ["objective_change", "focus_100x", "confirm", "abort"];
 
 function startChange(args: Record<string, unknown>): Command {
   return { kind: "start", op: "objective_change", args };
@@ -120,13 +138,14 @@ function CurrentPanel({ state, zUm }: { state: ObjectiveState; zUm: number | nul
   );
 }
 
-function ReturnBanner({ access, onReturn }: { access: ObjectiveState["access"]; onReturn: () => void }) {
+function ReturnBanner({ perm, onReturn }: { perm: Permission; onReturn: () => void }) {
   return (
     <section className="banner" role="alert" aria-label="Awaiting return">
       <p>Objective change interrupted: return to the sample position.</p>
-      <button type="button" disabled={!access.can_command} onClick={onReturn}>
+      <button type="button" disabled={!perm.allowed} onClick={onReturn}>
         Return to sample position
       </button>
+      {!perm.allowed && perm.reason && <span className="reason"> {perm.reason}</span>}
     </section>
   );
 }
@@ -134,14 +153,14 @@ function ReturnBanner({ access, onReturn }: { access: ObjectiveState["access"]; 
 function ChangePanel({
   api,
   lenses,
-  access,
+  perm,
   disabledBy,
   onRotate,
   onReload,
 }: {
   api: ObjectiveApi;
   lenses: LensRow[];
-  access: ObjectiveState["access"];
+  perm: Permission;
   disabledBy: string | null;
   onRotate: (target: number) => void;
   onReload: () => void;
@@ -160,7 +179,7 @@ function ChangePanel({
     };
   }, [api, chosen]);
 
-  const blocked = !access.can_command ? (access.reason ?? "Read-only") : disabledBy ?? plan?.refusal ?? null;
+  const blocked = !perm.allowed ? (perm.reason ?? "not allowed") : disabledBy ?? plan?.refusal ?? null;
   return (
     <section aria-label="Change objective">
       <h3>Change objective</h3>
@@ -200,7 +219,7 @@ function ChangePanel({
       <button type="button" disabled={chosen === null || blocked !== null} onClick={() => chosen !== null && onRotate(chosen)}>
         Rotate
       </button>{" "}
-      <button type="button" disabled={!access.can_command || disabledBy !== null} onClick={onReload}>
+      <button type="button" disabled={!perm.allowed || disabledBy !== null} onClick={onReload}>
         Re-load immersion
       </button>
       {blocked && <span className="reason"> {blocked}</span>}
@@ -220,20 +239,22 @@ const STEP_NAMES: Record<number, string> = {
 
 function StepsPanel({
   view,
-  access,
+  confirmPerm,
+  remote,
   onLoadingDone,
   onAnswer,
   onAbort,
 }: {
   view: ChangeView;
-  access: ObjectiveState["access"];
+  confirmPerm: Permission;
+  remote: boolean;
   onLoadingDone: (c: PendingConfirm) => void;
   onAnswer: (c: PendingConfirm, ok: boolean) => void;
   onAbort: (opId: string) => void;
 }) {
   if (view.opId === null) return null;
   // "Loading done" is pressed by the person at the microscope: never remotely (ui-spec 7.5)
-  const canLoad = access.can_command && !access.remote;
+  const canLoad = confirmPerm.allowed && !remote;
   return (
     <section aria-label="Progress">
       <h3>Progress</h3>
@@ -257,7 +278,7 @@ function StepsPanel({
           )}
         </div>
       )}
-      {view.confirm && <ConfirmBox confirm={view.confirm} access={access} onAnswer={onAnswer} />}
+      {view.confirm && <ConfirmBox confirm={view.confirm} perm={confirmPerm} onAnswer={onAnswer} />}
       {view.approach && (
         <div aria-label="Z approach">
           <progress max={view.approach.nSteps} value={view.approach.index} />{" "}
@@ -281,14 +302,14 @@ function StepsPanel({
 
 function ConfirmBox({
   confirm,
-  access,
+  perm,
   onAnswer,
 }: {
   confirm: PendingConfirm;
-  access: ObjectiveState["access"];
+  perm: Permission;
   onAnswer: (c: PendingConfirm, ok: boolean) => void;
 }) {
-  if (!access.can_command) {
+  if (!perm.allowed) {
     return <p className="muted">Waiting for the operator at the microscope PC: {confirm.prompt}</p>;
   }
   return (
@@ -318,14 +339,16 @@ type FocusForm = {
 
 function Focus100xPanel({
   api,
-  access,
+  perm,
+  confirmPerm,
   view,
   disabledBy,
   onStart,
   onAnswer,
 }: {
   api: ObjectiveApi;
-  access: ObjectiveState["access"];
+  perm: Permission;
+  confirmPerm: Permission;
   view: FocusView;
   disabledBy: string | null;
   onStart: (args: Record<string, unknown>) => void;
@@ -359,7 +382,7 @@ function Focus100xPanel({
 
   if (defaults === null || form === null) return null;
   const centreOk = centre !== null && Number.isFinite(centre);
-  const blocked = !access.can_command ? (access.reason ?? "Read-only") : disabledBy ?? (centreOk ? null : "Enter the sweep centre");
+  const blocked = !perm.allowed ? (perm.reason ?? "not allowed") : disabledBy ?? (centreOk ? null : "Enter the sweep centre");
   return (
     <section aria-label="100x focus">
       <h3>100x focus</h3>
@@ -386,7 +409,7 @@ function Focus100xPanel({
       <p>
         <label>
           Centre (µm){" "}
-          <input aria-label="Centre" value={form.centre_um} placeholder="not set" disabled={!access.can_command}
+          <input aria-label="Centre" value={form.centre_um} placeholder="not set" disabled={!perm.allowed}
                  onChange={(e) => setForm({ ...form, centre_um: e.target.value })} />
         </label>{" "}
         {defaults.above_4x_focus && centreOk && (
@@ -404,11 +427,11 @@ function Focus100xPanel({
         Find 100x focus
       </button>
       {blocked && <span className="reason"> {blocked}</span>}
-      {view.confirm && <ConfirmBox confirm={view.confirm} access={access} onAnswer={onAnswer} />}
+      {view.confirm && <ConfirmBox confirm={view.confirm} perm={confirmPerm} onAnswer={onAnswer} />}
       {view.points.length > 0 && <SweepCurve view={view} ceilingUm={view.ceilingUm ?? defaults.ceiling_um} />}
       {view.result && (
         <p data-testid="focus-result">
-          <ClassicalVerdict verdict={view.result.verdict} /> <EncoderZ readbackUm={view.result.zEncoderUm} />
+          <ComputedVerdict verdict={view.result.verdict} /> <EncoderZ readbackUm={view.result.zEncoderUm} />
           {view.result.warnings.map((w) => (
             <span key={w} className="reason">
               {" "}
@@ -421,16 +444,19 @@ function Focus100xPanel({
   );
 }
 
+/** Grade word for verdicts computed from classical metrics (T-010 stage 2 source "computed"). */
+export const COMPUTED_GRADE = "computed";
+
 /**
  * TEMPORARY: the shell's FocusVerdict always tags "model"; the 100x result is a
- * classical verdict (ui-spec 5.3). Same five words, tagged "classical", until
- * the shared component takes a source.
+ * computed (classical-metric) verdict (ui-spec 5.3). Same five words, tagged COMPUTED_GRADE, until
+ * the shared component takes a source (asked of T-010). Delete this then.
  */
-function ClassicalVerdict({ verdict }: { verdict: string }) {
+function ComputedVerdict({ verdict }: { verdict: string }) {
   const v: Verdict = isVerdict(verdict) ? verdict : "unsure";
   return (
     <span className={`verdict verdict-${v}`} data-verdict={v}>
-      {v.replace(/_/g, " ")} <span className="grade">classical</span>
+      {v.replace(/_/g, " ")} <span className="grade">{COMPUTED_GRADE}</span>
     </span>
   );
 }

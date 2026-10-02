@@ -77,7 +77,7 @@ ceiling (ui-spec 5.1).
 
 ## 2. Commands (`POST /api/commands`, T-009)
 
-Shape is `engine.events.Command`. `origin="human"`; `user_id` and `session_id` are filled by the server.
+Disabled reasons for these buttons come from the shared `GET /api/permissions?ops=objective_change,focus_100x,confirm,abort` (T-009b, backed by T-011 `check()`); this router never computes role, control, session or remote rules. Per-lens reasons stay with `objective_options()` (T-028), and the server keeps `"Loading done"` local only. Shape is `engine.events.Command`. `origin="human"`; `user_id` and `session_id` are filled by the server.
 
 | Action | Command | Who |
 |---|---|---|
