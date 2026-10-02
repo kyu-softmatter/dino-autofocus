@@ -13,7 +13,7 @@ import json
 import math
 
 import pytest
-from conftest import OFF, OPERATOR, after, need, read_jsonl
+from e2e_helpers import OFF, OPERATOR, after, need, read_jsonl
 
 from dino_autofocus.auth import ControlBusy, ControlError
 from dino_autofocus.engine.backends.mock_world import SampleSpec
@@ -22,7 +22,9 @@ from dino_autofocus.engine.sample import read_sample
 from dino_autofocus.records import GitFolderStore, SessionClosedError, open_session, sample_state
 
 SPEC = SampleSpec()  # the sample MockBackend(seed=0) holds: 6.144 mm hole at (8026, 571.6)
-#: a 1200 px ROI keeps the trace near 20 s; the full 2400 px sensor works too (about 100 s)
+#: the camera ROI for the day's frames: a 1200 px field keeps the trace near 20 s and each
+#: rendered frame at a quarter of the full sensor's memory (T-035b); the full 2400 px sensor
+#: works too (the trace then takes about 100 s)
 TRACE_ROI_PX = 1200
 
 
@@ -140,6 +142,7 @@ def test_06_f3_sample_geometry_is_entered(day):
 def test_07_f3_loading_is_confirmed_by_the_person_and_the_image(day):
     after(day, "geometry")
     at_the_edge(day)  # the image check needs structure in view: the chamber edge, in focus
+    day.backend.set_roi(TRACE_ROI_PX)  # the edge is in a 1200 px field too; a quarter the memory
     end = day.run("loading_confirm_person", {"sample_id": day.sample.id})
     assert end.kind == "finished", end.data
     end = day.run("loading_check_image", {"sample_id": day.sample.id})
@@ -163,8 +166,9 @@ def test_08_f4_edge_trace_fits_the_hole(day):
     b.set_roi(TRACE_ROI_PX)
     z_before = b.positions().z_um
 
+    # a whole loop: about 20 s alone, a few minutes when the desktop is loaded
     end = day.run("edge_trace", {"speed_um_s": 1000.0,
-                                 "hole_diameter_mm": SPEC.hole_diameter_mm})
+                                 "hole_diameter_mm": SPEC.hole_diameter_mm}, timeout=300)
     b.set_roi(0)
     assert end.kind == "finished", end.data
     asked = [e.data["key"] for e in day.events

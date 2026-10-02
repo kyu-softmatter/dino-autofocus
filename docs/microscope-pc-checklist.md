@@ -6,7 +6,7 @@
 > 까지만 하고, 재물대·Z·대물렌즈를 움직이는 작업은 돌리지 않는다. 새 앱의 실제 장비 백엔드는 코드로도 잠겨 있다
 > (T-036, main 2c61b7b: `BENCH_MOTION = "LOCKED"`). **기존 `scripts/*` (scan_4x, focus_100x, change_objective 등) 는
 > 이 잠금 밖이다.** 9월 30일처럼 그 스크립트를 쓰는 것은 사용자의 판단이고, 쓸 때도 아래 설정 파일 확인(시작·종료 프리셋)을 먼저 한다.
-> 잠금은 T-027, T-011b, T-015b (장비 백엔드를 기본으로 "벤치" 로 보는 안전 기본값), T-027b (작동 거리를 모르는 렌즈는 2800 µm 위로 접근 거부), 그리고 가드와 실행기가 같은 벤치 판정(is_bench)을 쓰게 하는 후속 두 개, T-036d (시작 프리셋 검사가 설정 파일에서 쓰는 장치 이름도 본다) 가 모두 병합되고 매니저와 총괄이 확인한 뒤 풀고, 그때 총괄 세션이 이 경고를 지운다.
+> 잠금은 T-027, T-011b, T-015b (장비 백엔드를 기본으로 "벤치" 로 보는 안전 기본값), T-027b (작동 거리를 모르는 렌즈는 2800 µm 위로 접근 거부), 그리고 가드와 실행기가 같은 벤치 판정(is_bench)을 쓰게 하는 후속 두 개, T-036d (시작 프리셋 검사가 설정 파일에서 쓰는 장치 이름도 본다), T-015c (벤치 판정이 오류 대신 "벤치" 를 돌려준다), T-029c (Y 이탈을 움직이기 전에 기록한다), T-029d (Q13·Q20 을 재기 전까지 실제 장비에서 렌즈 교체와 100x 접근을 거부) 가 모두 병합되고 매니저와 총괄이 확인한 뒤 풀고, 그때 총괄 세션이 이 경고를 지운다.
 
 작성: 총괄 세션. 개발 데스크톱에서는 답할 수 없고, 현미경 PC 에서 읽거나 한 번 돌려 봐야 답이 나오는
 항목을 한곳에 모았다. 답이 나오면 이 파일에 적고 총괄 세션에 알린다. 그때까지 코드는 아래의
@@ -90,10 +90,10 @@
 Select-String -Path "C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg" -Pattern "^ConfigGroup,System,(Startup|Shutdown)"
 ```
 
-T-036b 가 main 에 병합된 뒤에는 새 앱의 검사를 그대로 돌릴 수 있다 (Micro-Manager 를 불러오지 않는다). 불러올 때 설정되는 것을 모두 보여 주고, 문제가 없으면 마지막에 `OK` 를 찍는다. 움직이는 장치가 있으면 `UnsafeConfig` 로 그 이름을 보여 준다:
+새 앱이 장비를 열 때 하는 검사를 그대로 돌린다 (T-036b, T-036d: 설정 파일의 역할 줄과 앱이 쓰는 장치 이름이 다른 경우도 거부) (Micro-Manager 를 불러오지 않는다). 불러올 때 설정되는 것을 모두 보여 주고, 문제가 없으면 마지막에 `OK` 를 찍는다. 움직이는 장치가 있으면 `UnsafeConfig` 로 그 이름을 보여 준다:
 
 ```powershell
-uv run python -c "from pathlib import Path; from dino_autofocus.engine.backends.mm_real import load_time_settings, check_load_settings; p = Path(r'C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg'); s = load_time_settings(p.read_text(encoding='utf-8')); [print(x.text()) for x in s]; check_load_settings(s, p.name); print('OK')"
+uv run python -c "from pathlib import Path; from dino_autofocus.engine.backends.mm_real import load_time_settings, check_load_settings, BENCH_DEVICES; p = Path(r'C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg'); s = load_time_settings(p.read_text(encoding='utf-8')); [print(x.text()) for x in s]; check_load_settings(s, p.name, BENCH_DEVICES); print('OK')"
 ```
 
 ### 설치 상태 (T-020)

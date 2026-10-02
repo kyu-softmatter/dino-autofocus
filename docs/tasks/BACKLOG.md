@@ -34,6 +34,8 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 ## Manager to-do on events
 
+- Done (de89198): T-038b sent to 실행11. T-032 stage 2 merged → tell 실행11 to unblock 2c.
+
 - **Quota pause (director, after the 19:20 outage):** active 실행1, 3, 4, 6, 7, 10, 11, 12, 15, 17 + AF 검토,
   검토보조1, 2. Paused: 실행2, 5, 8, 9, 13, 14, 16 (after T-037 commit), 18, 19, 20, 검토보조3, 4, 업무분배보조.
   Resume all when T-009b and T-010 stage 4 merge, then tell the director. No broadcasts.
@@ -49,7 +51,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 - Merge order: T-009b (remote_view mark) and T-010 stage 4 (client rule) before any screen router (T-100..T-106 stage B).
 
-- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag, T-027b's per-lens approach ceiling (37f5c6c), the two is_bench follow-ups (guards: T-027b item 3; runner: 실행15), T-015c (is_bench never raises), T-029c (step-out intent written first) and T-036d (preset check on configured device labels) are all on main. Tell the director when they are.
+- SAFETY: mm-real stays read-only (no motion ops on the stand) until T-027's bench-clearance guard, T-011b's bench check (f70f8d2), T-015b's fail-safe bench flag, T-027b's per-lens approach ceiling (37f5c6c), the two is_bench follow-ups (guards: T-027b item 3; runner: 실행15), T-015c (is_bench never raises), T-029c (step-out intent written first), T-029d (no bench approach until measured) and T-036d (preset check on configured device labels) are all on main. Tell the director when they are.
 
 - On resume of the screen routers: T-106 (실행2) calls `ensure_sample_created(session, store)` on session open (T-027 seam).
 - T-015b merged → one bench rule: 실행1 switches `FocusAxis._simulated` and the guards to `is_bench(info)` (T-027b item 3,
@@ -142,3 +144,12 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   ABP run with theta (e.g. run-20260923-042-small-s2). Put them outside both repos (soft-matter-agents stays
   read-only), e.g. `D:\AutoFocus\sim_samples\<run_id>\trajectory.txt`, and give the WSL source path for
   `DINO_AF_SIM_TRAJECTORY_ROOTS`.
+- User (T-026 stage 2, b2f3952): the Desktop "DINO Autofocus.exe" is the user's old tkinter build. Copy it aside before
+  running `build.ps1 -Force` (the script also keeps it as `.prev.exe`).
+- Microscope PC (T-029d): the bench ascent check reads `info()` and `nosepiece()` on every upward Z step (two core
+  reads per step, uncached on purpose so a lens change is never missed). Measure the per-step latency on the stand
+  before the BENCH_APPROACH flip.
+- T-036 unlock (2026-10-02): every code prerequisite is on main (b1d5a1d). The flip of `BENCH_MOTION` was refused by
+  실행12's own permission check, so it is the user's: approve it in 실행12's window or make the one-line edit. Director
+  recommends holding it until the user is at the microscope PC for runbook step 1. `exec12/T-036-unlock` is parked
+  at ebfff88; no other seat makes the edit.

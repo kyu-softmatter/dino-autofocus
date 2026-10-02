@@ -17,11 +17,12 @@ Steps (F5), each with a `progress` event `step=1..7`; steps 2-6 carry
 1. record XY, Z, objective; switch the lights off (readback)
 2. PFS off -> Z retract to 0 um -> PFS must read Out of Range
 3. step out in +Y by `guards.ESCAPE_DY_UM` (only with Z retracted; `step_out_target`);
-   sample event `objective_stepped_out`
+   sample event `objective_stepped_out`, written before the move (intent first)
 4. rotate, read the label back; write the sample event `objective_changed`
    `{from_key, to_key, label}` to the open experiment session
 5. the operator loads oil / water and presses "Loading done" (`manual_step`)
-6. XY back to step 1's position (Z still retracted); sample event `objective_stepped_back`
+6. XY back to step 1's position (Z still retracted); `objective_stepped_back` once a fresh
+   readback confirms the stage is back
 7. Z from 0 um: one move to 2800 um, then steps of at most the lens's `approach_step_um`, with
    the readback and this operation's clearance check after every step (`FocusAxis.approach`)
 
@@ -56,6 +57,8 @@ from ..guards import (
     GuardError,
     XYAxis,
     XYBox,
+    bench_approach_state,
+    bench_ascent_refusal,
     check_lights,
     limits_for,
     registry_key,
@@ -320,6 +323,10 @@ class ObjectiveChange(Operation):
                 checks.append(_check("step_out", False, "inside the stage Y travel",
                                      p.y_um, str(e)))
         zt = self._approach_target()
+        # T-029d second layer: the approach after the turn climbs 0 -> zt on the target lens
+        why = bench_ascent_refusal(info, target_key, zt)
+        checks.append(_check("bench_approach", why is None, bench_approach_state(), zt,
+                             why or ""))
         cap, cap_why = approach_cap_um(target_key)
         okz = SAMPLE_Z_WINDOW_UM[0] <= zt <= cap
         checks.append(_check("approach_target", okz, [SAMPLE_Z_WINDOW_UM[0], cap], zt,
@@ -385,11 +392,13 @@ class ObjectiveChange(Operation):
                 ctx.set_end_state(state="awaiting_return", return_xy=return_xy,
                                   objective_before=label0, step_out=basis)
                 xy = self._xy_axis(return_xy, (x_t, y_t))
-                read = xy.goto(x_t, y_t)
-                # sample record: the stage is away (read_sample().awaiting_return)
+                # SAFETY (T-029c): the intent goes into the sample record before the move, so a
+                # step-out that fails part-way still reads as away after a restart
+                # (read_sample().awaiting_return). Only a confirmed return closes it.
                 summary["stepped_out"] = self._sample_event(
                     STEPPED_OUT, return_xy=return_xy, step_out_xy=[x_t, y_t],
                     objective=registry_key(label0))
+                read = xy.goto(x_t, y_t)
                 self._progress(3, "stepped out", axis="xy", commanded=[x_t, y_t],
                                readback=list(read), pfs_in_range=b.pfs().in_range,
                                label_read=b.nosepiece(), summary=summary, basis=basis)
@@ -435,6 +444,13 @@ class ObjectiveChange(Operation):
             read = xy.goto(*return_xy)
         else:
             read = (p.x_um, p.y_um)
+        # the return counts only once a fresh readback puts the stage back at return_xy
+        p = b.positions()
+        if (p.x_um is None or p.y_um is None
+                or math.hypot(p.x_um - return_xy[0], p.y_um - return_xy[1]) > XY_TOL_UM):
+            raise GuardError(f"XY reads ({p.x_um}, {p.y_um}) after the return, not "
+                             f"{return_xy} (tolerance {XY_TOL_UM} um); the stage stays away")
+        read = (p.x_um, p.y_um)
         self._progress(6, "returned", axis="xy", commanded=return_xy, readback=list(read),
                        pfs_in_range=b.pfs().in_range, label_read=b.nosepiece(), summary=summary)
         ctx.set_end_state(state="returned")
