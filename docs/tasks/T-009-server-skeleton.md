@@ -188,7 +188,12 @@
    AUTH_OPEN_PATHS. The handler (T-105) stays loopback-only (403 `remote_view` from a remote PC) and returns 409
    once an admin exists.
    SAFETY: this is the only write that works with no login, so the middleware also requires the request's
-   Origin to be the server's own (Origin netloc == Host) on this path, independent of T-009c. Tests: no Origin,
-   a foreign loopback port, and the own origin.
+   Origin to be the server's own on this path, independent of T-009c: scheme, host and port compared exactly
+   with the server's own origin. "Is loopback" is not enough (`origin_refusal` accepts any loopback port). No dev
+   exception until T-009c adds explicit `--dev-origin` values; first-run setup in dev goes to the server's port.
+   Tests: no Origin, a foreign loopback port, localhost vs 127.0.0.1, http vs https, and the own origin.
 2. `tests/server/test_server_login.py`: replace `post("/api/auth/login", json={}) == 404  # T-105` with a check
    that does not break when T-105's router exists (e.g. `!= 401`, the path is open).
+3. `GET /api/auth/me` answers a locked login (`locked_ok=True` in `_http_refusal`), so the lock screen knows whose
+   password to ask for and can tell locked from logged out. No login still gives 401. Every other read stays 423
+   while locked.

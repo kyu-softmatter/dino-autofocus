@@ -229,23 +229,32 @@ export class Client {
   }
 }
 
+type ApiError = components["schemas"]["ApiError"];
+type ValidationError = components["schemas"]["ValidationError"];
+
 /**
- * The reason and code of a refused request. `detail` may be a string (T-009's
- * ApiError) or an object `{code, message}` (T-009b); the header
- * `X-DinoAF-Refusal` also carries the code.
+ * The reason and code of a refused request. The server's refusals are `ApiError`
+ * with `detail: RefusalDetail` = `{code, message}` (T-009b); the header
+ * `X-DinoAF-Refusal` also carries the code. FastAPI's own answers still use a
+ * plain string (404 "Not Found") or a validation list (422), so those are read
+ * too, with no code.
  */
 export async function refusalOf(r: Response): Promise<CommandRefused> {
   let code = r.headers.get("X-DinoAF-Refusal");
   let text = `HTTP ${r.status}`;
   try {
-    const body = (await r.json()) as { detail?: unknown };
-    const d = body.detail;
-    if (typeof d === "string") text = d;
-    else if (d && typeof d === "object") {
-      const o = d as Record<string, unknown>;
-      if (typeof o.code === "string") code = code ?? o.code;
-      const msg = o.message ?? o.detail ?? o.code;
-      if (typeof msg === "string") text = msg;
+    const body = (await r.json()) as Partial<ApiError> | { detail?: string | ValidationError[] };
+    const d: unknown = body.detail;
+    if (typeof d === "string") {
+      text = d;
+    } else if (Array.isArray(d)) {
+      const first = d[0] as Partial<ValidationError> | undefined;
+      if (first && typeof first.msg === "string") text = first.msg;
+    } else if (d && typeof d === "object") {
+      const rd = d as Partial<components["schemas"]["RefusalDetail"]>;
+      if (typeof rd.code === "string") code = code ?? rd.code;
+      if (typeof rd.message === "string") text = rd.message;
+      else if (typeof rd.code === "string") text = rd.code;
     }
   } catch {
     // no JSON body: keep the status line
