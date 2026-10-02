@@ -257,8 +257,8 @@ def test_trajectory_unavailable_reasons(tmp_path: Path, runs: Path) -> None:
     _meta(d, "../escape.npz", "npz")
     with pytest.raises(TrajectoryUnavailable, match="plain name"):
         r.trajectory("run-20260921-001")
-    _meta(d, "trajectory.txt", "txt")
-    (d / "trajectory.txt").write_text("0 0 1 2 0\n", encoding="utf-8")
+    _meta(d, "trajectory.xyz", "xyz")
+    (d / "trajectory.xyz").write_text("1\n\nA 0 0 0\n", encoding="utf-8")
     with pytest.raises(TrajectoryUnavailable, match="no reader"):
         r.trajectory("run-20260921-001")
     assert "no reader" in r.info("run-20260921-001").trajectory_unavailable
