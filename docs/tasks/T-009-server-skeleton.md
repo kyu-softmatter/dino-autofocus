@@ -175,5 +175,9 @@
 - (b) Waits for the director (D14/X3): whether a locked loopback login keeps a viewer socket that counts for D14.
   Options under decision: a count-only socket (lock state only) or the full read-only streams for the same login.
   Do not implement until the decision is recorded here.
-- (c) Restricting loopback origins outside dev (`--dev-origin` or an allow-list): backlog, low priority; the
-  HttpOnly SameSite=Strict cookie already blocks a foreign localhost page.
+- (c) SAFETY (실행7, corrected): SameSite ignores ports, so a page served on another loopback port of the same host
+  carries the `dinoaf_session` cookie and passes today's loopback origin check. If the operator holds control, it
+  can send commands stamped with that grant (hardware moves). Fix: on REST and the WS handshake accept only the
+  server's own origin (Origin netloc == Host) plus dev origins named explicitly (`--dev-origin`, default none; the
+  T-010 Vite proxy sets it). Tests for a foreign port, localhost vs 127.0.0.1, and a listed dev origin.
+- Status: the whole card is held until the director replies (D14 question pending); (a) and (c) do not depend on it.
