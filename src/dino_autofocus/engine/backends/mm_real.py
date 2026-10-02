@@ -12,6 +12,9 @@ only when the backend opens; the piezo DLL only when the piezo is read.
   the load is refused (`UnsafeConfig`, naming every device.property) if the Startup or
   Shutdown preset or a post-init `Property` line sets a motion device; then a private copy of
   exactly the checked bytes is loaded. What loading sets is in `config_record().notes`.
+  Motion devices are the fixed names, the labels the cfg assigns as Core Focus / XYStage /
+  AutoFocus, and this backend's `DeviceNames`; a Core role that differs from `DeviceNames`
+  is refused too (T-036d).
 - **Bench-flagged**: `info().bench` is True, so the guards and the runner require a
   clearance callback for `FocusAxis.approach()` on this backend.
 - **Device names** come from one `DeviceNames` (bench by default). `DEMO_DEVICES` points the
@@ -173,16 +176,42 @@ def load_time_settings(cfg_text: str) -> list[LoadSetting]:
     return out
 
 
-def check_load_settings(settings: list[LoadSetting], name: str) -> None:
-    """Refuse a config that sets any motion device while loading, naming every one."""
+#: Core role properties a cfg sets at load, and the `DeviceNames` field each must match
+CORE_ROLES = {"Focus": "z", "XYStage": "xy", "AutoFocus": "pfs"}
+
+
+def check_load_settings(settings: list[LoadSetting], name: str,
+                        devices: DeviceNames | None = None) -> None:
+    """Refuse a config that sets any motion device while loading, naming every one.
+
+    Motion devices (T-036d: a bench cfg may name its stage otherwise) are
+    `LOAD_CHECK_DEVICES`, the labels the cfg's own Core role lines assign (Core.Focus /
+    XYStage / AutoFocus) and, given `devices`, the labels this backend drives as Z, XY,
+    nosepiece and PFS. With `devices`, a Core role that names another label than the backend
+    drives is refused too: the guards would read one device while the core moves another.
+    """
+    roles = {s.prop: s.value for s in settings
+             if s.device == "Core" and s.prop in CORE_ROLES and s.value}
+    motion = set(LOAD_CHECK_DEVICES) | set(roles.values())
+    if devices is not None:
+        motion |= set(devices.motion_labels())
+    motion.discard("Core")
     bad: dict[str, list[str]] = {}
     for s in settings:
-        if s.device in LOAD_CHECK_DEVICES:
+        if s.device in motion:
             bad.setdefault(s.where, []).append(f"{s.device}.{s.prop}")
-    if bad:
-        detail = "; ".join(f"{', '.join(v)} in {w}" for w, v in bad.items())
-        raise UnsafeConfig(f"{name} would move the stand while loading: {detail}. Remove "
-                           "these from the config; motion goes only through the guards")
+    problems = [f"{', '.join(v)} in {w}" for w, v in bad.items()]
+    if devices is not None:
+        for prop, label in roles.items():
+            field = CORE_ROLES[prop]
+            want = getattr(devices, field)
+            if want != label:
+                problems.append(f"role mismatch: Core.{prop} is {label!r} but this backend "
+                                f"drives {want!r} as {field}")
+    if problems:
+        raise UnsafeConfig(f"{name} would move the stand while loading, or moves a device "
+                           f"the guards do not read: {'; '.join(problems)}. Fix the config "
+                           "(or DeviceNames); motion goes only through the guards")
 
 
 @dataclass(frozen=True)
@@ -196,6 +225,10 @@ class DeviceNames:
     dialamp: str = "DiaLamp"
     aura: str | None = "Aura"
     intermediate_mag: str | None = "IntermediateMagnification"
+
+    def motion_labels(self) -> tuple[str, ...]:
+        """The labels that move the stand: Z, XY, nosepiece and PFS (when present)."""
+        return tuple(d for d in (self.z, self.xy, self.nosepiece, self.pfs) if d)
 
 
 BENCH_DEVICES = DeviceNames()
@@ -257,7 +290,7 @@ class MmRealBackend:
         # copy of exactly the checked bytes, so a file changed in between cannot slip past
         data = self.config.read_bytes()
         settings = load_time_settings(data.decode("utf-8", errors="replace"))
-        check_load_settings(settings, self.config.name)
+        check_load_settings(settings, self.config.name, self.devices)
         try:
             from pymmcore_plus import CMMCorePlus, find_micromanager
         except ImportError as e:

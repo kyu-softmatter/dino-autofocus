@@ -24,6 +24,7 @@ from dino_autofocus.engine.operations.objective_change import (
     step_out_target,
 )
 from dino_autofocus.engine.runner import AllowAll, Registry, Runner, RunnerConfig
+from dino_autofocus.engine.sample import OBJECTIVE_CHANGED, STEPPED_BACK, STEPPED_OUT
 
 T = 10.0
 USER, SESSION = "op@example.test", "20261001_1540_1"
@@ -369,9 +370,37 @@ def test_rotation_writes_objective_changed_to_the_open_session(make):
     sink.wait("confirm_required", op_id)
     r.submit(confirm(op_id))
     fin = sink.wait("finished", op_id)
-    assert session.events == [("objective_changed", {
-        "from_key": "4x", "to_key": "100x-Oil", "label": "6-Plan Apo LmbdD0.13 100x Oil"})]
-    assert fin.data["summary"]["sample_event"]["written"] is True
+    kinds = [k for k, _ in session.events]
+    assert kinds == [STEPPED_OUT, OBJECTIVE_CHANGED, STEPPED_BACK]  # away, rotated, back
+    assert session.events[1][1] == {
+        "from_key": "4x", "to_key": "100x-Oil", "label": "6-Plan Apo LmbdD0.13 100x Oil"}
+    out = session.events[0][1]
+    assert out["return_xy"] == pytest.approx(list(HOLE))
+    assert out["step_out_xy"][1] == pytest.approx(HOLE[1] + 15000.0)
+    s = fin.data["summary"]
+    assert s["sample_event"]["written"] and s["stepped_out"]["written"]
+    assert s["stepped_back"]["written"]
+
+
+def test_abort_away_leaves_the_step_out_open_until_resume_closes_it(make):
+    r, sink, _ = make()
+    session = FakeSession()
+    r.sample_seat = SimpleNamespace(session_for=lambda sid: session)
+    op_id = r.submit(start(target_state=5))
+    sink.wait("confirm_required", op_id)
+    r.submit(Command("abort", op_id=op_id, user_id=USER, session_id=SESSION))
+    sink.wait("aborted", op_id)
+    assert [k for k, _ in session.events] == [STEPPED_OUT, OBJECTIVE_CHANGED]  # still away
+    sink.wait("finished", r.submit(start(resume=True)))
+    assert [k for k, _ in session.events][-1] == STEPPED_BACK
+
+
+def test_dry_change_writes_no_step_events(make):
+    r, sink, _ = make(nosepiece=5, z_um=2989.4)
+    session = FakeSession()
+    r.sample_seat = SimpleNamespace(session_for=lambda sid: session)
+    sink.wait("finished", r.submit(start(target_state=0)))
+    assert [k for k, _ in session.events] == [OBJECTIVE_CHANGED]
 
 
 def test_no_session_logs_and_still_completes(make):
