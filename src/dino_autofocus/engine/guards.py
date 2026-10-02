@@ -51,7 +51,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .backend import GUARD_TOKEN, Backend, BackendInfo, PfsState, Readback
+from .backend import GUARD_TOKEN, Backend, BackendInfo, PfsState, Readback, is_bench
 from .events import Event, EventSink, fan_out, null_sink
 from .records import GRADE_MODEL, Graded, OpRecord
 
@@ -62,9 +62,6 @@ RETRACT_Z_UM, RETURN_Z_UM = 0.0, 2800.0  # change_objective.py
 WD_FRACTION = 0.4
 FREE_WD_UM = {"4x": 20000.0, "100x-Oil": 130.0}  # lens spec; add a lens only once known
 XY_BOX_MARGIN_UM = 1000.0
-# Backends with no real stage. Any other kind (mm-real, or one this file does not know) is
-# a bench: approach() there refuses to run without a clearance check.
-SIMULATED_KINDS = frozenset({"mock", "fake", "replay", "mm-demo"})
 
 # unmeasured provisional (checklist Q20 / Q12); every use is marked in the record
 Z_SAFE_UM = 0.0  # z_safe: full retract, for every lens
@@ -344,16 +341,13 @@ class FocusAxis:
                            k is not None and k == len(pts) - 1 and len(pts) > 1)
 
     def _simulated(self) -> bool:
-        """BackendInfo.bench decides (T-033: True on mm-real). Before that field exists the
-        kind is checked instead, strictly: a kind not in SIMULATED_KINDS is a bench."""
+        """Not the real stand, by the one shared rule `backend.is_bench` (T-015b). A failed
+        info() read is passed on as None, which is_bench counts as the bench."""
         try:
             info = self.b.info()
-        except Exception:  # noqa: BLE001 - an unreadable backend counts as a bench
-            return False
-        bench = getattr(info, "bench", None)
-        if isinstance(bench, bool):
-            return not bench
-        return info.kind in SIMULATED_KINDS
+        except Exception:  # noqa: BLE001 - an unreadable backend counts as the bench
+            info = None
+        return not is_bench(info)
 
     def _check_plan(self, plan: SweepPlan) -> None:
         """A plan is re-checked here, so a hand-built one cannot pass the ceiling."""
@@ -379,7 +373,7 @@ class FocusAxis:
         then steps of at most the objective's `approach_step_um` (a smaller `step_um` may
         be asked for, never a larger one). After every move the readback must match and
         rise, and `clearance(z_read)` must return True, or the approach stops with
-        GuardError. On a bench backend (kind not in SIMULATED_KINDS) `clearance` is
+        GuardError. On the bench (`backend.is_bench`) `clearance` is
         required. Above the target it descends straight there."""
         z = plain(target_um, "approach target")
         if not self.window[0] <= z <= self.window[1]:
