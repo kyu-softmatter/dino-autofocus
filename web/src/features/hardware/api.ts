@@ -1,103 +1,33 @@
 /**
- * Temporary until gen:api covers the hardware router (T-009): hand-written types for
- * `/api/hardware/*` (docs/screens/hardware.md 1) and `/api/permissions` (T-009b), and the
- * reads that use them. Commands, events and `/api/state` already go through the shell's
- * client (`src/app/client.tsx`). When `src/api/schema.ts` has these paths, swap the types
- * below for imports from it; nothing else changes.
+ * The hardware screen's wire types and reads. Router and permission types come from the
+ * generated `src/api/schema.ts` (server/api/hardware.py, T-009b `/api/permissions`); this
+ * file adds only what the schema does not cover: the shape of the engine's `status` summary,
+ * the shared reason texts, the paths and the permission fallback.
  */
 
+import type { components } from "../../api/schema";
 import type { Client } from "../../app/client";
 
-// Shapes follow server/api/hardware.py, which reshapes T-028 `engine.gates` (55d88c2).
+type Schemas = components["schemas"];
 
-export interface DeviceRow {
-  label: string;
-  role?: string | null;
-  type?: string | null;
-  library?: string | null;
-  description?: string | null;
-  present: boolean;
-  /** a read of its state succeeded and was checked; null = not reported */
-  read_back: boolean | null;
-  /** a write was read back correctly; null = not tested yet (ops-spec 5) */
-  write_verified: boolean | null;
-  note?: string | null;
-}
-
-export interface ObjectiveRow {
-  label: string;
-  state?: number | null;
-  magnification?: number | null;
-  registry_key?: string | null;
-  na?: number | null;
-  immersion?: string | null;
-  working_distance_um?: number | null;
-  /** where the working distance came from: the backend or the guards' lens table */
-  wd_source?: string | null;
-  pixel_um?: number | null;
-}
-
-export interface ConfirmedItem {
-  value: string;
-  by?: string;
-  at?: string;
-}
-
-export interface HardwareProfile {
-  detected_at: string;
-  backend_kind: string;
-  host?: string | null;
-  bench?: boolean | null;
-  /** nosepiece label at detection time */
-  objective?: string | null;
-  config?: { path?: string; sha256?: string; changed_during_load?: boolean; startup_preset_applied?: boolean } | null;
-  devices: DeviceRow[];
-  objectives: ObjectiveRow[];
-  camera?: { name?: string | null; sensor?: [number, number] | null; bit_depth?: number | null; ceiling_adu?: number | null; pixel_type?: string | null } | null;
-  piezo?: { port?: string | null; connected?: boolean | null; z_um?: number | null; error?: string | null } | null;
-  human_confirmed: Record<string, ConfirmedItem>;
-  notes?: Record<string, string>;
-  /** section -> why its read failed */
-  errors?: Record<string, string>;
-}
-
-/** The latest profile's diff against the one before (T-028 `ProfileStore.previous`). */
-export interface PreviousProfile {
-  sha256?: string | null;
-  detected_at?: string | null;
-  changed: { key: string; before?: unknown; after?: unknown }[];
-}
-
-export interface HardwareProfileOut {
-  profile: HardwareProfile | null;
-  path: string | null;
-  sha256: string | null;
-  /** null: no previous profile */
-  previous?: PreviousProfile | null;
-  /** the engine could not read its hardware state */
-  error?: string | null;
-}
-
-export interface GateRow {
-  /** the gate key: the op, or `op:value` for a per-argument row, e.g. `light_set:aura` */
-  op: string;
-  enabled: boolean;
-  reasons: string[];
-  requires: {
-    devices: string[];
-    objectives: string[];
-    confirmed: string[];
-    /** profile checks, e.g. camera_bit_depth */
-    checks: string[];
-    /** the argument value this row is for, e.g. {mode: "aura"} */
-    arg: Record<string, string> | null;
-  };
-}
+export type DeviceRow = Schemas["DeviceRow"];
+export type ObjectiveRow = Schemas["ObjectiveRow"];
+export type ConfirmedItem = Schemas["ConfirmedItem"];
+export type HardwareProfile = Schemas["HardwareProfile"];
+export type PreviousProfile = Schemas["PreviousProfile"];
+export type HardwareProfileOut = Schemas["HardwareProfileOut"];
+export type GateRow = Schemas["GateRow"];
+export type StatusResultOut = Schemas["StatusResultOut"];
+export type Permission = Schemas["PermissionOut"];
+export type Permissions = Record<string, Permission>;
 
 /** The gate key for `light_set` in one mode (T-028: one row per mode). */
 export const lightGateKey = (mode: "brightfield" | "aura" | "off") => `light_set:${mode}`;
 
-/** `summary` of the last `finished(status)` (ops-spec 2). */
+/**
+ * `StatusResultOut.summary` is the engine's dict (untyped in the schema): the fields
+ * `status` reports (operations-spec 2).
+ */
 export interface StatusSummary {
   nosepiece_label?: string;
   nosepiece_state?: number;
@@ -106,21 +36,6 @@ export interface StatusSummary {
   pfs_locked?: boolean | string;
   pfs_in_range?: string;
 }
-
-export interface StatusResultOut {
-  op_id: string;
-  t: number;
-  user_id: string | null;
-  summary: StatusSummary;
-}
-
-/** `GET /api/permissions?ops=...` (T-009b, from T-011 `check()`): why a command would be refused. */
-export interface Permission {
-  allowed: boolean;
-  reason: string | null;
-}
-
-export type Permissions = Record<string, Permission>;
 
 /** The commands this screen sends; `lights_off` is a command kind, the rest are `start` ops. */
 export const SCREEN_OPS = ["hardware_scan", "hardware_confirm", "status", "light_set", "lights_off"] as const;

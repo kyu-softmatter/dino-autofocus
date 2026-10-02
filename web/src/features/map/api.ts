@@ -1,152 +1,39 @@
 /**
- * Temporary until map.py lands in the generated types (T-009 / gen:api): the map router's response
- * types (docs/screens/map.md section 2), the shared permissions shape, and the calls to those
- * routes. Engine commands and events go through the shell's client (src/app/client.tsx); this file
- * only adds the map routes, so switching to generated types is a one-file change.
+ * The map router's calls (docs/screens/map.md section 2). Response types are the generated ones
+ * in src/api/schema.ts (gen:api from server/api/map.py); only names and the source values the
+ * router sends are added here. Engine commands and events go through the shell's client.
  */
 
 import type { Client } from "../../app/client";
+import type { components } from "../../api/schema";
 
-export interface Box {
-  x0: number;
-  x1: number;
-  y0: number;
-  y1: number;
-}
+type S = components["schemas"];
 
-export interface BoundaryPoint {
-  x_um: number;
-  y_um: number;
-  t?: number;
-}
+export type Box = S["Box"];
+export type BoundaryPoint = S["BoundaryPoint"];
+export type HoleFit = S["HoleFit"];
+export type Visit = S["Visit"];
+export type MapState = S["MapState"];
+export type ResultSummary = S["ResultSummary"];
+export type Tile = S["Tile"];
+export type MosaicExtent = S["MosaicExtent"];
+export type ResultDetail = S["ResultDetail"];
+export type HistoryEntry = S["HistoryEntry"];
+export type Flag = S["Flag"];
+export type Candidate = S["Candidate"];
+export type FlagIn = S["FlagIn"];
 
-export interface HoleFit {
-  centre_um: [number, number];
-  diameter_mm: number;
-  fit_rms_um: number | null;
-  n_points: number | null;
-  arc_deg: number | null;
-  /** epoch seconds */
-  fitted_at: number | null;
-  /** the engine's closed-loop judgement (T-027 hole_loop); the screen shows it, never computes it */
-  closed_loop?: boolean;
-  loop_why?: string;
-}
-
-export interface Visit {
-  x_um: number;
-  y_um: number;
-  w_um: number;
-  h_um: number;
-  verdict: string | null;
-  source?: string;
-}
-
-export interface MapState {
-  sample_id: string;
-  boundary: BoundaryPoint[];
-  hole: HoleFit | null;
-  expected_diameter_mm: number | null;
-  visits: Visit[];
-  scan_box_um: Box | null;
-  allowed_box_um: Box | null;
-  /** experiment session start, else engine start (epoch seconds) */
-  session_started_at: number | null;
-}
-
+/** `ResultSummary.kind` values (a plain string in the schema) */
 export type ResultKind = "scan_4x" | "sample_map";
-
-export interface ResultSummary {
-  result_id: string;
-  kind: ResultKind;
-  started: number | null;
-  finished: number | null;
-  light: string | null;
-  n_tiles: number;
-  grid_n: number;
-  has_mosaic: boolean;
-  scan_box_um: Box | null;
-  allowed_box_um: Box | null;
-}
-
-export interface Tile {
-  name: string;
-  row: number;
-  col: number;
-  x_um: number;
-  y_um: number;
-  z_focus_um: number | null;
-  focus_note: string;
-  block_z_um: (number | null)[];
-  blocks_per_side: number;
-  dropout_z_um: number[];
-}
-
-export interface MosaicExtent extends Box {
-  um_per_px: number;
-  bin: number;
-}
-
-export interface ResultDetail extends ResultSummary {
-  tiles: Tile[];
-  fov_um: number;
-  um_per_px: number;
-  mosaic: MosaicExtent | null;
-}
-
-/** One step of a flag or candidate from the fold (T-027c): who, when, what. */
-export interface HistoryEntry {
-  kind: string;
-  by: string | null;
-  /** epoch seconds */
-  at: number | null;
-  status?: string | null;
-}
-
-export interface Flag {
-  flag_id: string;
-  name: string;
-  note: string;
-  t: number | null;
-  objective: string | null;
-  x_um: number;
-  y_um: number;
-  /** ZDrive read-back when the flag was set */
-  z_um: number | null;
-  replaces: string | null;
-  retired_at: number | null;
-  retired?: boolean;
-  retired_by?: string | null;
-  history?: HistoryEntry[];
-}
-
+/** `Candidate.source` values (a plain string in the schema) */
 export type CandidateSource = "classical_candidate" | "person_confirmed" | "person_rejected";
-
-export interface Candidate {
-  candidate_id: string;
-  x_um: number;
-  y_um: number;
-  source: CandidateSource;
-  score: number | null;
-  result_id: string | null;
-  decides: string | null;
-  t: number | null;
-  by: string | null;
-  /** when the person confirmed or rejected it (from history) */
-  decided_at?: number | null;
-  history?: HistoryEntry[];
-}
 
 /**
  * One entry of the shared `GET /api/permissions?ops=a,b` (T-009b, backed by T-011's check()):
  * whether the op may be sent now and, if not, why. The screen only shows these reasons; the
  * server and engine enforce them again on every request.
  */
-export interface Permission {
-  allowed: boolean;
-  reason: string | null;
-}
-
+export type Permission = S["PermissionOut"];
 export type Permissions = Record<string, Permission>;
 
 /** The parts of GET /api/state (engine snapshot, T-011) this screen reads. */
@@ -195,7 +82,7 @@ export interface MapRoutes {
   candidates(sampleId: string, includeRejected: boolean): Promise<Candidate[]>;
   /** the one permissions call; a failure disables the controls ("Permission check unavailable") */
   permissions(ops: readonly string[]): Promise<Permissions>;
-  addFlag(sampleId: string, body: { x_um: number; y_um: number; name: string; note: string; replaces?: string }): Promise<string>;
+  addFlag(sampleId: string, body: FlagIn): Promise<string>;
   retireFlag(sampleId: string, flagId: string): Promise<string>;
   decideCandidate(sampleId: string, candidateId: string, decision: "confirm" | "reject"): Promise<string>;
 }

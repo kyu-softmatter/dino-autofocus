@@ -2,11 +2,69 @@
 
 과제로 아직 배정하지 않은 요구, 공유 파일 변경 순서, 현미경 PC 확인 항목을 모은다. 매니저만 쓴다.
 
+## HANDOVER (freeze, 2026-10-02) — read this first
+
+User decision: no new work is assigned. Work already committed or in review finishes (review → merge → push by hash);
+then each seat is archived. Development moves to another platform later; this section is the handover list.
+Everything below "HANDOVER" is the older working backlog and stays for history.
+
+### In flight at the freeze (finishes on its own; check `git branch --no-merged main`)
+
+- Server: T-009g hardware wiring, T-009i real runner at start-up (mock default, separate mock records root,
+  records + committer wired), T-009j replay start-up + op records into the open session. Stacked g → i → j.
+- Web: T-010-9 (401 code, locked = stale, WsLock types, `--dev-origin`), schema regen 3, T-010-12 (0c1f3de, vitest
+  maxWorkers 2 + 15 s timeouts; committed before the freeze).
+- Assistant: T-013c (proposal reject needs confirm's permission).
+- Tests: T-015e (server helpers out of conftest + guard test).
+- Simulation: T-012-6 (`gsd` dependency).
+- Sample map: T-032 stage 2 (sample_map, goto_xy, map record ops, edge_trace writes sample events).
+- Screens: T-105 login, T-106 sessions, T-014c/d prompt box, T-103b / T-100c type follow-ups (only if already
+  committed).
+
+### Carded but not started (unassigned; pick up from the card)
+
+- T-035d import torch only inside torch tests: tests/test_backbone.py and tests/test_live.py (T-035 card).
+- T-106b session.json carries backend kind/bench; T-106c records/librarian_mock.py skips bench:false sessions in the
+  real root (T-106 card).
+- T-026 stage 3 launcher `-Backend mock|mm-demo|replay|mm-real` (mm-real only with `-Bench`) (T-026 card).
+- T-038d runbook step 2c: remove "blocked" once goto_xy (T-032 stage 2) is on main (T-038 card).
+- T-101b (contingent) align features/hardware + server/api/hardware.py if T-028 field names change.
+- T-107 browser M1 walk-through in web/e2e/ reusing T-035's mock day; needs a headless-browser package decision.
+- SECURITY (from T-105 review, 검토보조3): `POST /api/auth/signup` answers 409 `account_exists`, which tells a caller
+  (remote viewers can call signup) that an email is registered; and login/unlock have no attempt limit. Before real
+  logins or remote viewing: a neutral signup answer and a per-account and per-client attempt limit with lockout.
+
+### Blocked on the user
+
+- T-036 unlock: the one-line `BENCH_MOTION = "UNLOCKED"` in engine/backends/mm_real.py was refused by the seat's
+  permission check, so it is the user's (branch exec12/T-036-unlock parked at ebfff88). All eleven code prerequisites
+  are on main (b1d5a1d). Director: do it when the user is at the microscope PC for runbook step 1.
+- Second lock: `guards.BENCH_APPROACH = "UNMEASURED"` (T-029d) stays until the bench measurements below, then its own
+  reviewed flip with the director's confirmation.
+- Microscope PC measurements and checks (see "현미경 PC" items below and docs/microscope-pc-checklist.md):
+  cfg passes `check_load_settings` with BENCH_DEVICES; whether System/Shutdown applies at unload; stage limits and
+  the +Y 15 mm step-out; Q13 (approach step) and Q20 (XY move needing a Z retract); FREE_WD for 10x/20x/40x WI/60x;
+  T-029d per-step read latency.
+- trajectory.txt samples (three layouts) and the WSL source path, for the T-012 txt reader (now "unverified").
+- Copy the old Desktop "DINO Autofocus.exe" aside before `build.ps1 -Force`.
+- Operator name in docs/runs/2026-09-30_* ("kyuchoi"): keep or replace before the repo goes public.
+- M1 check: log in on the dev desktop and run F1–F7 end to end on the mock (after T-009i, T-105, T-106 merge).
+
+### Process notes for whoever continues
+
+- Rules live in docs/sessions.md (branch from a hash, `git merge main`, commit by path, push by hash only by the
+  reviewer, full suites limited to 3 at once with `OPENBLAS/OMP/MKL_NUM_THREADS=1`).
+- This desktop's limit is Windows commit charge, not RAM: about 30 open sessions left 10 GB free; full runs crash
+  with 0xc000070a / 0x8007000e below ~20 GB free. Those codes mean rerun, not a test failure.
+- Safety cards to read before any stand motion: T-036 (lock), T-029d (BENCH_APPROACH), T-027b (per-lens ceiling),
+  T-015b/c (is_bench fail-safe), T-036b/d (preset check), T-029c (step-out intent), T-038 (runbook).
+- Ownership after archiving: guards/sample.py/gates had 실행1/17, runner 실행15; any new owner reads those cards.
+
 ## 공유 파일 변경 순서
 
 | 파일 | 지금 권한 | 다음 | 그다음 |
 |---|---|---|---|
-| `pyproject.toml`, `uv.lock` | T-009 (실행7: fastapi, uvicorn, pydantic, httpx) | T-013 (`anthropic`) | T-012 (`gsd`) |
+| `pyproject.toml`, `uv.lock` | T-012 (실행9: `gsd`), since T-013b (anthropic) merged 2026-10-02 | 다음 요청자 (매니저 경유) | |
 | `web/package.json`, `package-lock.json` | T-010 (실행4). 열려 있는 동안 요청받은 패키지를 이 과제가 넣는다 | 차트 라이브러리 (T-012 그래프) | `three` (3D 뷰어), 그다음 T-014 요청분 |
 
 권한은 앞 과제가 main 에 병합된 뒤 넘긴다.
@@ -34,7 +92,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 ## Manager to-do on events
 
-- Done (de89198): T-038b sent to 실행11. T-032 stage 2 merged → tell 실행11 to unblock 2c.
+- Done (de89198): T-038b sent to 실행11. T-032 stage 2 merged → 실행10 unblocks runbook step 2c (T-038d; 실행11 archived).
 
 - **Quota pause (director, after the 19:20 outage):** active 실행1, 3, 4, 6, 7, 10, 11, 12, 15, 17 + AF 검토,
   검토보조1, 2. Paused: 실행2, 5, 8, 9, 13, 14, 16 (after T-037 commit), 18, 19, 20, 검토보조3, 4, 업무분배보조.
@@ -155,3 +213,7 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   at ebfff88; no other seat makes the edit.
 - Integration (M6, director 2026-10-02): the soft-matter-agents librarian must skip sessions whose session.json has
   `bench: false` (T-106b), as a second guard behind the separate mock records root (T-009i).
+- Seats archived (2026-10-02, user via director): 실행1 (guards, sample.py), 15 (runner), 16, 17 (gates, hardware_scan).
+  Their files keep their cards; new work in those paths goes to an active seat: guards/sample.py and gates → 실행12
+  (bench and lock context), runner.py → 실행7 (server wiring context). 실행3, 11 and 19 archived next; T-101b (only if
+  T-028 field names change) and features/hardware + server/api/hardware.py go to 실행14 (screen manager).

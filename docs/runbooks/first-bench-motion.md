@@ -100,7 +100,8 @@ merges. Its preflight shows that as the `bench_motion` check, and `mm-real`'s ow
 4. In the log:
    - a `motion` event with `how: "retract"` and `sent: true`;
    - a `finished` event whose summary has `commanded_um`, `readback_um`, `verified: true`, `moved`,
-     `from_um`, and `pfs` (enabled before, enabled after, in range).
+     `from_um`, and `pfs` (`enabled_before` and `in_range_before` as found, `enabled` and `in_range`
+     after the move).
 5. If Z already reads 0, the op finishes with no move (`moved: false`) and records the readback.
 
 A read Z off by more than the tolerance fails the op, naming the commanded and read values. So does a
@@ -171,7 +172,7 @@ While `BENCH_APPROACH` reads `"UNMEASURED"`, the guards refuse on the stand:
 - any upward Z move on a lens other than the 4x.
 
 Downward moves and `z_retract` stay allowed. That covers:
-- `objective_change`, both to the 100x and the climb back after a turn;
+- `objective_change`, both to the 100x and the climb back after a turn to any lens but the 4x;
 - `focus_100x`;
 - `scan_4x`'s sweeps.
 

@@ -33,8 +33,10 @@ from .providers import PROVIDERS, Provider, TurnRequest, add_usage, make_provide
 from .records import GRADE_MODEL, RecordLog, model_graded
 from .tools import (
     Allows,
+    ConfirmRefused,
     ProposalBook,
     Sources,
+    Submit,
     ToolSet,
     check_policy,
     required_permission,
@@ -208,14 +210,15 @@ class Assistant:
         *,
         provider: Provider | None = None,
         sources: Sources | None = None,
-        submit: Callable[[dict], str] | None = None,
+        submit: Submit | None = None,
+        propose: Submit | None = None,
         allows: Allows | None = None,
         records: RecordLog | None = None,
     ):
         self.config = config or AssistantConfig()
         self.provider = provider or make_provider(self.config.provider)
         self.tools = ToolSet(sources, policy=self.config.data_policy)
-        self.proposals = ProposalBook(submit, allows=allows)
+        self.proposals = ProposalBook(submit, allows=allows, propose=propose)
         self.records = records or RecordLog(self.config.records_dir)
         self._conversations: dict[str, Conversation] = {}
         self._lock = threading.Lock()
@@ -229,6 +232,16 @@ class Assistant:
             if conversation_id not in self._conversations:
                 self._conversations[conversation_id] = Conversation(conversation_id)
             return self._conversations[conversation_id]
+
+    def open_conversation(self, conversation_id: str | None = None) -> str:
+        """The id to pass to `ask`: a new conversation, or `conversation_id` if it exists
+        (KeyError otherwise, so a client cannot invent ids)."""
+        if conversation_id is not None:
+            with self._lock:
+                if conversation_id not in self._conversations:
+                    raise KeyError(f"no conversation {conversation_id!r}")
+            return conversation_id
+        return self._conversation(None).conversation_id
 
     def conversation(self, conversation_id: str) -> dict:
         with self._lock:
@@ -404,10 +417,14 @@ class Assistant:
             content = json.dumps(
                 {
                     "proposal_id": prop.proposal_id,
-                    "status": "proposed",
+                    "status": prop.status,
                     "summary": prop.summary,
                     "expected_gate": prop.expected_gate,
-                    "note": "Not executed. Waiting for a person to confirm it on screen.",
+                    "note": (
+                        "Not executed. Waiting for a person to confirm it on screen."
+                        if prop.status == "proposed"
+                        else f"Not executed and cannot be confirmed: {prop.note}"
+                    ),
                 },
                 ensure_ascii=False,
             )
@@ -424,6 +441,9 @@ class Assistant:
                     for k, v in prop.command.get("args", {}).items()
                 },
                 expected_gate=prop.expected_gate,
+                status=prop.status,
+                engine_op_id=prop.engine_op_id,
+                note=prop.note,
             )
             call["proposal_id"] = prop.proposal_id
             emit({"type": "proposal", "proposal": prop_dict})
@@ -465,11 +485,14 @@ class Assistant:
         role: str | None = None,
         local: bool = False,
         session_id: str | None = None,
+        submit: Submit | None = None,
     ) -> dict:
         """A person confirmed on screen. `role` is the logged-in user's role and `local`
         whether the request came from the microscope PC (loopback); the command's permission
         is checked with both (D16) before it goes to the engine, which then applies its gates
-        and guards as for any command. A refusal is recorded and leaves the card proposed."""
+        and guards as for any command. A refusal (here: PermissionError; by the engine:
+        ConfirmRefused) is recorded and leaves the card proposed. `submit` replaces the
+        default engine hook for this one call (the route builds it from the request)."""
         try:
             perm = self.proposals.check_permission(proposal_id, role=role, local=local)
         except PermissionError as e:
@@ -487,28 +510,39 @@ class Assistant:
                 reason=str(e),
             )
             raise
-        p = self.proposals.confirm(
-            proposal_id, by=by, role=role, local=local, session_id=session_id
-        )
-        kind = "proposal_failed" if p.status == "failed" else "proposal_confirmed"
+        p = self.proposals.get(proposal_id)
+        base = {
+            "conversation_id": p.conversation_id,
+            "user_id": by,
+            "session_id": session_id or p.session_id,
+            "proposal_id": p.proposal_id,
+            "command": p.command,
+            "engine_op_id": p.engine_op_id,
+            "role": role,
+            "local": local,
+            "permission": perm,
+        }
+        try:
+            p = self.proposals.confirm(
+                proposal_id,
+                by=by,
+                role=role,
+                local=local,
+                session_id=session_id,
+                submit=submit,
+            )
+        except ConfirmRefused as e:
+            self.records.write("proposal_failed", **base, note=str(e))
+            raise
         self.records.write(
-            kind,
-            conversation_id=p.conversation_id,
-            user_id=by,
-            session_id=session_id or p.session_id,
-            proposal_id=p.proposal_id,
-            command=p.command,
-            role=role,
-            local=local,
-            permission=perm,
-            op_id=p.op_id,
-            note=p.note,
-            decided_t=p.decided_t,
+            "proposal_confirmed", **base, op_id=p.op_id, note=p.note, decided_t=p.decided_t
         )
         return p.to_dict()
 
-    def reject(self, proposal_id: str, *, by: str, note: str = "") -> dict:
-        p = self.proposals.reject(proposal_id, by=by, note=note)
+    def reject(
+        self, proposal_id: str, *, by: str, note: str = "", submit: Submit | None = None
+    ) -> dict:
+        p = self.proposals.reject(proposal_id, by=by, note=note, submit=submit)
         self.records.write(
             "proposal_rejected",
             conversation_id=p.conversation_id,

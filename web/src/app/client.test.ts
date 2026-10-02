@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fakeTransport } from "../test/fakes";
-import { Client, CommandRefused, EventStream, isLoopbackHost, ReadOnlyStore } from "./client";
+import { Client, CommandRefused, EventStream, isLoopbackHost, ReadOnlyStore, type Transport } from "./client";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -154,6 +154,81 @@ describe("post", () => {
       code: null,
       detail: "Input should be 'start' or 'abort'",
     });
+    expect(client.readOnly.get().readOnly).toBe(false);
+  });
+});
+
+describe("postStream", () => {
+  /** A transport whose one route answers with a given Response (a stream, or an error). */
+  function streamTransport(answer: () => Response): { transport: Transport; calls: RequestInit[] } {
+    const calls: RequestInit[] = [];
+    return {
+      calls,
+      transport: {
+        fetch: async (_path, init) => {
+          calls.push(init ?? {});
+          return answer();
+        },
+        openSocket: () => {
+          throw new Error("no sockets in this test");
+        },
+      },
+    };
+  }
+
+  function ndjson(lines: unknown[]): Response {
+    const enc = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        for (const l of lines) c.enqueue(enc.encode(`${JSON.stringify(l)}\n`));
+        c.close();
+      },
+    });
+    return new Response(stream, { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
+  }
+
+  const refusal = (status: number, code: string, message: string) => () =>
+    new Response(JSON.stringify({ detail: { code, message } }), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  it("returns the raw streamed body, unread, after a JSON POST asking for NDJSON", async () => {
+    const lines = [{ type: "text", text: "Hel" }, { type: "text", text: "lo" }, { type: "done", tokens: 12 }];
+    const { transport, calls } = streamTransport(() => ndjson(lines));
+    const r = await new Client(transport, "127.0.0.1").postStream("/api/assistant/ask", { q: "hi" });
+    expect(r.bodyUsed).toBe(false);
+    expect(calls[0].method).toBe("POST");
+    expect(JSON.parse(String(calls[0].body))).toEqual({ q: "hi" });
+    expect(new Headers(calls[0].headers).get("Accept")).toBe("application/x-ndjson");
+    const text = await r.text();
+    expect(text.trim().split("\n").map((l) => JSON.parse(l))).toEqual(lines);
+  });
+
+  it.each([
+    [401, "login_required", "log in first"],
+    [423, "locked", "the login is locked"],
+  ])("re-reads the login on %i and throws, without touching read-only", async (status, code, message) => {
+    const { transport } = streamTransport(refusal(status, code, message));
+    const client = new Client(transport, "127.0.0.1");
+    const auth = vi.fn();
+    client.onAuthFailure(auth);
+    await expect(client.postStream("/api/assistant/ask", {})).rejects.toMatchObject({ status, code, detail: message });
+    expect(auth).toHaveBeenCalledWith(status);
+    expect(client.readOnly.get().readOnly).toBe(false);
+  });
+
+  it("turns the app read-only on a 403 marked remote_view", async () => {
+    const { transport } = streamTransport(refusal(403, "remote_view", "remote viewers may only read"));
+    const client = new Client(transport, "127.0.0.1");
+    await expect(client.postStream("/api/assistant/ask", {})).rejects.toBeInstanceOf(CommandRefused);
+    expect(client.readOnly.get()).toEqual({ readOnly: true, why: "remote viewers may only read" });
+  });
+
+  it("returns any other 403 to the caller and keeps the app writable", async () => {
+    const { transport } = streamTransport(refusal(403, "assistant_off", "the assistant is turned off"));
+    const client = new Client(transport, "127.0.0.1");
+    await expect(client.postStream("/api/assistant/ask", {})).rejects.toMatchObject({ code: "assistant_off" });
     expect(client.readOnly.get().readOnly).toBe(false);
   });
 });

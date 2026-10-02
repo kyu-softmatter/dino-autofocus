@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 import { useClient } from "../client";
-import { type AssistantApi, type Permission, transportAssistantApi } from "./api";
+import { type AssistantApi, type Permission, clientAssistantApi } from "./api";
 
 /** Tests (and the fake mode before the router) put an api here; the app uses the shell's client. */
 export const AssistantApiContext = createContext<AssistantApi | null>(null);
@@ -9,7 +9,7 @@ export const AssistantApiContext = createContext<AssistantApi | null>(null);
 export function useAssistantApi(): AssistantApi {
   const given = useContext(AssistantApiContext);
   const client = useClient();
-  return useMemo(() => given ?? transportAssistantApi(client.transport), [given, client]);
+  return useMemo(() => given ?? clientAssistantApi(client), [given, client]);
 }
 
 // shared wording for pre-click permission state (ui-spec 7.0, T-009b /api/permissions)

@@ -86,7 +86,7 @@ interface PendingConfirm {
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
-const fmt = (v: number | null, d = 0) => (v === null ? "—" : v.toFixed(d));
+const fmt = (v: number | null | undefined, d = 0) => (v == null ? "—" : v.toFixed(d));
 
 function why(e: unknown): string {
   if (e instanceof CommandRefused) return e.detail;
@@ -958,7 +958,7 @@ function FlagsPanel({
             {isRetired(f) && (
               <span className="map-muted" data-testid={`retired-${f.flag_id}`}>
                 {" "}· retired{f.retired_by ? ` by ${f.retired_by}` : ""}
-                {f.retired_at !== null ? ` at ${clock(f.retired_at)}` : ""}
+                {f.retired_at != null ? ` at ${clock(f.retired_at)}` : ""}
               </span>
             )}
             {!isRetired(f) && (
@@ -1015,7 +1015,7 @@ function FlagsPanel({
   );
 }
 
-const SOURCE_LABEL: Record<Candidate["source"], string> = {
+const SOURCE_LABEL: Record<string, string> = {
   classical_candidate: "candidate (computed)",
   person_confirmed: "confirmed",
   person_rejected: "rejected",
@@ -1049,7 +1049,7 @@ function CandidatesPanel({
               <button className="map-link" onClick={() => onSelect(selected === c.candidate_id ? null : c.candidate_id)}>
                 {c.candidate_id}
               </button>{" "}
-              {SOURCE_LABEL[c.source]}
+              {SOURCE_LABEL[c.source] ?? c.source}
               {c.source !== "classical_candidate" && c.by ? ` by ${c.by}` : ""}
               {c.source !== "classical_candidate" && c.decided_at != null ? ` at ${clock(c.decided_at)}` : ""}
               {" "}· {c.x_um.toFixed(1)}, {c.y_um.toFixed(1)}

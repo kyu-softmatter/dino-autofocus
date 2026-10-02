@@ -44,3 +44,8 @@ the cards that enforce each rule (T-027b, T-029c, T-036b/d), and say "unmeasured
 - "the climb back after a turn" → "the climb back after a turn to any lens but the 4x".
 - Remove the note that `pfs.enabled_before` always records False once T-039b's fix is on main.
 - Fold in the 2c unblock if T-032 stage 2 has merged by then.
+
+## T-038d (AF 실행10, after T-032 stage 2 merges; review AF 검토보조1) — unblock step 2c
+
+- 실행11 is archived. When `goto_xy` (T-032 stage 2) is on main, remove the "blocked until T-032 stage 2" note from
+  step 2c of `docs/runbooks/first-bench-motion.md`, and name the op and its readback as it actually behaves. Docs only.

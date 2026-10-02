@@ -2,24 +2,16 @@
 the names re-exported below keep in-flight branches that still import them by the old
 module name working for one transition.
 
-Memory (T-035b): numpy and scipy each bring an OpenBLAS that commits buffers for every CPU
-thread on import, about 500 MiB each on this 16-thread desktop, which the whole e2e run then
-carries. The mock renders with numpy and never needs threaded BLAS, so one thread is asked
-for before anything imports numpy. This only takes effect when tests/e2e is collected first
-(alone, or at the start of a run); a process that imported numpy earlier keeps its threads.
+Memory: the one-BLAS-thread setting of T-035b moved to tests/conftest.py (T-035c), which
+pytest loads first for every test directory.
 """
 
 from __future__ import annotations
 
-import os
+from collections.abc import Iterator
 
-for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
-    os.environ.setdefault(_var, "1")
-
-from collections.abc import Iterator  # noqa: E402 - after the thread limit above
-
-import pytest  # noqa: E402
-from e2e_helpers import (  # noqa: E402, F401 - re-export for one transition (T-015d)
+import pytest
+from e2e_helpers import (  # noqa: F401 - re-export for one transition (T-015d)
     ENDS,
     OFF,
     OPERATOR,
@@ -36,10 +28,10 @@ from e2e_helpers import (  # noqa: E402, F401 - re-export for one transition (T-
     stand_ins,
 )
 
-from dino_autofocus.auth import config as auth_config  # noqa: E402
-from dino_autofocus.auth import passwords  # noqa: E402
-from dino_autofocus.records import session as session_mod  # noqa: E402
-from dino_autofocus.records.codeversion import CodeVersion  # noqa: E402
+from dino_autofocus.auth import config as auth_config
+from dino_autofocus.auth import passwords
+from dino_autofocus.records import session as session_mod
+from dino_autofocus.records.codeversion import CodeVersion
 
 
 @pytest.fixture(autouse=True, scope="session")

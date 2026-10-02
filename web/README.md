@@ -109,6 +109,7 @@ their own sockets:
 | `useClient().get(path)` | `GET` JSON from the server |
 | `useClient().command(cmd)` | engine commands: `POST /api/commands` (types from `src/api/schema.ts`), returns the `op_id` |
 | `useClient().post(path, body?)` | an area's own routes (console submit, map writes, sessions, sample "Open folder", auth). Returns the JSON reply, `null` for 204. Same 403 / 401 / 423 handling as `command` |
+| `useClient().postStream(path, body?)` | a POST whose reply streams (NDJSON, e.g. the prompt box). Same 401 / 423 / 403 rules as `post`, applied before the body is read; returns the raw `Response` with its body unread |
 | `useEngineEvents(handler, kinds?)` | engine events from the shared `/ws/events` socket. Pass a stable `handler` (`useCallback`) |
 | `useEventsConnected()` | whether that socket is open. Re-read your state when it turns true again: events in a gap are lost |
 | `useClient().events.onLock(fn)` | `{"type": "lock", "locked"}` messages on the same socket (T-009c). No events arrive while locked; the login gate re-reads `/me`, and `useEngineStatus` re-reads `/api/state` when `useAuth().resumed` changes after an unlock |

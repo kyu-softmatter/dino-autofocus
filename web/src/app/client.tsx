@@ -226,9 +226,29 @@ export class Client {
    * null for an empty one (204). Engine commands go through `command`, not here.
    */
   async post<T = unknown>(path: string, body?: unknown): Promise<T | null> {
+    const r = await this.send(path, body, "application/json");
+    if (r.status === 204) return null;
+    const text = await r.text();
+    return text === "" ? null : (JSON.parse(text) as T);
+  }
+
+  /**
+   * POST JSON and get the raw Response back for a streamed reply (NDJSON: one JSON
+   * object per line), e.g. the prompt box (T-014b). The same rules as `post` run
+   * before the body is touched: a 401 / 423 re-reads the login, a 403 marked
+   * `remote_view` turns the app read-only, and any refusal is thrown as
+   * CommandRefused. On success the body is unread; the caller reads
+   * `response.body` and cancels it when done.
+   */
+  async postStream(path: string, body?: unknown): Promise<Response> {
+    return this.send(path, body, "application/x-ndjson");
+  }
+
+  /** The one POST path: request, then the auth and refusal rules shared by post / postStream. */
+  private async send(path: string, body: unknown, accept: string): Promise<Response> {
     const r = await this.transport.fetch(path, {
       method: "POST",
-      headers: body === undefined ? { Accept: "application/json" } : { "Content-Type": "application/json", Accept: "application/json" },
+      headers: body === undefined ? { Accept: accept } : { "Content-Type": "application/json", Accept: accept },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     this.check(r);
@@ -237,9 +257,7 @@ export class Client {
       if (refused.status === 403 && refused.code === REMOTE_VIEW) this.readOnly.refuse(refused.detail);
       throw refused;
     }
-    if (r.status === 204) return null;
-    const text = await r.text();
-    return text === "" ? null : (JSON.parse(text) as T);
+    return r;
   }
 
   /** POST /api/commands (engine commands), with the rules of `post`. */
