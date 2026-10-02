@@ -49,7 +49,10 @@ Submit is refused in this order; the first reason is the one shown (ui-spec 7.0 
 Before anyone clicks, the screen asks the shared `GET /api/permissions?ops=submit_question` (T-009b, backed
 by T-011's check and T-018's `SUBMIT_QUESTION` plus loopback) and shows its `reason` as written. The console
 router computes no role, control, session or remote rule itself; it adds only its own rule, the read-only
-store, through `GET /api/console/store`. The screen shows the permission reason first, then the store's.
+store, through `GET /api/console/store`. Reason order on screen: the shell's read-only flag (`useReadOnly`,
+`"Read-only: remote view"`), then the permission reason (`"Checking permissions…"` while loading,
+`"Permission check unavailable"` on error or a missing op), then the store's. Reads go through the shell's
+client (`useClient().get`); the screen re-reads when the event socket reconnects after a drop.
 
 | Check | Where | Status on submit | Screen text |
 |---|---|---|---|
@@ -99,5 +102,5 @@ no card bodies and no images (D7).
 7. ~~T-014~~: resolved by the shell's `useScreenContext` (T-010); nothing waits on T-014.
 8. **T-008 / T-025, store**: ui-spec 7.1 list columns that the summaries do not carry: `purpose`, `intent`,
    `observable.name` of the latest goal (`QuestionSummary`), and `approval.kind` of the log (`RunSummary`).
-   Request them as optional summary fields. Until then the lists show the summary fields only and the
-   detail shows the rest.
+   Taken into T-025 as `purpose`, `intent`, `observable_name`, `approval_kind`; the lists show them as soon
+   as the store sends them ("—" until then).

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { AGENTS, type Card, type QuestionDetail, type QuestionSummary, useConsoleApi } from "./api";
+import { useClient } from "../../app/client";
+import { AGENTS, type Card, PATHS, type QuestionDetail, type QuestionSummary } from "./api";
 import { asArray, Fields, isRecord, Json, Loaded, shortTime, show, useLoad, versionLabel } from "./ui";
 
 // --- list -----------------------------------------------------------------------------------
@@ -46,8 +47,8 @@ export function QuestionList({ questions, onOpen }: { questions: QuestionSummary
       <table className="console-table">
         <thead>
           <tr>
-            <th>qid</th><th>Agent</th><th>Status</th><th>Title</th><th>Created</th><th>Updated</th>
-            <th>Latest</th><th>Source</th>
+            <th>qid</th><th>Agent</th><th>Status</th><th>Title</th><th>Purpose</th><th>Intent</th>
+            <th>Observable</th><th>Created</th><th>Updated</th><th>Latest</th><th>Source</th>
           </tr>
         </thead>
         <tbody>
@@ -57,6 +58,9 @@ export function QuestionList({ questions, onOpen }: { questions: QuestionSummary
               <td>{q.agent}</td>
               <td>{q.status ?? "—"}</td>
               <td>{q.title}</td>
+              <td>{q.purpose ?? "—"}</td>
+              <td>{q.intent ?? "—"}</td>
+              <td>{q.observable_name ?? "—"}</td>
               <td>{shortTime(q.created_at)}</td>
               <td>{shortTime(q.updated_at)}</td>
               <td>{versionLabel(q.latest_version)}</td>
@@ -91,14 +95,14 @@ export function QuestionDetailView({
   refreshKey: number;
   onSelect: (sel: QuestionSelection) => void;
 }) {
-  const api = useConsoleApi();
+  const client = useClient();
   const [version, setVersion] = useState<number | undefined>(undefined);
   const [compare, setCompare] = useState<number | undefined>(undefined);
   const [tab, setTab] = useState<string | undefined>(undefined);
-  const state = useLoad(() => api.getQuestion(qid, version), [api, qid, version, refreshKey]);
+  const state = useLoad(() => client.get<QuestionDetail>(PATHS.question(qid, version)), [client, qid, version, refreshKey]);
   const other = useLoad(
-    () => (compare === undefined ? Promise.resolve(undefined) : api.getQuestion(qid, compare)),
-    [api, qid, compare, refreshKey],
+    () => (compare === undefined ? Promise.resolve(undefined) : client.get<QuestionDetail>(PATHS.question(qid, compare))),
+    [client, qid, compare, refreshKey],
   );
 
   const detail = state.data;

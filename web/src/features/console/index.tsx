@@ -14,11 +14,23 @@
  * Data is read when the area opens and on "Refresh"; nothing polls.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useClient, useEventsConnected, useReadOnly } from "../../app/client";
 import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
-import { AGENTS, type Agent, SUBMIT_OP, useConsoleApi } from "./api";
+import {
+  AGENTS,
+  type Agent,
+  fetchPermissions,
+  type InboxThread,
+  PATHS,
+  type QuestionSummary,
+  READ_ONLY_REMOTE,
+  type RunSummary,
+  type StoreInfo,
+  SUBMIT_OP,
+} from "./api";
 import "./console.css";
 import { Inbox } from "./inbox";
 import { QuestionDetailView, QuestionList, type QuestionSelection } from "./questions";
@@ -61,18 +73,32 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function ConsoleScreen() {
-  const api = useConsoleApi();
+  const client = useClient();
+  const readOnly = useReadOnly();
+  const connected = useEventsConnected();
   const [rest, setRest] = useAreaPath();
   const view = parseRest(rest);
   const [refreshKey, setRefreshKey] = useState(0);
   const [sel, setSel] = useState<QuestionSelection | undefined>(undefined);
   const onSelect = useCallback((s: QuestionSelection) => setSel(s), []);
 
-  const storeInfo = useLoad(() => api.storeInfo(), [api, refreshKey]);
-  const perms = useLoad(() => api.permissions([SUBMIT_OP]), [api, refreshKey]);
-  const questions = useLoad(() => api.listQuestions(), [api, refreshKey]);
-  const runs = useLoad(() => api.listRuns(), [api, refreshKey]);
-  const inbox = useLoad(() => api.listInbox(), [api, refreshKey]);
+  // re-read when the event socket comes back after a drop (the server may have restarted); not a poll
+  const link = useRef({ open: connected, dropped: false });
+  useEffect(() => {
+    const s = link.current;
+    if (!connected && s.open) s.dropped = true;
+    if (connected && s.dropped) {
+      s.dropped = false;
+      setRefreshKey((k) => k + 1);
+    }
+    s.open = connected;
+  }, [connected]);
+
+  const storeInfo = useLoad(() => client.get<StoreInfo>(PATHS.store), [client, refreshKey]);
+  const perms = useLoad(() => fetchPermissions(client, [SUBMIT_OP]), [client, refreshKey]);
+  const questions = useLoad(() => client.get<QuestionSummary[]>(PATHS.questions()), [client, refreshKey]);
+  const runs = useLoad(() => client.get<RunSummary[]>(PATHS.runs()), [client, refreshKey]);
+  const inbox = useLoad(() => client.get<InboxThread[]>(PATHS.inbox), [client, refreshKey]);
 
   // prompt context (X1): short ids only, no card bodies (D7)
   const qid = view.qid;
@@ -105,6 +131,9 @@ export default function ConsoleScreen() {
             Store: {store.store}{store.writable ? "" : " (read-only)"}
           </span>
         )}
+        {readOnly.readOnly && (
+          <span className="console-tag" title={readOnly.why ?? undefined}>{READ_ONLY_REMOTE}</span>
+        )}
         <button onClick={() => setRefreshKey((k) => k + 1)}>Refresh</button>
       </div>
 
@@ -134,7 +163,7 @@ export default function ConsoleScreen() {
       )}
       {view.tab === "inbox" && <Loaded state={inbox}>{(ts) => <Inbox threads={ts} />}</Loaded>}
       {view.tab === "ask" && (
-        <SubmitForm reason={submitReason(perms, storeInfo)} onSubmitted={() => setRefreshKey((k) => k + 1)} />
+        <SubmitForm reason={submitReason(readOnly, perms, storeInfo)} onSubmitted={() => setRefreshKey((k) => k + 1)} />
       )}
     </div>
   );

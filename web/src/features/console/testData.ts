@@ -1,6 +1,87 @@
-/** Fixtures for the console tests, shaped like the T-008 mock store's records. */
+/**
+ * Fixtures for the console tests, shaped like the T-008 mock store's records, and the server
+ * routes that answer from them on the shell's `fakeTransport` (no network).
+ */
 
-import type { Card, FakeData, QuestionDetail, QuestionSummary, RunDetail, StoreInfo } from "./api";
+import type { Route } from "../../test/fakes";
+import {
+  type Card,
+  type InboxThread,
+  PATHS,
+  type Permissions,
+  type QuestionDetail,
+  type QuestionSummary,
+  READ_ONLY_STORE_REASON,
+  type RunDetail,
+  type StoreInfo,
+  SUBMIT_OP,
+  type SubmitIn,
+} from "./api";
+
+export interface FakeData {
+  store: StoreInfo;
+  /** the shared permission answer; null makes `/api/permissions` fail */
+  permissions: Permissions | null;
+  /** every version of every question, one QuestionDetail each */
+  questions: QuestionDetail[];
+  runs: RunDetail[];
+  inbox: InboxThread[];
+}
+
+/**
+ * Routes for `fakeTransport`, answering like the console router would (docs/screens/console.md).
+ * The POST follows the server's order: permission 403, then read-only store 409.
+ */
+export function consoleRoutes(data: FakeData): { routes: Record<string, Route>; submitted: SubmitIn[] } {
+  const questions = [...data.questions];
+  const submitted: SubmitIn[] = [];
+  const ok = (body: unknown) => ({ status: 200, body });
+  const latest = (qid: string) => {
+    const vs = questions.filter((d) => d.summary.qid === qid);
+    return vs.find((d) => d.version === vs[0].summary.latest_version) ?? vs[0];
+  };
+  const routes: Record<string, Route> = {
+    [PATHS.store]: () => ok(data.store),
+    [PATHS.permissions([SUBMIT_OP])]: () =>
+      data.permissions === null ? { status: 502, body: { detail: "Bad Gateway" } } : ok(data.permissions),
+    [PATHS.questions()]: () => {
+      const qids = [...new Set(questions.map((d) => d.summary.qid))].sort().reverse();
+      return ok(qids.map((q) => latest(q).summary));
+    },
+    [PATHS.runs()]: () => ok(data.runs.map((r) => r.summary)),
+    [PATHS.inbox]: () => ok(data.inbox),
+  };
+  for (const d of data.questions) {
+    routes[PATHS.question(d.summary.qid, d.version)] = () => ok(d);
+    routes[PATHS.question(d.summary.qid)] = () => ok(latest(d.summary.qid));
+  }
+  for (const r of data.runs) routes[PATHS.run(r.summary.agent, r.summary.run_id)] = () => ok(r);
+
+  const list = routes[PATHS.questions()];
+  routes[PATHS.questions()] = (init) => {
+    if (init?.method !== "POST") return list(init);
+    const perm = data.permissions?.[SUBMIT_OP];
+    if (perm === undefined || !perm.allowed) return { status: 403, body: { detail: perm?.reason ?? "refused" } };
+    if (!data.store.writable) return { status: 409, body: { detail: READ_ONLY_STORE_REASON } };
+    const body = JSON.parse(String(init.body)) as SubmitIn;
+    submitted.push(body);
+    const qid = `${body.target === "microscope" ? "mic" : "sim"}-20261001-${900 + submitted.length}`;
+    const card: Card = {
+      name: "goal.json", kind: "goal", version: 1, status: "DRAFT", created_at: "2026-10-01T00:00:00Z",
+      data: { card: "goal", qid, status: "DRAFT", question: body.text, origin: "dino-autofocus mock" },
+    };
+    const s: QuestionSummary = {
+      qid, agent: body.target, title: body.text, status: "DRAFT", created_at: card.created_at,
+      updated_at: card.created_at, latest_version: 1, versions: [1], source: "mock-submitted",
+    };
+    questions.push({
+      summary: s, version: 1, goal: card, axes: [], plan: null, synthesis: null, refusals: [], results: [],
+      others: [], documents: [], files: [],
+    });
+    return { status: 201, body: s };
+  };
+  return { routes, submitted };
+}
 
 export const MOCK_STORE: StoreInfo = { store: "mock", writable: true };
 export const READ_ONLY_STORE: StoreInfo = { store: "soft-matter-agents", writable: false };
@@ -30,7 +111,7 @@ const SIM = summary({
 });
 const MIC = summary({
   qid: "mic-20260925-001", agent: "microscope", title: "tracer diffusivity", status: "VALIDATED",
-  created_at: "2026-09-25T09:00:00Z",
+  created_at: "2026-09-25T09:00:00Z", purpose: "verify", intent: "explore", observable_name: "tracer_diffusivity",
 });
 
 const NUMBERS = [
@@ -73,7 +154,7 @@ export const FAKE_DATA: FakeData = {
       summary: {
         run_id: "run-20260924-001-smoke-g2k2", agent: "simulation", qid: "sim-20260923-001", plan_id: "plan-x",
         status: "complete", created_at: "2026-09-24T20:00:00Z", finished_at: "2026-09-24T20:10:00Z",
-        backend: "hoomd", source: "mock",
+        backend: "hoomd", source: "mock", approval_kind: "smoke_auto",
       },
       records: {
         "config.json": { seed: 7, parameters_si: { dt: 0.001 } },

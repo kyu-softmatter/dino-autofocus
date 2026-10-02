@@ -1,41 +1,46 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { Client, ClientProvider, type ReadOnlyState } from "../../app/client";
 import { ScreenContextProvider, useCurrentScreenContext } from "../../app/screenContext";
-import { ConsoleApiContext, type FakeData, fakeConsoleApi, READ_ONLY_REASON } from "./api";
+import { fakeTransport } from "../../test/fakes";
+import { CHECKING_PERMISSIONS, PERMISSION_CHECK_UNAVAILABLE, READ_ONLY_REMOTE, READ_ONLY_STORE_REASON } from "./api";
 import ConsoleScreen, { parseRest } from "./index";
 import { changedKeys } from "./questions";
-import { PERMISSION_CHECKING, PERMISSION_UNAVAILABLE, submitReason } from "./submit";
-import { FAKE_DATA, MOCK_STORE, READ_ONLY_STORE } from "./testData";
+import { submitReason } from "./submit";
+import { consoleRoutes, FAKE_DATA, type FakeData, MOCK_STORE, READ_ONLY_STORE } from "./testData";
 
 function ContextProbe() {
   return <output data-testid="ctx">{JSON.stringify(useCurrentScreenContext())}</output>;
 }
 
-function renderConsole(data: FakeData = FAKE_DATA, hash = "#/console") {
+// stop every client's event stream so no reconnect timer outlives its test
+const clients: Client[] = [];
+afterEach(() => {
+  clients.splice(0).forEach((c) => c.events.stop());
+});
+
+function renderConsole(data: FakeData = FAKE_DATA, hash = "#/console", hostname = "127.0.0.1") {
   window.location.hash = hash;
-  const api = fakeConsoleApi(data);
-  render(
-    <ConsoleApiContext.Provider value={api}>
+  const { routes, submitted } = consoleRoutes(data);
+  const fake = fakeTransport(routes);
+  const client = new Client(fake.transport, hostname);
+  clients.push(client);
+  const view = render(
+    <ClientProvider client={client}>
       <ScreenContextProvider area="console">
         <ConsoleScreen />
         <ContextProbe />
       </ScreenContextProvider>
-    </ConsoleApiContext.Provider>,
+    </ClientProvider>,
   );
-  return api;
+  const gets = (path: string) => fake.calls.filter((c) => c.path === path && c.init?.method !== "POST").length;
+  return { ...fake, submitted, gets, view };
 }
 
 const ctx = () => JSON.parse(screen.getByTestId("ctx").textContent ?? "{}");
-
-beforeEach(() => {
-  // the console never reaches the network in tests: everything goes through the fake
-  vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("network used in a test"))));
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+const submitButton = () => screen.getByRole("button", { name: "Submit question" }) as HTMLButtonElement;
+const LOCAL: ReadOnlyState = { readOnly: false, why: null };
 
 describe("parseRest", () => {
   it("reads the documented forms and falls back to the question list", () => {
@@ -49,11 +54,12 @@ describe("parseRest", () => {
 });
 
 describe("question list", () => {
-  it("filters by agent, status and date", async () => {
+  it("filters by agent, status and date, and shows the summary fields", async () => {
     renderConsole();
     const list = await screen.findByRole("region", { name: "Questions" });
     expect(within(list).getByText("sim-20260923-001")).toBeTruthy();
-    expect(within(list).getByText("mic-20260925-001")).toBeTruthy();
+    expect(within(list).getByText("tracer_diffusivity")).toBeTruthy();
+    expect(within(list).getByText("verify")).toBeTruthy();
 
     fireEvent.change(within(list).getByLabelText("Agent"), { target: { value: "simulation" } });
     expect(within(list).queryByText("mic-20260925-001")).toBeNull();
@@ -70,12 +76,21 @@ describe("question list", () => {
     expect(within(list).getByText("mic-20260925-001")).toBeTruthy();
   });
 
-  it("reads once on open and again only on Refresh", async () => {
-    const api = renderConsole();
+  it("reads once on open, again on Refresh and after the event socket reconnects; no polling", async () => {
+    const t = renderConsole();
     await screen.findByRole("region", { name: "Questions" });
-    expect(api.calls.filter((c) => c === "listQuestions")).toHaveLength(1);
+    expect(t.gets("/api/console/questions")).toBe(1);
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(api.calls.filter((c) => c === "listQuestions")).toHaveLength(2));
+    await waitFor(() => expect(t.gets("/api/console/questions")).toBe(2));
+
+    act(() => t.sockets[0].open());
+    act(() => t.sockets[0].event("position", { x_um: 1 }));
+    expect(t.gets("/api/console/questions")).toBe(2); // first connect and events: no re-read
+
+    act(() => t.sockets[0].close());
+    await waitFor(() => expect(t.sockets).toHaveLength(2), { timeout: 3000 }); // the shell's backoff
+    act(() => t.sockets[1].open());
+    await waitFor(() => expect(t.gets("/api/console/questions")).toBe(3));
   });
 });
 
@@ -83,24 +98,25 @@ describe("question detail", () => {
   it("shows card tabs of the latest version and switches between them", async () => {
     renderConsole(FAKE_DATA, "#/console/questions/sim-20260923-001");
     const tabs = await screen.findByRole("tablist", { name: "Cards" });
-    const names = within(tabs).getAllByRole("tab").map((t) => t.textContent);
-    expect(names).toEqual(["goal", "axis a1", "axis a7"]);
+    expect(within(tabs).getAllByRole("tab").map((t) => t.textContent)).toEqual(["goal", "axis a1", "axis a7"]);
     expect(screen.getByRole("article", { name: "Card v5_goal.json" })).toBeTruthy();
 
     fireEvent.click(within(tabs).getByRole("tab", { name: "axis a7" }));
     const card = screen.getByRole("article", { name: "Card v5_axis_bd_pairwise_a7.json" });
     expect(within(card).getByText("infeasible")).toBeTruthy();
-    await waitFor(() => expect(ctx()).toMatchObject({ area: "console", qid: "sim-20260923-001", version: 5, card_kind: "axis" }));
+    await waitFor(() =>
+      expect(ctx()).toMatchObject({ area: "console", qid: "sim-20260923-001", version: 5, card_kind: "axis" }),
+    );
   });
 
   it("lists every version the store returns, past v3", async () => {
-    const api = renderConsole(FAKE_DATA, "#/console/questions/sim-20260923-001");
+    const t = renderConsole(FAKE_DATA, "#/console/questions/sim-20260923-001");
     const picker = (await screen.findByLabelText("Version")) as HTMLSelectElement;
     expect([...picker.options].map((o) => o.textContent)).toEqual(["v1", "v2", "v5 (latest)"]);
 
     fireEvent.change(picker, { target: { value: "1" } });
     expect(await screen.findByRole("article", { name: "Card goal.json" })).toBeTruthy();
-    expect(api.calls).toContain("getQuestion sim-20260923-001 1");
+    expect(t.gets("/api/console/questions/sim-20260923-001?version=1")).toBe(1);
     expect(screen.getByRole("tab", { name: "refusal" })).toBeTruthy();
   });
 
@@ -139,9 +155,10 @@ describe("runs and inbox", () => {
     expect(screen.queryByRole("link", { name: "Open in Simulation" })).toBeNull();
   });
 
-  it("opens a run from the list", async () => {
+  it("opens a run from the list, which shows the approval kind", async () => {
     renderConsole(FAKE_DATA, "#/console/runs");
-    fireEvent.click(await screen.findByRole("button", { name: "run-20260924-003" }));
+    expect(await screen.findByText("smoke_auto")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "run-20260924-003" }));
     expect(await screen.findByRole("region", { name: "Run run-20260924-003" })).toBeTruthy();
     expect(window.location.hash).toBe("#/console/runs/microscope/run-20260924-003");
   });
@@ -155,77 +172,69 @@ describe("runs and inbox", () => {
 });
 
 describe("ask a question", () => {
+  it("orders the reasons: remote view, permission, then read-only store", () => {
+    const ok = { data: { submit_question: { allowed: true, reason: null } } };
+    const viewer = { data: { submit_question: { allowed: false, reason: "Needs the operator role" } } };
+    const remote = { readOnly: true, why: "remote view" };
+    expect(submitReason(LOCAL, ok, { data: MOCK_STORE })).toBeUndefined();
+    expect(submitReason(LOCAL, ok, { data: READ_ONLY_STORE })).toBe(READ_ONLY_STORE_REASON);
+    expect(submitReason(LOCAL, viewer, { data: READ_ONLY_STORE })).toBe("Needs the operator role");
+    expect(submitReason(remote, ok, { data: MOCK_STORE })).toBe(READ_ONLY_REMOTE);
+    expect(submitReason(LOCAL, {}, { data: MOCK_STORE })).toBe(CHECKING_PERMISSIONS);
+    expect(submitReason(LOCAL, { data: {} }, { data: MOCK_STORE })).toBe(PERMISSION_CHECK_UNAVAILABLE);
+    expect(submitReason(LOCAL, { error: "HTTP 502" }, { data: MOCK_STORE })).toBe(PERMISSION_CHECK_UNAVAILABLE);
+  });
+
   it("is disabled with the read-only reason when the store is not the mock store", async () => {
-    const api = renderConsole({ ...FAKE_DATA, store: READ_ONLY_STORE }, "#/console/ask");
-    expect(await screen.findByText(READ_ONLY_REASON)).toBeTruthy();
+    const t = renderConsole({ ...FAKE_DATA, store: READ_ONLY_STORE }, "#/console/ask");
+    expect(await screen.findByText(READ_ONLY_STORE_REASON)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Question"), { target: { value: "How fast?" } });
-    const button = screen.getByRole("button", { name: "Submit question" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(submitButton().disabled).toBe(true);
     fireEvent.submit(screen.getByRole("form", { name: "Ask a question" }));
-    expect(api.submitted).toHaveLength(0);
+    expect(t.submitted).toHaveLength(0);
     expect(screen.getByText("Store: soft-matter-agents (read-only)")).toBeTruthy();
   });
 
-  it("shows the shared permission reason first (viewer, remote view)", async () => {
-    const api = renderConsole(
-      {
-        ...FAKE_DATA,
-        store: READ_ONLY_STORE,
-        permissions: { submit_question: { allowed: false, reason: "Needs the operator role" } },
-      },
+  it("shows the shared permission reason for a viewer", async () => {
+    renderConsole(
+      { ...FAKE_DATA, permissions: { submit_question: { allowed: false, reason: "Needs the operator role" } } },
       "#/console/ask",
     );
     expect(await screen.findByText("Needs the operator role")).toBeTruthy();
-    expect(screen.queryByText(READ_ONLY_REASON)).toBeNull();
-    expect((screen.getByRole("button", { name: "Submit question" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(api.calls).toContain("permissions submit_question");
+    expect(submitButton().disabled).toBe(true);
   });
 
-  it("orders the reasons: permission, then read-only store", () => {
-    const ok = { data: { submit_question: { allowed: true, reason: null } } };
-    const remote = { data: { submit_question: { allowed: false, reason: "Read-only: remote view" } } };
-    expect(submitReason(ok, { data: MOCK_STORE })).toBeUndefined();
-    expect(submitReason(ok, { data: READ_ONLY_STORE })).toBe(READ_ONLY_REASON);
-    expect(submitReason(remote, { data: READ_ONLY_STORE })).toBe("Read-only: remote view");
-    expect(submitReason({}, { data: MOCK_STORE })).toBe(PERMISSION_CHECKING);
-    expect(submitReason({ data: {} }, { data: MOCK_STORE })).toBe(PERMISSION_UNAVAILABLE);
+  it("is greyed out on a remote screen, with the read-only badge", async () => {
+    renderConsole(FAKE_DATA, "#/console/ask", "lab-pc.example.test");
+    expect(await screen.findAllByText(READ_ONLY_REMOTE)).toHaveLength(2); // badge and reason
+    expect(submitButton().disabled).toBe(true);
   });
 
   it("disables submit when the permission check cannot be read, and keeps the reads", async () => {
-    window.location.hash = "#/console/ask";
-    const api = fakeConsoleApi(FAKE_DATA);
-    const broken = { ...api, permissions: () => Promise.reject(new Error("502 Bad Gateway")) };
-    render(
-      <ConsoleApiContext.Provider value={broken}>
-        <ScreenContextProvider area="console">
-          <ConsoleScreen />
-        </ScreenContextProvider>
-      </ConsoleApiContext.Provider>,
-    );
-    expect(await screen.findByText(PERMISSION_UNAVAILABLE)).toBeTruthy();
+    renderConsole({ ...FAKE_DATA, permissions: null }, "#/console/ask");
+    expect(await screen.findByText(PERMISSION_CHECK_UNAVAILABLE)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Question"), { target: { value: "How fast?" } });
-    expect((screen.getByRole("button", { name: "Submit question" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(submitButton().disabled).toBe(true);
 
     fireEvent.click(screen.getByRole("tab", { name: "Questions" }));
     expect(await screen.findByText("sim-20260923-001")).toBeTruthy();
   });
 
   it("submits to the mock store and re-reads the list", async () => {
-    const api = renderConsole(FAKE_DATA, "#/console/ask");
+    const t = renderConsole(FAKE_DATA, "#/console/ask");
     await screen.findByText("Store: mock");
-    const button = screen.getByRole("button", { name: "Submit question" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true); // no text yet
+    expect(submitButton().disabled).toBe(true); // no text yet
     fireEvent.change(screen.getByLabelText("Question"), { target: { value: "How fast do tracers move?" } });
     fireEvent.change(screen.getByLabelText("Agent"), { target: { value: "simulation" } });
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
     await act(async () => {
-      fireEvent.click(button);
+      fireEvent.click(submitButton());
     });
     expect(await screen.findByText("Submitted as sim-20261001-901")).toBeTruthy();
-    expect(api.submitted).toEqual([{ text: "How fast do tracers move?", target: "simulation" }]);
-    await waitFor(() => expect(api.calls.filter((c) => c === "listQuestions")).toHaveLength(2));
+    expect(t.submitted).toEqual([{ text: "How fast do tracers move?", target: "simulation" }]);
+    await waitFor(() => expect(t.gets("/api/console/questions")).toBe(2));
 
     fireEvent.click(screen.getByRole("tab", { name: "Questions" }));
     expect(await screen.findByText("sim-20261001-901")).toBeTruthy();
-    expect(fetch).not.toHaveBeenCalled();
   });
 });

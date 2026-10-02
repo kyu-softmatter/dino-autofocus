@@ -1,14 +1,13 @@
 /**
- * Console API: wire types, the HTTP client and a fake for tests.
- *
- * TEMPORARY until gen:api (T-009): the types below are hand copies of the AgentStore records
- * (`agents/store.py`, `to_dict()` shapes) and of the routes in `docs/screens/console.md`.
- * When the console router is on main and `src/api/` is generated, replace the types in this
- * file with re-exports from `src/api/` and keep the client; nothing else in the area changes.
- * The shared permission check (`GET /api/permissions`, T-009b) is faked behind `permissions()`.
+ * Temporary until gen:api covers the console router (T-009): hand-written types for
+ * `/api/console/*` (docs/screens/console.md, the AgentStore records' `to_dict()` shapes) and
+ * `/api/permissions` (T-009b), the paths, and the two calls that are not a plain `get`: the
+ * one permissions function and the question POST. Reads go through the shell's client
+ * (`src/app/client.tsx`). When `src/api/schema.ts` has these paths, swap the types below for
+ * imports from it; nothing else changes.
  */
 
-import { createContext, useContext } from "react";
+import type { Client } from "../../app/client";
 
 export type Agent = "microscope" | "simulation";
 export const AGENTS: readonly Agent[] = ["microscope", "simulation"];
@@ -47,6 +46,10 @@ export interface QuestionSummary {
   latest_version: number;
   versions: number[];
   source: string;
+  /** from the latest goal (T-025); absent until the store sends them */
+  purpose?: string | null;
+  intent?: string | null;
+  observable_name?: string | null;
 }
 
 export interface QuestionDetail {
@@ -73,6 +76,8 @@ export interface RunSummary {
   finished_at: string | null;
   backend: string | null;
   source: string;
+  /** the log's approval.kind (T-025); absent until the store sends it */
+  approval_kind?: string | null;
 }
 
 export interface RunDetail {
@@ -110,16 +115,13 @@ export interface StoreInfo {
   writable: boolean;
 }
 
-/** One answer of the shared `GET /api/permissions?ops=` (T-009b): reasons in ui-spec 7.0 wording. */
+/** `GET /api/permissions?ops=...` (T-009b, from T-011 `check()`): why a command would be refused. */
 export interface Permission {
   allowed: boolean;
   reason: string | null;
 }
 
-/** The permission op for asking a question (D16: operator on the microscope PC). */
-export const SUBMIT_OP = "submit_question";
-
-export const READ_ONLY_REASON = "Submitting to soft-matter-agents is not connected yet (read-only)";
+export type Permissions = Record<string, Permission>;
 
 export interface SubmitIn {
   text: string;
@@ -128,33 +130,17 @@ export interface SubmitIn {
   observable?: string;
 }
 
-export interface ConsoleApi {
-  storeInfo(): Promise<StoreInfo>;
-  /** the shared permission check; the screen shows its reasons and decides nothing */
-  permissions(ops: string[]): Promise<Record<string, Permission>>;
-  /** both agents, newest first, when `agent` is omitted */
-  listQuestions(agent?: Agent): Promise<QuestionSummary[]>;
-  /** the latest version unless `version` is given */
-  getQuestion(qid: string, version?: number): Promise<QuestionDetail>;
-  listRuns(agent?: Agent): Promise<RunSummary[]>;
-  getRun(agent: Agent, runId: string): Promise<RunDetail>;
-  listInbox(): Promise<InboxThread[]>;
-  submitQuestion(body: SubmitIn): Promise<QuestionSummary>;
-}
+/** The permission op for asking a question (D16: operator on the microscope PC). */
+export const SUBMIT_OP = "submit_question";
 
-export class ConsoleApiError extends Error {
-  readonly status: number;
+/** Shared texts for every screen (screen rules from AF 업무분배보조). */
+export const CHECKING_PERMISSIONS = "Checking permissions…";
+export const PERMISSION_CHECK_UNAVAILABLE = "Permission check unavailable";
+export const READ_ONLY_REMOTE = "Read-only: remote view";
+/** ui-spec 7.1: the console's own rule, a store that is not the mock store. */
+export const READ_ONLY_STORE_REASON = "Submitting to soft-matter-agents is not connected yet (read-only)";
 
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = "ConsoleApiError";
-    this.status = status;
-  }
-}
-
-// --- HTTP client ------------------------------------------------------------------------------
-
-const BASE = "/api/console";
+const seg = encodeURIComponent;
 
 function query(params: Record<string, string | number | undefined>): string {
   const q = new URLSearchParams();
@@ -163,132 +149,60 @@ function query(params: Record<string, string | number | undefined>): string {
   return s === "" ? "" : `?${s}`;
 }
 
-async function call<T>(path: string, init?: RequestInit, base = BASE): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (init?.body !== undefined) headers["Content-Type"] = "application/json";
-  const r = await fetch(base + path, { credentials: "same-origin", ...init, headers });
-  if (!r.ok) {
-    let detail = `${r.status} ${r.statusText}`;
-    try {
-      const body: unknown = await r.json();
-      if (typeof body === "object" && body !== null && typeof (body as { detail?: unknown }).detail === "string") {
-        detail = (body as { detail: string }).detail;
-      }
-    } catch {
-      // not JSON; keep the status line
-    }
-    throw new ConsoleApiError(r.status, detail);
-  }
-  return (await r.json()) as T;
-}
-
-const seg = encodeURIComponent;
-
-export const httpConsoleApi: ConsoleApi = {
-  storeInfo: () => call("/store"),
-  permissions: (ops) => call(`/permissions${query({ ops: ops.join(",") })}`, undefined, "/api"),
-  listQuestions: (agent) => call(`/questions${query({ agent })}`),
-  getQuestion: (qid, version) => call(`/questions/${seg(qid)}${query({ version })}`),
-  listRuns: (agent) => call(`/runs${query({ agent })}`),
-  getRun: (agent, runId) => call(`/runs/${seg(agent)}/${seg(runId)}`),
-  listInbox: () => call("/inbox"),
-  submitQuestion: (body) => call("/questions", { method: "POST", body: JSON.stringify(body) }),
+export const PATHS = {
+  store: "/api/console/store",
+  questions: (agent?: Agent) => `/api/console/questions${query({ agent })}`,
+  question: (qid: string, version?: number) => `/api/console/questions/${seg(qid)}${query({ version })}`,
+  runs: (agent?: Agent) => `/api/console/runs${query({ agent })}`,
+  run: (agent: Agent, runId: string) => `/api/console/runs/${seg(agent)}/${seg(runId)}`,
+  inbox: "/api/console/inbox",
+  permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(seg).join(",")}`,
 };
 
-export const ConsoleApiContext = createContext<ConsoleApi>(httpConsoleApi);
-
-export function useConsoleApi(): ConsoleApi {
-  return useContext(ConsoleApiContext);
+/** The one permissions call. A missing op counts as unavailable (screen rule). */
+export async function fetchPermissions(client: Client, ops: readonly string[]): Promise<Permissions> {
+  const got = await client.get<Permissions>(PATHS.permissions(ops));
+  const out: Permissions = {};
+  for (const op of ops) out[op] = got[op] ?? { allowed: false, reason: PERMISSION_CHECK_UNAVAILABLE };
+  return out;
 }
 
-// --- fake, for tests (no network) ---------------------------------------------------------------
-
-export interface FakeData {
-  store: StoreInfo;
-  /** answers of the shared permission check; an op left out is allowed */
-  permissions: Record<string, Permission>;
-  /** every version of every question, one QuestionDetail each */
-  questions: QuestionDetail[];
-  runs: RunDetail[];
-  inbox: InboxThread[];
+export class SubmitRefused extends Error {
+  constructor(
+    public status: number,
+    public detail: string,
+  ) {
+    super(detail);
+  }
 }
 
-export interface FakeConsoleApi extends ConsoleApi {
-  calls: string[];
-  submitted: SubmitIn[];
+/**
+ * Stand-in for the shell's `useClient().post<T>(path, body?)` (T-010 stage 3, in review), with the
+ * same signature: JSON body, `null` for 204, `SubmitRefused` with the server's `detail` otherwise.
+ * Replace with `client.post` when stage 3 merges; that one also handles 403 and 401/423.
+ */
+export async function post<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
+  const r = await client.transport.fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!r.ok) {
+    let detail = `HTTP ${r.status}`;
+    try {
+      const b = (await r.json()) as { detail?: unknown };
+      if (typeof b.detail === "string") detail = b.detail;
+    } catch {
+      // not JSON; keep the status
+    }
+    throw new SubmitRefused(r.status, detail);
+  }
+  return r.status === 204 ? null : ((await r.json()) as T);
 }
 
-export function fakeConsoleApi(data: FakeData): FakeConsoleApi {
-  const questions = [...data.questions];
-  const calls: string[] = [];
-  const submitted: SubmitIn[] = [];
-  const newestFirst = <T>(xs: T[], key: (x: T) => string) =>
-    [...xs].sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0));
-  const latest = (qid: string) => {
-    const vs = questions.filter((d) => d.summary.qid === qid);
-    return vs.find((d) => d.version === vs[0].summary.latest_version) ?? vs[0];
-  };
-  const notFound = (what: string) => Promise.reject(new ConsoleApiError(404, `no ${what}`));
-
-  return {
-    calls,
-    submitted,
-    storeInfo: async () => {
-      calls.push("storeInfo");
-      return data.store;
-    },
-    permissions: async (ops) => {
-      calls.push(`permissions ${ops.join(",")}`);
-      return Object.fromEntries(ops.map((op) => [op, data.permissions[op] ?? { allowed: true, reason: null }]));
-    },
-    listQuestions: async (agent) => {
-      calls.push(`listQuestions ${agent ?? ""}`.trim());
-      const qids = [...new Set(questions.map((d) => d.summary.qid))];
-      const out = qids.map((q) => latest(q).summary).filter((s) => agent === undefined || s.agent === agent);
-      return newestFirst(out, (s) => s.qid);
-    },
-    getQuestion: async (qid, version) => {
-      calls.push(`getQuestion ${qid} ${version ?? ""}`.trim());
-      if (!questions.some((d) => d.summary.qid === qid)) return notFound(`question ${qid}`);
-      const d = version === undefined ? latest(qid) : questions.find((x) => x.summary.qid === qid && x.version === version);
-      return d ?? notFound(`version ${version} of ${qid}`);
-    },
-    listRuns: async (agent) => {
-      calls.push(`listRuns ${agent ?? ""}`.trim());
-      const out = data.runs.map((r) => r.summary).filter((s) => agent === undefined || s.agent === agent);
-      return newestFirst(out, (s) => s.created_at ?? "");
-    },
-    getRun: async (agent, runId) => {
-      calls.push(`getRun ${agent} ${runId}`);
-      const r = data.runs.find((x) => x.summary.agent === agent && x.summary.run_id === runId);
-      return r ?? notFound(`run ${runId}`);
-    },
-    listInbox: async () => {
-      calls.push("listInbox");
-      return data.inbox;
-    },
-    submitQuestion: async (body) => {
-      calls.push(`submitQuestion ${body.target}`);
-      // the server's order: permission (403), then a read-only store (409)
-      const perm = data.permissions[SUBMIT_OP];
-      if (perm !== undefined && !perm.allowed) throw new ConsoleApiError(403, perm.reason ?? "refused");
-      if (!data.store.writable) throw new ConsoleApiError(409, READ_ONLY_REASON);
-      submitted.push(body);
-      const prefix = body.target === "microscope" ? "mic" : "sim";
-      const qid = `${prefix}-20261001-${String(900 + submitted.length).padStart(3, "0")}`;
-      const card: Card = {
-        name: "goal.json", kind: "goal", version: 1, status: "DRAFT", created_at: "2026-10-01T00:00:00Z",
-        data: { card: "goal", qid, status: "DRAFT", question: body.text, origin: "dino-autofocus mock" },
-      };
-      const summary: QuestionSummary = {
-        qid, agent: body.target, title: body.text, status: "DRAFT", created_at: card.created_at,
-        updated_at: card.created_at, latest_version: 1, versions: [1], source: "mock-submitted",
-      };
-      questions.push({
-        summary, version: 1, goal: card, axes: [], plan: null, synthesis: null, refusals: [], results: [],
-        others: [], documents: [], files: [],
-      });
-      return summary;
-    },
-  };
+/** `POST /api/console/questions`: the console's one write (mock store only, D16 on the server). */
+export async function submitQuestion(client: Client, body: SubmitIn): Promise<QuestionSummary> {
+  const q = await post<QuestionSummary>(client, "/api/console/questions", body);
+  if (q === null) throw new SubmitRefused(204, "the server returned no question");
+  return q;
 }

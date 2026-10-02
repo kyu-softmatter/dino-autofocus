@@ -3,7 +3,8 @@
 import { useState } from "react";
 
 import { areaHref } from "../../app/route";
-import { AGENTS, type Agent, type RunDetail, type RunSummary, useConsoleApi } from "./api";
+import { useClient } from "../../app/client";
+import { AGENTS, type Agent, PATHS, type RunDetail, type RunSummary } from "./api";
 import { asArray, Fields, isRecord, Json, Loaded, shortTime, show, useLoad } from "./ui";
 
 export function RunList({ runs, onOpen }: { runs: RunSummary[]; onOpen: (agent: Agent, runId: string) => void }) {
@@ -25,7 +26,7 @@ export function RunList({ runs, onOpen }: { runs: RunSummary[]; onOpen: (agent: 
         <thead>
           <tr>
             <th>run_id</th><th>Agent</th><th>qid</th><th>plan_id</th><th>Backend</th><th>Started</th>
-            <th>Finished</th><th>Outcome</th>
+            <th>Finished</th><th>Approval</th><th>Outcome</th>
           </tr>
         </thead>
         <tbody>
@@ -38,6 +39,7 @@ export function RunList({ runs, onOpen }: { runs: RunSummary[]; onOpen: (agent: 
               <td>{r.backend ?? "—"}</td>
               <td>{shortTime(r.created_at)}</td>
               <td>{shortTime(r.finished_at)}</td>
+              <td>{r.approval_kind ?? "—"}</td>
               <td>{r.status ?? "—"}</td>
             </tr>
           ))}
@@ -53,8 +55,8 @@ const SIM_CONFIG = ["parameters_si", "envelope_check", "seed"] as const;
 const SIM_OBSERVABLES = ["observable", "fit", "uncertainty", "relaxation"] as const;
 
 export function RunDetailView({ agent, runId, refreshKey }: { agent: Agent; runId: string; refreshKey: number }) {
-  const api = useConsoleApi();
-  const state = useLoad(() => api.getRun(agent, runId), [api, agent, runId, refreshKey]);
+  const client = useClient();
+  const state = useLoad(() => client.get<RunDetail>(PATHS.run(agent, runId)), [client, agent, runId, refreshKey]);
   return <Loaded state={state}>{(d) => <RunBody run={d} />}</Loaded>;
 }
 

@@ -5,40 +5,41 @@
 
 import { type FormEvent, useState } from "react";
 
+import { type ReadOnlyState, useClient } from "../../app/client";
 import {
   AGENTS,
   type Agent,
-  type Permission,
+  CHECKING_PERMISSIONS,
+  PERMISSION_CHECK_UNAVAILABLE,
+  type Permissions,
   PURPOSES,
   type QuestionSummary,
-  READ_ONLY_REASON,
+  READ_ONLY_REMOTE,
+  READ_ONLY_STORE_REASON,
   type StoreInfo,
   SUBMIT_OP,
-  useConsoleApi,
+  submitQuestion,
 } from "./api";
 import { errorText, type LoadState } from "./ui";
 
-/** The one fallback for every screen when `/api/permissions` cannot be read. Reads stay available. */
-export const PERMISSION_UNAVAILABLE = "Permission check unavailable";
-/** Shown on every screen while the first permission check is loading. */
-export const PERMISSION_CHECKING = "Checking permissions…";
-
 /**
- * Why submit is off, or undefined when it is on. The shared permission answer comes first
- * (remote, role, login: ui-spec 7.0 order), then the console's own rule, a read-only store.
+ * Why submit is off, or undefined when it is on, in ui-spec 7.0 order: the shell's read-only
+ * flag (remote view), the shared permission answer (login, role), then the console's own rule,
+ * a read-only store. The server checks all of these again on the POST.
  */
 export function submitReason(
-  perms: LoadState<Record<string, Permission>>,
+  readOnly: ReadOnlyState,
+  perms: LoadState<Permissions>,
   store: LoadState<StoreInfo>,
 ): string | undefined {
-  if (perms.error !== undefined) return PERMISSION_UNAVAILABLE;
-  if (perms.data === undefined) return PERMISSION_CHECKING;
-  const p = perms.data[SUBMIT_OP];
-  if (p === undefined) return PERMISSION_UNAVAILABLE;
+  if (readOnly.readOnly) return READ_ONLY_REMOTE;
+  if (perms.error !== undefined) return PERMISSION_CHECK_UNAVAILABLE;
+  if (perms.data === undefined) return CHECKING_PERMISSIONS;
+  const p = perms.data[SUBMIT_OP] ?? { allowed: false, reason: PERMISSION_CHECK_UNAVAILABLE };
+  if (!p.allowed) return p.reason ?? PERMISSION_CHECK_UNAVAILABLE;
   if (store.error !== undefined) return `Cannot read the store: ${store.error}`;
-  if (store.data === undefined) return "Checking…";
-  if (!p.allowed) return p.reason ?? "Not allowed";
-  if (!store.data.writable) return READ_ONLY_REASON;
+  if (store.data === undefined) return "Reading the store…";
+  if (!store.data.writable) return READ_ONLY_STORE_REASON;
   return undefined;
 }
 
@@ -49,7 +50,7 @@ export function SubmitForm({
   reason: string | undefined;
   onSubmitted: (q: QuestionSummary) => void;
 }) {
-  const api = useConsoleApi();
+  const client = useClient();
   const [text, setText] = useState("");
   const [target, setTarget] = useState<Agent>("microscope");
   const [purpose, setPurpose] = useState("");
@@ -67,7 +68,7 @@ export function SubmitForm({
     setError(undefined);
     setDone(undefined);
     try {
-      const q = await api.submitQuestion({
+      const q = await submitQuestion(client, {
         text,
         target,
         ...(purpose !== "" ? { purpose } : {}),
