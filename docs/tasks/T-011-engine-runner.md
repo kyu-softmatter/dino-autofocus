@@ -201,6 +201,7 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 | hardware_confirm, sample_open, sample_new | record | yes (hardware_confirm: local operator only) | no |
 | sample_geometry_set, loading_confirm_person, loading_check_image | record | yes | yes |
 | boundary_mark/undo/reset, map_flag, map_flag_retire, candidate_confirm/reject | record (beside a hardware op) | no; local operator (D16) | yes |
+| score_tare | record | yes | yes |
 | light_set | light | yes | yes |
 | edge_trace, scan_4x, sample_map, goto_xy, focus_100x, objective_change | motion | yes | yes |
 | unknown op | motion (strictest) | yes | yes |
@@ -208,7 +209,24 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 ## Exit-path lights (manager decision, from T-030 review)
 
-- A normal op exit (finished or error) restores the lights to their state before the op: it turns off what that
-  op turned on and leaves a light set by `light_set` alone. `abort`, `lights_off`, `shutdown`, D14 auto-abort and
-  closing the experiment session turn everything off. Record which rule applied. Test: `light_set` then
+- A normal op exit (finished) restores the lights to their state before the op: it turns off what that
+  op turned on and leaves a light set by `light_set` alone. `error`, `abort`, `lights_off`, `shutdown`, D14 auto-abort and
+  closing the experiment session turn everything off (PLAN rule 5, aa32fcf). Record which rule applied. Test: `light_set` then
   `status` keeps the light on; `light_set` then `abort` turns it off.
+
+## T-011b follow-up (after the caf33c7 merge)
+
+- DeviceControlSeat catches only PermissionError, so any other exception from DeviceControl.check leaks out of
+  submit. Catch every exception there and refuse (fail closed) with the reason recorded.
+- Bench check: refuse an op that calls approach() without a clearance callback when backend.info().bench is True
+  (T-033 field).
+- Note for mm-real: the exit-path light payload makes about 9 read_property calls; measure the time on mm-demo and keep
+  it under one second, or batch the reads.
+- Review: AF 검토보조1. Needed before the T-036 lock can be lifted.
+- Also in T-011b (from T-029): cache the BackendInfo read at start() and expose it as
+  `snapshot()["backend_info"]` (including `stage_limits` and `bench`), so `plan()` can compute T-029's escape
+  without touching hardware.
+
+## T-011c (from T-031, small)
+
+- OpContext gets a public `record_dir` (ops read `ctx._op.record.dir` today). Owner AF 실행15, review AF 검토보조1.

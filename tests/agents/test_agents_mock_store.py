@@ -23,8 +23,11 @@ from dino_autofocus.agents import (
     open_store,
 )
 from dino_autofocus.agents.mock_store import MOCK_DATA, ORIGIN, PACKAGE_DIR
+from dino_autofocus.agents.sma_files import long_path
 
 SIM_Q = "sim-20260923-001"
+DATA = long_path(MOCK_DATA)  # the tests' own reads survive a deep checkout too
+PACKAGE = long_path(PACKAGE_DIR)
 
 
 def fixed_clock():
@@ -37,6 +40,7 @@ def store(tmp_path):
 
 
 def tree(root: Path) -> dict[str, str]:
+    root = long_path(root)
     return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in root.rglob("*") if p.is_file()}
 
@@ -99,7 +103,7 @@ def test_older_versions_hold_only_their_own_files(store):
 
 def test_card_content_is_kept_whole(store):
     d = store.get_question(SIM_Q)
-    on_disk = json.loads((MOCK_DATA / "simulation_agent/questions" / SIM_Q / "v3_goal.json")
+    on_disk = json.loads((DATA / "simulation_agent/questions" / SIM_Q / "v3_goal.json")
                          .read_text(encoding="utf-8"))
     assert d.goal.data == on_disk
     assert d.goal.data["numbers"] == on_disk["numbers"]  # grades pass through untouched
@@ -135,7 +139,7 @@ def test_runs(store):
 
 
 def test_large_records_are_listed_not_opened(tmp_path):
-    shutil.copytree(MOCK_DATA, tmp_path / "data")
+    shutil.copytree(DATA, tmp_path / "data")
     s = SmaFiles(tmp_path / "data", max_read_bytes=5000)
     d = s.get_run("simulation", "run-20260924-001-smoke-g2k2")
     assert d.not_opened == ["log.json"]  # 9 KB, over the 5 KB limit
@@ -203,13 +207,13 @@ def test_submit_refuses_bad_input(store):
 
 def test_submit_writes_only_in_the_write_folder(tmp_path):
     before_sample = tree(MOCK_DATA)
-    before_package = tree(PACKAGE_DIR)
+    before_package = tree(PACKAGE)
     write_dir = tmp_path / "written"
     store = MockStore(write_dir, clock=fixed_clock)
     store.submit_question("q one", "microscope")
     store.submit_question("q two", "simulation")
     assert tree(MOCK_DATA) == before_sample
-    assert {k for k in tree(PACKAGE_DIR) if "__pycache__" not in k} == \
+    assert {k for k in tree(PACKAGE) if "__pycache__" not in k} == \
         {k for k in before_package if "__pycache__" not in k}
     assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*")
                   if p.is_file()) == [
@@ -226,21 +230,44 @@ def test_write_folder_may_not_be_inside_the_package():
 
 
 def test_default_write_folder_is_a_temporary_one():
-    store = MockStore(clock=fixed_clock)
-    assert store.list_questions("microscope")  # reading makes no folder
-    assert store._write_dir is None
-    try:
+    with MockStore(clock=fixed_clock) as store:
+        assert store.list_questions("microscope")  # reading makes no folder
+        assert store._write_dir is None
         store.submit_question("q", "microscope")
-        assert PACKAGE_DIR not in store.write_dir.parents
-        assert (store.write_dir / "microscope_agent/questions/mic-20261001-901/goal.json").is_file()
-    finally:
-        shutil.rmtree(store.write_dir)
+        made = store.write_dir
+        assert PACKAGE_DIR not in made.parents
+        assert (made / "microscope_agent/questions/mic-20261001-901/goal.json").is_file()
+    assert not made.exists()  # leaving the block deleted the folder the store made
+
+
+def test_close_deletes_only_a_folder_the_store_made(tmp_path):
+    store = MockStore(clock=fixed_clock)
+    store.submit_question("q", "microscope")
+    made = store.write_dir
+    store.close()
+    store.close()  # twice is fine
+    assert not made.exists()
+    assert store.list_questions("microscope")[0].source == "mock"  # the sample is still read
+    again = store.submit_question("q", "microscope")  # a new temporary folder
+    assert again.qid == "mic-20261001-901" and store.write_dir != made
+    store.close()
+
+    given = tmp_path / "given"
+    with MockStore(given, clock=fixed_clock) as mine:
+        mine.submit_question("q", "simulation")
+    mine.close()
+    assert (given / "simulation_agent/questions/sim-20261001-901/goal.json").is_file()
+
+
+def test_writable_flag():
+    assert MockStore.writable is True and SmaFiles.writable is False
+    assert MockStore().writable and not SmaFiles(MOCK_DATA).writable
 
 
 def test_sample_is_small_and_says_where_it_came_from():
-    files = [p for p in MOCK_DATA.rglob("*") if p.is_file()]
+    files = [p for p in DATA.rglob("*") if p.is_file()]
     assert sum(p.stat().st_size for p in files) < 200_000
-    source = (MOCK_DATA / "SOURCE.md").read_text(encoding="utf-8")
+    source = (DATA / "SOURCE.md").read_text(encoding="utf-8")
     assert re.search(r"\b[0-9a-f]{40}\b", source)
 
 
