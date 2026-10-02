@@ -244,3 +244,16 @@
 - `test_server_access.py::test_login_routes_open_to_remote_viewers` (T-009f item 2) posts logout first, so lock,
   unlock and activity then run without a login and get 401 from T-105's router. Put logout last (or log in again
   after it), keeping the assertion "a remote viewer is not refused on these routes". tests/server only.
+
+## T-009i (AF 실행7, after T-009g; review AF 검토보조2; M1 blocker) — the server starts the real engine
+
+- `server/__main__.py` still offers only `--backend placeholder` (PlaceholderEngine: "no operations"), so the M1 check
+  would show no operations (director's demo). Start the real runner via T-009g's `build_runner`:
+  `--backend {mock, mm-demo, replay, mm-real, placeholder}`, default `mock`; `--records-root` (default from config,
+  tests use tmp_path); the hardware provider and the operations package wired as in create_app. `placeholder`
+  stays only for tests or is removed if nothing uses it.
+- mm-real keeps every lock (T-036, T-029d) and the bench rules; opening it on the desktop must fail cleanly
+  (no Micro-Manager) with a clear message, never fall back to mock silently.
+- Tests: `main(["--backend", "mock", ...])` builds a Runner whose registry lists every op; an unknown backend exits
+  with the list; mm-real without Micro-Manager exits with a clear message. No window, no real port held after.
+- Tell AF 실행10 (launcher, T-026) the flag so the exe starts with `--backend mock` until the user chooses.
