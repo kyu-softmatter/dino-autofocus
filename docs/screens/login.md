@@ -17,6 +17,7 @@ T-009's `ApiError` (`{"detail": "..."}`). "Local" means the request comes from t
 | `POST /signup` | anyone | any | `{name, email, password}` → `201 {status: "pending"}`. Nothing else is accepted (no role field; extra fields → 422) |
 | `POST /login` | anyone | any | `{email, password}` → `Me` + cookie; `401 {detail, outcome}` with `outcome` `bad_credentials` \| `pending_approval` \| `disabled` |
 | `POST /logout` | logged in | any | → `204`, cookie cleared, control released |
+| `POST /lock` | logged in | any | → `204`. "Lock" in the user menu |
 | `POST /unlock` | logged in, locked | any | `{password}` → `Me`; `401` on a wrong password |
 | `POST /activity` | logged in | any | → `204`. The screen calls it on user input (throttled, at most every 30 s) so the idle lock does not fire while someone is working |
 | `GET /me` | logged in | any | → `Me`; `401` without a valid cookie |
@@ -85,9 +86,9 @@ UI text in English. No email is prefilled, remembered or shown before login.
 Requests to AF 업무분배보조, who forwards them to the manager:
 
 1. **T-009: login over remote view.** `writes_from_this_pc_only` refuses every non-GET from a
-   remote PC, so a remote viewer cannot `POST /api/auth/login`, `/logout`, `/unlock`, `/activity`
-   or `/signup`. Proposal: an exempt list for exactly these five paths. They never reach the
-   engine.
+   remote PC, so a remote viewer cannot `POST /api/auth/login`, `/logout`, `/lock`, `/unlock`,
+   `/activity` or `/signup`. Proposal: an exempt list for exactly these paths. They never reach
+   the engine.
 2. **T-009: the local flag as a dependency** (for example `IsLocal`), so `auth.py` and other
    routers use T-009's loopback rule instead of copying it.
 3. **T-009: auth on `/ws/*` and `/api/*`.** A cookie check on the WebSocket handshake and on
