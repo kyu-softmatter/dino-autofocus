@@ -191,11 +191,12 @@ def test_preflight_failure_moves_nothing(sample, monkeypatch) -> None:
 def test_full_trace_closes_the_loop_and_fits_the_hole(sample) -> None:
     w = HoleWorld(START)
     out, events = _run(w, sample, {"hole_diameter_mm": 6.0})
-    assert out["why"] == "back where the edge was first seen: full loop"
+    assert out["why"] == et.FULL_LOOP
     hole = out["hole"]
     assert np.hypot(*(np.array(hole["centre_um"]) - HOLE_C)) < 60
     assert hole["diameter_mm"] == pytest.approx(6.0, rel=0.015)
     assert hole["arc_deg"] > 300 and hole["fitted_at"]
+    assert hole["closed_loop"] is True and hole["trace_stop"] == et.FULL_LOOP
     assert out["calibration"]["um_per_px"] == pytest.approx(PX_UM, rel=0.03)
     assert np.allclose(out["calibration"]["M_px_per_um"], M_CAL, atol=0.004)
 
@@ -243,6 +244,7 @@ def test_reference_calibration_skips_the_calibration_moves(sample) -> None:
     assert moves and "calibration" not in moves
     assert out["calibration"]["source"] == "earlier trace"
     assert out["why"] == "travel or time limit"
+    assert out["hole"]["closed_loop"] is False  # a partial arc is never a closed loop
 
 
 def test_flat_image_stops_at_calibration_with_lights_off(sample) -> None:

@@ -27,9 +27,31 @@ export interface paths {
         };
         /**
          * State
-         * @description The engine's snapshot: positions, lights, running operation.
+         * @description The engine's snapshot: positions, lights, running operations, session, sample...
          */
         get: operations["state_api_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Permissions
+         * @description `?ops=a,b,c` -> may I do each now, and if not, why. Engine operations and the stops
+         *     come from the engine's `check()` with login, loopback, role and D13 on top; the
+         *     session actions and `submit_question` from the T-018 permissions plus loopback.
+         */
+        get: operations["permissions_api_permissions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -85,8 +107,21 @@ export interface components {
     schemas: {
         /** ApiError */
         ApiError: {
-            /** Detail */
-            detail: string;
+            detail: components["schemas"]["RefusalDetail"];
+        };
+        /** AuraState */
+        AuraState: {
+            /**
+             * State
+             * @default unknown
+             */
+            state: string;
+            /** Lines */
+            lines?: {
+                [key: string]: number | null;
+            };
+        } & {
+            [key: string]: unknown;
         };
         /** CommandAccepted */
         CommandAccepted: {
@@ -95,16 +130,17 @@ export interface components {
         };
         /**
          * CommandIn
-         * @description A command for the engine. `start` names an operation in `op` with its `args`; `abort`
-         *     and `confirm` name the running operation by `op_id`; `lights_off` pre-empts anything.
-         *     An `assistant` command is a proposal until a human confirms it.
+         * @description A command for the engine, as the browser sends it. `start` names an operation in `op`
+         *     with its `args`; `abort`, `confirm` and `update` name the running operation by `op_id`;
+         *     `approve` / `reject` name a proposal by `op_id`; `lights_off` pre-empts anything. Any
+         *     other field is refused (422): the server sets the rest (see SERVER_STAMPED).
          */
         CommandIn: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "start" | "abort" | "confirm" | "lights_off";
+            kind: "start" | "abort" | "confirm" | "lights_off" | "update" | "approve" | "reject";
             /**
              * Op
              * @default
@@ -119,19 +155,32 @@ export interface components {
             args?: {
                 [key: string]: unknown;
             };
-            /**
-             * Origin
-             * @default human
-             * @enum {string}
-             */
-            origin: "human" | "assistant";
-            /** Session Id */
-            session_id?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HardwareState */
+        HardwareState: {
+            /** Profile */
+            profile?: {
+                [key: string]: unknown;
+            } | null;
+            /** Profile Path */
+            profile_path?: string | null;
+            /** Gates */
+            gates?: {
+                [key: string]: unknown;
+            };
+            /** Last Status */
+            last_status?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** Health */
         Health: {
@@ -147,6 +196,153 @@ export interface components {
             remote_view: boolean;
             /** Remote Abort */
             remote_abort: boolean;
+        };
+        /** LampState */
+        LampState: {
+            /**
+             * State
+             * @default unknown
+             */
+            state: string;
+            /** Intensity */
+            intensity?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * Lights
+         * @description The one light shape (light_changed, snapshot, records).
+         */
+        Lights: {
+            dialamp?: components["schemas"]["LampState"];
+            aura?: components["schemas"]["AuraState"];
+            /** Verified */
+            verified?: boolean | null;
+            /** Records */
+            records?: {
+                [key: string]: unknown;
+            }[];
+            /** Error */
+            error?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** OpSummary */
+        OpSummary: {
+            /** Op Id */
+            op_id: string;
+            /** Op */
+            op: string;
+            /** State */
+            state: string;
+            /**
+             * Origin
+             * @default human
+             */
+            origin: string;
+            /** User Id */
+            user_id?: string | null;
+            /** Session Id */
+            session_id?: string | null;
+            /** Proposal Id */
+            proposal_id?: string | null;
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /** Confirmed By */
+            confirmed_by?: string | null;
+            /** Confirmed At */
+            confirmed_at?: number | null;
+            /** Record Prefix */
+            record_prefix?: string | null;
+            /** Args */
+            args?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+            /** Last Progress */
+            last_progress?: {
+                [key: string]: unknown;
+            } | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * PermissionOut
+         * @description One entry of `GET /api/permissions`: may the asking person do this now, and if not,
+         *     why (`reason`, shown before the click) and the refusal `code` when the server says no
+         *     (login_required, locked, remote_view, role); None when the engine says no.
+         */
+        PermissionOut: {
+            /** Allowed */
+            allowed: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Code */
+            code?: string | null;
+        };
+        /**
+         * Positions
+         * @description Stage readback in um; None where the read failed, with the reason in `errors`.
+         */
+        Positions: {
+            /** X Um */
+            x_um?: number | null;
+            /** Y Um */
+            y_um?: number | null;
+            /** Z Um */
+            z_um?: number | null;
+            /** Piezo Um */
+            piezo_um?: {
+                [key: string]: number;
+            };
+            /** Errors */
+            errors?: {
+                [key: string]: string;
+            };
+            /** T */
+            t?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * RefusalDetail
+         * @description Why the server said no. `code` is also in the `X-DinoAF-Refusal` header. Codes:
+         *     login_required (401), locked (423), remote_view (403; the web client turns read-only
+         *     on this one only), foreign_origin, map_route, role (403), refused (400, the engine said
+         *     no), shutting_down (503), shutdown_failed (500).
+         */
+        RefusalDetail: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** SampleRef */
+        SampleRef: {
+            /** Sample Id */
+            sample_id?: string | null;
+            /**
+             * Reserved
+             * @default false
+             */
+            reserved: boolean;
+            /** Session Id */
+            session_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SessionRef */
+        SessionRef: {
+            /** Session Id */
+            session_id?: string | null;
+            /** Started At */
+            started_at?: number | null;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * ShutdownAccepted
@@ -167,6 +363,59 @@ export interface components {
              */
             reason: string;
         };
+        /**
+         * Snapshot
+         * @description The engine's current state.
+         */
+        Snapshot: {
+            positions?: components["schemas"]["Positions"] | null;
+            lights?: components["schemas"]["Lights"] | null;
+            /** Owner */
+            owner?: string | null;
+            /** Running */
+            running?: components["schemas"]["OpSummary"][];
+            /** Proposals */
+            proposals?: components["schemas"]["OpSummary"][];
+            /** Pending Confirms */
+            pending_confirms?: {
+                [key: string]: unknown;
+            }[];
+            /** Awaiting Return */
+            awaiting_return?: {
+                [key: string]: unknown;
+            } | null;
+            session?: components["schemas"]["SessionRef"] | null;
+            sample?: components["schemas"]["SampleRef"] | null;
+            /** Last Shutdown Lights */
+            last_shutdown_lights?: {
+                [key: string]: unknown;
+            } | null;
+            /** Unclean Shutdown */
+            unclean_shutdown?: {
+                [key: string]: unknown;
+            } | null;
+            hardware?: components["schemas"]["HardwareState"] | null;
+            /** Stream */
+            stream?: {
+                [key: string]: unknown;
+            } | null;
+            /** Recent */
+            recent?: components["schemas"]["OpSummary"][];
+            /** Operations */
+            operations?: string[];
+            /** Permissions */
+            permissions?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -180,13 +429,16 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
-        /** EventOut */
+        /**
+         * EventOut
+         * @description `user_id` / `session_id` are the operation's (rule 12); None for engine-wide events.
+         */
         EventOut: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "planned" | "preflight_ok" | "preflight_failed" | "started" | "progress" | "frame_ready" | "reading" | "finished" | "aborted" | "error" | "position" | "light_changed" | "property_set" | "motion" | "confirm_required" | "confirmed" | "log";
+            kind: "planned" | "preflight_ok" | "preflight_failed" | "started" | "progress" | "frame_ready" | "reading" | "finished" | "aborted" | "error" | "position" | "light_changed" | "property_set" | "motion" | "confirm_required" | "confirmed" | "proposed" | "approved" | "rejected" | "refused" | "updated" | "map_changed" | "sample_opened" | "objective" | "session_changed" | "log";
             /**
              * Op Id
              * @default
@@ -198,6 +450,16 @@ export interface components {
             };
             /** T */
             t: number;
+            /**
+             * User Id
+             * @default null
+             */
+            user_id: string | null;
+            /**
+             * Session Id
+             * @default null
+             */
+            session_id: string | null;
         };
         /**
          * WsAccepted
@@ -228,9 +490,10 @@ export interface components {
         };
         /**
          * WsError
-         * @description `/ws/events`, server -> client: a refused or malformed message. `status` follows HTTP
-         *     (400 refused by the engine, 403 not allowed from here, 422 bad message,
-         *     503 shutting down).
+         * @description `/ws/*`, server -> client: a refused or malformed message. `status` and `code` follow
+         *     the REST refusals (401 login_required, 423 locked, 403 remote_view and others, 400
+         *     refused by the engine, 422 bad message, 503 shutting_down). A 401/423 on connect is
+         *     followed by a close.
          */
         WsError: {
             /**
@@ -243,6 +506,11 @@ export interface components {
             status: number;
             /** Detail */
             detail: string;
+            /**
+             * Code
+             * @default null
+             */
+            code: string | null;
         };
         /**
          * WsEvent
@@ -339,9 +607,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["Snapshot"];
+                };
+            };
+        };
+    };
+    permissions_api_permissions_get: {
+        parameters: {
+            query?: {
+                ops?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        [key: string]: components["schemas"]["PermissionOut"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -377,6 +676,15 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             /** @description Forbidden */
             403: {
                 headers: {
@@ -393,6 +701,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

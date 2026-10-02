@@ -3,6 +3,8 @@ import { createContext, type ReactNode, useContext, useEffect, useState, useSync
 import type { components } from "../api/schema";
 
 export type CommandIn = components["schemas"]["CommandIn"];
+/** What a screen sends: `kind` and whatever differs from the server's defaults (op, op_id, args, origin). */
+export type CommandInput = Pick<CommandIn, "kind"> & Partial<Omit<CommandIn, "kind">>;
 export type EventOut = components["schemas"]["EventOut"];
 export type EventKind = EventOut["kind"];
 type WsEvent = components["schemas"]["WsEvent"];
@@ -143,14 +145,22 @@ export class EventStream {
 
 // -- the client -------------------------------------------------------------------------
 
+/**
+ * A refused request. `code` is the server's refusal code when it sends one
+ * (`detail.code` or the `X-DinoAF-Refusal` header, T-009b), e.g. "remote_view".
+ */
 export class CommandRefused extends Error {
   constructor(
     public status: number,
     public detail: string,
+    public code: string | null = null,
   ) {
     super(detail);
   }
 }
+
+/** The refusal code that means "this browser is a remote viewer" (T-009b). */
+export const REMOTE_VIEW = "remote_view";
 
 export class Client {
   readonly readOnly: ReadOnlyStore;
@@ -182,15 +192,17 @@ export class Client {
   async get<T = unknown>(path: string): Promise<T> {
     const r = await this.transport.fetch(path, { headers: { Accept: "application/json" } });
     this.check(r);
-    if (!r.ok) throw new CommandRefused(r.status, await detailOf(r));
+    if (!r.ok) throw await refusalOf(r);
     return (await r.json()) as T;
   }
 
   /**
    * POST JSON to an area's own route (console submit, map writes, sessions, auth...).
-   * The same rules as `command`: a 403 switches the app to read-only, a 401 / 423
-   * re-reads the login. Returns the JSON reply, or null for an empty one (204).
-   * Engine commands go through `command`, not here.
+   * The same rules as `command`: a 401 / 423 re-reads the login; a 403 marked
+   * `remote_view` switches the whole app to read-only. Any other 403 (D16, session
+   * owner, role...) is only this action's refusal: it is thrown to the caller with
+   * its reason and code and changes no global state. Returns the JSON reply, or
+   * null for an empty one (204). Engine commands go through `command`, not here.
    */
   async post<T = unknown>(path: string, body?: unknown): Promise<T | null> {
     const r = await this.transport.fetch(path, {
@@ -199,32 +211,55 @@ export class Client {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     this.check(r);
-    if (r.status === 403) {
-      const why = await detailOf(r);
-      this.readOnly.refuse(why);
-      throw new CommandRefused(403, why);
+    if (!r.ok) {
+      const refused = await refusalOf(r);
+      if (refused.status === 403 && refused.code === REMOTE_VIEW) this.readOnly.refuse(refused.detail);
+      throw refused;
     }
-    if (!r.ok) throw new CommandRefused(r.status, await detailOf(r));
     if (r.status === 204) return null;
     const text = await r.text();
     return text === "" ? null : (JSON.parse(text) as T);
   }
 
-  /** POST /api/commands (engine commands). A 403 (remote view, D13) switches the app to read-only. */
-  async command(cmd: CommandIn): Promise<string> {
+  /** POST /api/commands (engine commands), with the rules of `post`. */
+  async command(cmd: CommandInput): Promise<string> {
     const reply = await this.post<components["schemas"]["CommandAccepted"]>("/api/commands", cmd);
     if (!reply) throw new CommandRefused(502, "the server accepted the command but gave no op_id");
     return reply.op_id;
   }
 }
 
-async function detailOf(r: Response): Promise<string> {
+type ApiError = components["schemas"]["ApiError"];
+type ValidationError = components["schemas"]["ValidationError"];
+
+/**
+ * The reason and code of a refused request. The server's refusals are `ApiError`
+ * with `detail: RefusalDetail` = `{code, message}` (T-009b); the header
+ * `X-DinoAF-Refusal` also carries the code. FastAPI's own answers still use a
+ * plain string (404 "Not Found") or a validation list (422), so those are read
+ * too, with no code.
+ */
+export async function refusalOf(r: Response): Promise<CommandRefused> {
+  let code = r.headers.get("X-DinoAF-Refusal");
+  let text = `HTTP ${r.status}`;
   try {
-    const body = (await r.json()) as { detail?: unknown };
-    return typeof body.detail === "string" ? body.detail : `HTTP ${r.status}`;
+    const body = (await r.json()) as Partial<ApiError> | { detail?: string | ValidationError[] };
+    const d: unknown = body.detail;
+    if (typeof d === "string") {
+      text = d;
+    } else if (Array.isArray(d)) {
+      const first = d[0] as Partial<ValidationError> | undefined;
+      if (first && typeof first.msg === "string") text = first.msg;
+    } else if (d && typeof d === "object") {
+      const rd = d as Partial<components["schemas"]["RefusalDetail"]>;
+      if (typeof rd.code === "string") code = code ?? rd.code;
+      if (typeof rd.message === "string") text = rd.message;
+      else if (typeof rd.code === "string") text = rd.code;
+    }
   } catch {
-    return `HTTP ${r.status}`;
+    // no JSON body: keep the status line
   }
+  return new CommandRefused(r.status, text, code);
 }
 
 const ClientCtx = createContext<Client | null>(null);

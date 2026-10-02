@@ -14,17 +14,25 @@ dependencies = [
     "torchvision>=0.21",
     "pymmcore-plus==0.18.1",
     "pymmcore==12.5.0.75.0",
+    "pydantic>=2.7",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.6"]
+# httpx2: the HTTP client starlette.testclient wants since starlette 1.x
+dev = ["pytest>=8", "ruff>=0.6", "httpx2>=2.13"]
+# local web app back end (FastAPI); pillow encodes the live-view JPEGs
+server = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pillow>=10",
+]
 web = [
     "nodejs-wheel>=22,<23",
 ]
 
 [tool.uv]
-# `uv sync` installs Node (web group) too, so the React build needs no system Node.
-default-groups = ["dev", "web"]
+# `uv sync` installs the server and Node (web group) too, so the React build needs no system Node.
+default-groups = ["dev", "server", "web"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu126" }

@@ -223,3 +223,24 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 - Note for mm-real: the exit-path light payload makes about 9 read_property calls; measure the time on mm-demo and keep
   it under one second, or batch the reads.
 - Review: AF 검토보조1. Needed before the T-036 lock can be lifted.
+- Also in T-011b (from T-029): cache the BackendInfo read at start() and expose it as
+  `snapshot()["backend_info"]` (including `stage_limits` and `bench`), so `plan()` can compute T-029's escape
+  without touching hardware.
+
+## T-011c (from T-031, small)
+
+- OpContext gets a public `record_dir` (ops read `ctx._op.record.dir` today). Owner AF 실행15, review AF 검토보조1.
+
+## T-011e (AF 실행15, after T-011d; review AF 검토보조2) — one light shape on the wire
+
+- guards.py (`operation()`, `exclusive()`, `check_lights`) and `operations/light_set.py` emit `light_changed` as
+  `{readbacks, verified, error}` or `{switched_off, state, ...}`; the web reads only `_light_payload`'s shape and
+  shows "lights: unknown" otherwise (검토보조4, T-010-6).
+- Fix at the choke point: every `light_changed` that leaves the runner (event sink → /ws/events, records) is
+  normalised to `_light_payload`'s shape, keeping the emitter's readbacks as `records` and `verified`/`error`.
+  Emitters do not change. Tests: a guards light event and a light_set event both come out in the one shape.
+- Item 2 (from 검토보조2 / 실행11 via AF 검토, after T-031b): the exit light step always reads `light_state()` and
+  records the end state as read, with `verified` True/False and the readbacks, even when it switched nothing (an op
+  such as scan_4x may already have switched off in its own finally). Today summary.json then shows both off with
+  `verified: None` and no readbacks (PLAN rules 4/5). Test: an op that switches off itself still gets a verified
+  end state in summary.json.
