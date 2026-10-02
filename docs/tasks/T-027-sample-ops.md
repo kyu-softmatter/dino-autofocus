@@ -83,3 +83,5 @@
   "unmeasured provisional", plus a check that refuses a step-out beyond the stage Y limit read from the backend.
 - Reader: expose whether the current hole fit came from a closed loop (`trace_stop`, `arc_deg`), next to
   `fitted_at`, so the re-trace rule and scan_4x can tell a partial arc from a full fit.
+- `hole_loop()` prefers `hole["closed_loop"]` when present (T-032 adds it); the text match and the
+  FULL_LOOP_ARC_DEG = 330 (unmeasured provisional) rule stay only for older fits.
