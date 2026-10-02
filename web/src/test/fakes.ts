@@ -34,14 +34,51 @@ export type Route = (init?: RequestInit) => {
   headers?: Record<string, string>;
 };
 
-/** A transport whose fetch answers from a table of paths and whose sockets are FakeSockets. */
-export function fakeTransport(routes: Record<string, Route>) {
+/** The logged-in user every fake transport answers on /api/auth/me unless a test says otherwise. */
+export const TEST_ME = {
+  user_id: "operator@example.test",
+  name: "Test Operator",
+  role: "operator",
+  locked: false,
+  has_control: false,
+  local: true,
+  expires_at: 4102444800, // 2100-01-01: never expires during a test
+} as const;
+
+export interface FakeOptions {
+  /**
+   * Who `/api/auth/me` says is logged in. Default TEST_ME, so app-level tests get
+   * past T-105's login gate. `null` answers 401 (logged out). A route for
+   * `/api/auth/me` in `routes` wins over this.
+   */
+  me?: Record<string, unknown> | null;
+}
+
+/** Auth routes every fake transport has, so the real login gate (T-105) lets tests in. */
+function authDefaults(opts: FakeOptions): Record<string, Route> {
+  const me = opts.me === undefined ? TEST_ME : opts.me;
+  return {
+    "/api/auth/me": () =>
+      me === null ? { status: 401, body: { detail: { code: "not_logged_in", message: "log in" } } } : { status: 200, body: me },
+    "/api/auth/setup": () => ({ status: 200, body: { state: "ready" } }),
+    "/api/auth/control": () => ({ status: 200, body: { holder: null } }),
+    "/api/auth/activity": () => ({ status: 204 }),
+  };
+}
+
+/**
+ * A transport whose fetch answers from a table of paths and whose sockets are
+ * FakeSockets. Unknown paths answer 404. The auth routes above are there by default
+ * (opt out with `{ me: null }`, or override a route in `routes`).
+ */
+export function fakeTransport(routes: Record<string, Route>, opts: FakeOptions = {}) {
   const sockets: FakeSocket[] = [];
   const calls: { path: string; init?: RequestInit }[] = [];
+  const table: Record<string, Route> = { ...authDefaults(opts), ...routes };
   const transport: Transport = {
     fetch: async (path, init) => {
       calls.push({ path, init });
-      const route = routes[path];
+      const route = table[path];
       const { status, body, headers } = route
         ? route(init)
         : { status: 404, body: { detail: "Not Found" }, headers: undefined };
