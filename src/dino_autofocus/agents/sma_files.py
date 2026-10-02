@@ -77,6 +77,29 @@ def guess_kind(base: str) -> str:
     return stem
 
 
+def long_path(p: str | os.PathLike[str]) -> Path:
+    """On Windows, the `\\\\?\\` form of `p` made absolute, which the file system does not cut
+    at MAX_PATH (260 characters) when long paths are off system-wide; without it a deep
+    copy loses files silently, because `is_file()` is then False with no error.
+    Unchanged on other systems."""
+    if os.name != "nt":
+        return Path(p)
+    s = os.path.abspath(p)
+    if s.startswith("\\\\?\\"):
+        return Path(s)
+    if s.startswith("\\\\"):  # \\server\share -> \\?\UNC\server\share
+        return Path("\\\\?\\UNC\\" + s[2:])
+    return Path("\\\\?\\" + s)
+
+
+def _size(p: Path) -> int | None:
+    """Size in bytes, or None when the entry is listed but cannot be stat'ed."""
+    try:
+        return p.stat().st_size
+    except OSError:
+        return None
+
+
 def _read_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
@@ -90,12 +113,17 @@ class SmaFiles:
     """AgentStore over a soft-matter-agents tree. Read only.
 
     `source` names where the records came from in every summary, so a console showing
-    two stores side by side can tell them apart.
+    two stores side by side can tell them apart. An entry that a folder lists but that
+    cannot be stat'ed is reported (in `files` with size None, or in `not_opened`), not
+    dropped.
     """
+
+    writable = False
 
     def __init__(self, root: str | os.PathLike[str] | None = None, *,
                  source: str = "soft-matter-agents", max_read_bytes: int = MAX_READ_BYTES):
         self.root = Path(root) if root is not None else default_root()
+        self._root = long_path(self.root)  # what the file system is asked about
         self.source = source
         self.max_read_bytes = max_read_bytes
 
@@ -103,12 +131,12 @@ class SmaFiles:
         return f"SmaFiles({str(self.root)!r}, source={self.source!r})"
 
     def available(self) -> bool:
-        return any((self.root / f"{a}_agent").is_dir() for a in AGENTS)
+        return any((self._root / f"{a}_agent").is_dir() for a in AGENTS)
 
     # -- questions -------------------------------------------------------------------------
 
     def _question_dir(self, qid: str) -> Path:
-        return self.root / f"{agent_of_qid(qid)}_agent" / "questions" / qid
+        return self._root / f"{agent_of_qid(qid)}_agent" / "questions" / qid
 
     def has_question(self, qid: str) -> bool:
         try:
@@ -117,7 +145,7 @@ class SmaFiles:
             return False
 
     def list_questions(self, agent: Agent) -> list[QuestionSummary]:
-        base = self.root / f"{check_agent(agent)}_agent" / "questions"
+        base = self._root / f"{check_agent(agent)}_agent" / "questions"
         if not base.is_dir():
             return []
         out = []
@@ -150,32 +178,40 @@ class SmaFiles:
         newest = _newest(read[latest][0])
         docs = [doc for v in sorted(paths, reverse=True)
                 for doc in self._read_docs(paths[v], v, only_question=True)]
+        heads = _heads([read[latest][0], read[first][0]])
+        observable = _first(heads, "observable")
         return QuestionSummary(
             qid=qid,
             agent=agent_of_qid(qid),
-            title=_title(qid, docs, [read[latest][0], read[first][0]]),
+            title=_title(qid, docs, heads),
             status=newest.status if newest else None,
             created_at=min(first_times) if first_times else None,
             updated_at=max(latest_times) if latest_times else None,
             latest_version=latest,
             versions=versions,
             source=self.source,
+            purpose=_str_or_none(_first(heads, "purpose")),
+            intent=_str_or_none(_first(heads, "intent")),
+            observable_name=_str_or_none(observable.get("name"))
+            if isinstance(observable, dict) else None,
         )
 
     def _read_version(self, paths: list[Path], version: int
                       ) -> tuple[list[Card], list[Document], list[FileInfo]]:
         cards: list[Card] = []
         files: list[FileInfo] = []
+        docs = self._read_docs(paths, version)
+        read_docs = {doc.name for doc in docs}
         for p in paths:
-            base = split_version(p.name)[1]
-            if base.endswith(".md"):
+            if p.name in read_docs:
                 continue
+            base = split_version(p.name)[1]
             card = self._read_card(p, version, base) if base.endswith(".json") else None
             if card is None:
-                files.append(FileInfo(p.name, p.stat().st_size))
+                files.append(FileInfo(p.name, _size(p)))
             else:
                 cards.append(card)
-        return cards, self._read_docs(paths, version), files
+        return cards, docs, files
 
     def _read_docs(self, paths: list[Path], version: int, *, only_question: bool = False
                    ) -> list[Document]:
@@ -183,11 +219,15 @@ class SmaFiles:
         for p in paths:
             base = split_version(p.name)[1]
             if base.endswith(".md") and (not only_question or base.startswith("question")):
-                out.append(Document(p.name, version, p.read_text(encoding="utf-8")))
+                try:
+                    out.append(Document(p.name, version, p.read_text(encoding="utf-8")))
+                except (OSError, UnicodeDecodeError):
+                    continue  # _read_version lists it in files instead
         return out
 
     def _read_card(self, p: Path, version: int, base: str) -> Card | None:
-        if p.stat().st_size > self.max_read_bytes:
+        size = _size(p)
+        if size is None or size > self.max_read_bytes:
             return None
         try:
             data = _read_json(p)
@@ -209,10 +249,10 @@ class SmaFiles:
     def _run_dir(self, agent: Agent, run_id: str) -> Path:
         if not run_id or "/" in run_id or "\\" in run_id or run_id in (".", ".."):
             raise NotFoundError(f"not a run id: {run_id!r}")
-        return self.root / f"{check_agent(agent)}_agent" / "runs" / run_id
+        return self._root / f"{check_agent(agent)}_agent" / "runs" / run_id
 
     def list_runs(self, agent: Agent) -> list[RunSummary]:
-        base = self.root / f"{check_agent(agent)}_agent" / "runs"
+        base = self._root / f"{check_agent(agent)}_agent" / "runs"
         if not base.is_dir():
             return []
         out = [self._run_summary(agent, d) for d in base.iterdir() if d.is_dir()]
@@ -224,18 +264,21 @@ class SmaFiles:
             raise NotFoundError(f"no {agent} run {run_id} in {self.source}")
         records: dict[str, Any] = {}
         not_opened: list[str] = []
+        entries = [p for p in sorted(d.iterdir()) if not p.is_dir()]
+        names = {p.name for p in entries}
         for name in RUN_RECORDS[agent]:
-            p = d / name
-            if not p.is_file():
+            if name not in names:
                 continue
-            if p.stat().st_size > self.max_read_bytes:
+            p = d / name
+            size = _size(p)
+            if size is None or size > self.max_read_bytes:
                 not_opened.append(name)
                 continue
             try:
                 records[name] = _read_json(p)
-            except (UnicodeDecodeError, json.JSONDecodeError):
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 not_opened.append(name)
-        files = [FileInfo(p.name, p.stat().st_size) for p in sorted(d.iterdir()) if p.is_file()]
+        files = [FileInfo(p.name, _size(p)) for p in entries]
         return RunDetail(self._run_summary(agent, d), records, files, not_opened)
 
     def _run_summary(self, agent: Agent, d: Path) -> RunSummary:
@@ -257,6 +300,7 @@ class SmaFiles:
             finished_at=_str_or_none(log.get("finished_at")),
             backend=_str_or_none(log.get("backend")) or _str_or_none(config.get("backend")),
             source=self.source,
+            approval_kind=_approval_kind(log) or _approval_kind(config),
         )
 
     def _small_json(self, p: Path) -> dict[str, Any]:
@@ -274,12 +318,12 @@ class SmaFiles:
     def list_inbox(self) -> list[InboxThread]:
         threads: dict[str, Agent | None] = {}
         for a in AGENTS:
-            base = self.root / f"{a}_agent" / "inbox"
+            base = self._root / f"{a}_agent" / "inbox"
             if base.is_dir():
                 for d in base.iterdir():
                     if d.is_dir():
                         threads[d.name] = a
-        bridge = self.root / "bridge" / "threads"
+        bridge = self._root / "bridge" / "threads"
         if bridge.is_dir():
             for d in bridge.iterdir():
                 if d.is_dir():
@@ -288,11 +332,11 @@ class SmaFiles:
         return sorted(out, key=lambda t: (t.updated_at or "", t.thread), reverse=True)
 
     def _thread(self, thread: str, agent: Agent | None) -> InboxThread:
-        status = self._small_json(self.root / "bridge" / "threads" / thread / "status.json")
+        status = self._small_json(self._root / "bridge" / "threads" / thread / "status.json")
         messages: list[InboxMessage] = []
         if agent is not None:
-            for p in sorted((self.root / f"{agent}_agent" / "inbox" / thread).iterdir()):
-                if p.is_file() and p.suffix in (".json", ".md"):
+            for p in sorted((self._root / f"{agent}_agent" / "inbox" / thread).iterdir()):
+                if not p.is_dir() and p.suffix in (".json", ".md"):
                     messages.append(self._message(p))
         rnd = status.get("round")
         return InboxThread(
@@ -310,13 +354,20 @@ class SmaFiles:
     def _message(self, p: Path) -> InboxMessage:
         m = _ROUND_RE.match(p.stem)
         rnd, kind = (int(m.group(1)), m.group(2)) if m else (None, p.stem)
+        # card and text both None: listed by name, the console shows it as unreadable
+        size = _size(p)
         if p.suffix == ".json":
             try:
-                card = _read_json(p) if p.stat().st_size <= self.max_read_bytes else None
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                card = None  # listed by name; the console shows it as unreadable
+                ok = size is not None and size <= self.max_read_bytes
+                card = _read_json(p) if ok else None
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                card = None
             return InboxMessage(p.name, rnd, kind, card=card, text=None)
-        return InboxMessage(p.name, rnd, kind, card=None, text=p.read_text(encoding="utf-8"))
+        try:
+            text = p.read_text(encoding="utf-8") if size is not None else None
+        except (OSError, UnicodeDecodeError):
+            text = None
+        return InboxMessage(p.name, rnd, kind, card=None, text=text)
 
     # -- writing ---------------------------------------------------------------------------
 
@@ -332,7 +383,7 @@ def _scan(d: Path) -> dict[int, list[Path]]:
     """The files of a question folder by version, names sorted, nothing opened."""
     out: dict[int, list[Path]] = {}
     for p in sorted(d.iterdir()):
-        if p.is_file() and not p.name.endswith(".tmp"):
+        if not p.is_dir() and not p.name.endswith(".tmp"):
             out.setdefault(split_version(p.name)[0], []).append(p)
     return out
 
@@ -350,10 +401,28 @@ def _newest(cards: list[Card]) -> Card | None:
     return max(dated, key=lambda c: c.created_at or "") if dated else (cards[-1] if cards else None)
 
 
-def _title(qid: str, docs: list[Document], card_groups: list[list[Card]]) -> str:
+def _heads(card_groups: list[list[Card]]) -> list[dict[str, Any]]:
+    """Goal cards before plan cards, group by group (latest version first)."""
+    out = []
+    for cs in card_groups:
+        for kind in ("goal", "plan"):
+            out += [c.data for c in cs if c.kind == kind and isinstance(c.data, dict)]
+    return out
+
+
+def _first(heads: list[dict[str, Any]], key: str) -> Any:
+    return next((h[key] for h in heads if h.get(key) is not None), None)
+
+
+def _approval_kind(record: dict[str, Any]) -> str | None:
+    approval = record.get("approval")
+    return _str_or_none(approval.get("kind")) if isinstance(approval, dict) else None
+
+
+def _title(qid: str, docs: list[Document], heads: list[dict[str, Any]]) -> str:
     """The heading of the question's markdown copy, else the question text, else the
     observable a goal or plan names, else its purpose and first target, else the qid.
-    `docs` and `card_groups` come newest version first."""
+    `docs` come newest version first, `heads` as `_heads` orders them."""
     for doc in docs:
         lines = doc.text.strip().splitlines()
         if lines and lines[0].startswith("#"):
@@ -363,8 +432,6 @@ def _title(qid: str, docs: list[Document], card_groups: list[list[Card]]) -> str
                 if head.startswith(qid) and sep in head:
                     return head.split(sep, 1)[1].strip()
             return head
-    heads = [c.data for cs in card_groups for c in cs
-             if c.kind in ("goal", "plan") and isinstance(c.data, dict)]
     for h in heads:
         q = h.get("question")
         if isinstance(q, str) and q.strip():
