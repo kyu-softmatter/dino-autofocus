@@ -415,3 +415,28 @@ def test_server_import_does_not_load_the_sdk():
         "assert 'anthropic' not in sys.modules\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_card_gate_comes_from_the_hardware_provider_when_there_is_one(setup):
+    class Hardware:
+        def __init__(self):
+            self.asked = []
+
+        def check(self, op, args=None):
+            self.asked.append((op, dict(args or {})))
+            return False, ["no 4x objective in the hardware profile"]
+
+    client, _, app = setup([[tool_use("propose_scan_4x", sample_id="s1", reason="r")], [text("x")]])
+    hw = app.state.hardware = Hardware()
+    app.state.assistant = build_assistant(app.state, AssistantConfig())
+    app.state.assistant.provider = FakeProvider(
+        [[tool_use("propose_scan_4x", sample_id="s1", reason="r")], [text("x")]]
+    )
+    _, lines = ask(client)
+    prop = next(e["proposal"] for e in lines if e["type"] == "proposal")
+    assert prop["expected_gate"] == {
+        "checked": True,
+        "enabled": False,
+        "reasons": ["no 4x objective in the hardware profile"],
+    }
+    assert hw.asked == [("scan_4x", {"sample_id": "s1"})]

@@ -268,11 +268,13 @@ def build_assistant(state: Any, config: AssistantConfig | None = None) -> Assist
     config = config or AssistantConfig.from_env()
     engine = state.engine
     audit = getattr(state.auth, "audit", None)
+    # the card's expected gate: the T-028 hardware provider's `check(op, args)` when
+    # create_app has one (T-009g), else the engine's own `check`
+    hardware = getattr(state, "hardware", None)
+    gates = hardware.check if hardware is not None else engine_gates(engine)
     return Assistant(
         config,
-        sources=Sources(
-            snapshot=engine.snapshot, store=state.agent_store, gates=engine_gates(engine)
-        ),
+        sources=Sources(snapshot=engine.snapshot, store=state.agent_store, gates=gates),
         propose=engine_propose(engine),
         allows=allows,
         records=RecordLog(config.records_dir, sinks=[audit_sink(audit)] if audit else []),
