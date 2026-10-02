@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { useClient } from "../../app/client";
 import { EncoderZ } from "../../app/Verdict";
@@ -51,14 +51,29 @@ function FrameInfo({ frame, testIds }: { frame: CamFrame; testIds: boolean }) {
   );
 }
 
-function CameraPanel({ frame }: { frame: CamFrame }) {
+/** Something drawn over a frame (the pattern overlay), sized to that frame. */
+export type Overlay = (frame: CamFrame) => ReactNode;
+
+function Stack({ frame, overlay, children }: { frame: CamFrame; overlay?: Overlay; children: ReactNode }) {
+  if (!overlay) return <>{children}</>;
+  return (
+    <div className="live-stack">
+      {children}
+      {overlay(frame)}
+    </div>
+  );
+}
+
+function CameraPanel({ frame, overlay }: { frame: CamFrame; overlay?: Overlay }) {
   return (
     <figure className="live-panel" aria-label={`Camera ${frame.camera}`}>
       <figcaption className="live-info">
         <strong>{frame.camera}</strong>
         <FrameInfo frame={frame} testIds={false} />
       </figcaption>
-      <img className="live-frame" src={frame.url} alt={`Live frame ${frame.camera}`} />
+      <Stack frame={frame} overlay={overlay}>
+        <img className="live-frame" src={frame.url} alt={`Live frame ${frame.camera}`} />
+      </Stack>
     </figure>
   );
 }
@@ -71,7 +86,7 @@ function CameraPanel({ frame }: { frame: CamFrame }) {
  * (blue camera green, red camera magenta) or one at a time. Display only: raw
  * frames stay on disk.
  */
-export function LiveView({ now = performanceNow }: { now?: () => number }) {
+export function LiveView({ now = performanceNow, overlay }: { now?: () => number; overlay?: Overlay }) {
   const client = useClient();
   const [cams, setCams] = useState<Record<string, CamFrame>>({});
   const [mode, setMode] = useState<Mode>("side");
@@ -158,11 +173,15 @@ export function LiveView({ now = performanceNow }: { now?: () => number }) {
       </div>
       {detail && conn === "unsupported" && <p className="muted">{detail}</p>}
       {frames.length === 0 && <p className="muted">No frame yet.</p>}
-      {single && <img className="live-frame" src={single.url} alt="Live camera frame" />}
+      {single && (
+        <Stack frame={single} overlay={overlay}>
+          <img className="live-frame" src={single.url} alt="Live camera frame" />
+        </Stack>
+      )}
       {frames.length > 1 && shown === "side" && (
         <div className="live-side">
           {frames.map((f) => (
-            <CameraPanel key={f.camera} frame={f} />
+            <CameraPanel key={f.camera} frame={f} overlay={overlay} />
           ))}
         </div>
       )}
@@ -175,10 +194,12 @@ export function LiveView({ now = performanceNow }: { now?: () => number }) {
               </span>
             ))}
           </figcaption>
-          <MergedView frames={frames} />
+          <Stack frame={frames[0]} overlay={overlay}>
+            <MergedView frames={frames} />
+          </Stack>
         </figure>
       )}
-      {frames.length > 1 && shown.startsWith("one:") && <CameraPanel frame={cams[shown.slice(4)]} />}
+      {frames.length > 1 && shown.startsWith("one:") && <CameraPanel frame={cams[shown.slice(4)]} overlay={overlay} />}
     </div>
   );
 }

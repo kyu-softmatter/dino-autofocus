@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client, ClientProvider } from "../../app/client";
 import { fakeTransport } from "../../test/fakes";
 import { FpsMeter, FramePairer } from "./frames";
+import LiveScreen from "./index";
 import { LiveView } from "./LiveView";
+import { ASSUMED_PIXEL_UM, frameScale } from "./PatternOverlay";
 
 const META = {
   type: "frame",
@@ -163,5 +165,52 @@ describe("LiveView", () => {
     expect(screen.getByTestId("live-conn").textContent).toBe("frames: closed");
     act(() => vi.advanceTimersByTime(2000));
     expect(frames()).toHaveLength(2);
+  });
+});
+
+describe("pattern overlay", () => {
+  const PATTERN = {
+    id: "square",
+    name: "Square",
+    version: 1,
+    loop: false,
+    notes: "",
+    meta: {},
+    duration_s: 4,
+    tracks: [{ target: "trap:0", points: [[0, 0, 0, 0], [4, 5, 5, 0]] }],
+  };
+
+  beforeEach(() => {
+    let n = 0;
+    URL.createObjectURL = vi.fn(() => `blob:frame-${++n}`);
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("reads the scale from the frame, else assumes one and says so", () => {
+    expect(frameScale({ ...META, binning: 2, meta: { pixel_um: 0.108 } } as never)).toEqual({ umPerPx: 0.216, known: true });
+    expect(frameScale({ ...META, binning: 3, meta: {} } as never)).toEqual({ umPerPx: ASSUMED_PIXEL_UM * 3, known: false });
+  });
+
+  it("draws the pattern named in the route over the frame, with a time slider", async () => {
+    window.location.hash = "#/live?pattern=square";
+    const t = fakeTransport({
+      "/api/patterns": () => ({ status: 200, body: [{ id: "square", name: "Square", duration_s: 4, targets: ["trap:0"] }] }),
+      "/api/patterns/square": () => ({ status: 200, body: PATTERN }),
+    });
+    render(
+      <ClientProvider client={new Client(t.transport, "127.0.0.1")}>
+        <LiveScreen />
+      </ClientProvider>,
+    );
+    const ws = t.sockets.find((s) => s.path === "/ws/frames")!;
+    act(() => {
+      ws.open();
+      ws.send(META);
+      ws.onmessage?.(new MessageEvent("message", { data: jpeg() }));
+    });
+    expect(await screen.findByRole("img", { name: "Pattern Square over the frame" })).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Pattern time" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Edit" }).getAttribute("href")).toBe("#/patterns/square");
+    expect((screen.getByRole("combobox", { name: "Pattern overlay" }) as HTMLSelectElement).value).toBe("square");
   });
 });

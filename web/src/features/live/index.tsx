@@ -1,13 +1,100 @@
-import { LiveView } from "./LiveView";
+import { useCallback, useEffect, useState } from "react";
+
+import { useClient } from "../../app/client";
+import {
+  type PatternOut,
+  type PatternSummary,
+  patternDuration,
+  PatternReadout,
+  PatternScrubber,
+  patternTime,
+  targetLabel,
+} from "../../app/patterns";
+import { areaHref, useAreaPath } from "../../app/route";
+import { type CamFrame, LiveView } from "./LiveView";
+import { PatternOverlay } from "./PatternOverlay";
+
+/** `?pattern=<id>` in the route rest */
+function patternIdOf(rest: string): string {
+  return new URLSearchParams(rest.replace(/^[^?]*\??/, "")).get("pattern") ?? "";
+}
 
 /**
- * The live area (owned by the shell, T-010). Route: `#/live` (no `rest` forms yet).
+ * The live area (owned by the shell, T-010). Route: `#/live`, or `#/live?pattern=<id>` to draw a
+ * saved motion pattern over the frames (coloured by time, gray to dark green) with a time slider.
+ * The overlay is display only: it shows where the piezo and the traps would go, it moves nothing.
  */
 export default function LiveScreen() {
+  const client = useClient();
+  const [rest, setRest] = useAreaPath();
+  const id = patternIdOf(rest);
+  const [list, setList] = useState<PatternSummary[]>([]);
+  const [pattern, setPattern] = useState<PatternOut | null>(null);
+  const [t, setT] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    client.get<PatternSummary[]>("/api/patterns").then(setList, () => setList([]));
+  }, [client]);
+
+  useEffect(() => {
+    setT(0);
+    if (!id) {
+      setPattern(null);
+      setError(null);
+      return;
+    }
+    client.get<PatternOut>(`/api/patterns/${encodeURIComponent(id)}`).then(
+      (p) => {
+        setPattern(p);
+        setError(null);
+      },
+      (e) => {
+        setPattern(null);
+        setError(e instanceof Error ? e.message : String(e));
+      },
+    );
+  }, [client, id]);
+
+  const overlay = useCallback(
+    (frame: CamFrame) => (pattern ? <PatternOverlay pattern={pattern} t={t} meta={frame.meta} /> : null),
+    [pattern, t],
+  );
+
   return (
     <section aria-label="Live view">
       <h2>Live view</h2>
-      <LiveView />
+      <div className="patterns-bar">
+        <label>
+          Pattern overlay{" "}
+          <select
+            aria-label="Pattern overlay"
+            value={id}
+            onChange={(e) => setRest(e.target.value ? `?pattern=${encodeURIComponent(e.target.value)}` : "")}
+          >
+            <option value="">none</option>
+            {list.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {pattern && (
+          <>
+            <span className="muted">{pattern.tracks.map((tr) => targetLabel(tr.target)).join(", ")}</span>
+            <a href={areaHref("patterns", pattern.id)}>Edit</a>
+          </>
+        )}
+        {error && <span className="warn">{error}</span>}
+      </div>
+      {pattern && (
+        <>
+          <PatternScrubber duration={patternDuration(pattern)} t={t} onTime={setT} loop={pattern.loop} />
+          <PatternReadout tracks={pattern.tracks} t={patternTime(pattern, t)} />
+        </>
+      )}
+      <LiveView overlay={pattern ? overlay : undefined} />
     </section>
   );
 }

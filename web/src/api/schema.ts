@@ -968,6 +968,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/patterns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Patterns */
+        get: operations["list_patterns_api_patterns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/patterns/{pattern_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pattern */
+        get: operations["get_pattern_api_patterns__pattern_id__get"];
+        put?: never;
+        /**
+         * Save Pattern
+         * @description Create or replace. The server checks it (`engine/patterns.py`) and stamps the times.
+         */
+        post: operations["save_pattern_api_patterns__pattern_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/patterns/{pattern_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete Pattern */
+        post: operations["delete_pattern_api_patterns__pattern_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sample/list": {
         parameters: {
             query?: never;
@@ -2365,6 +2420,69 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** PatternIn */
+        PatternIn: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Tracks */
+            tracks: components["schemas"]["TrackIO"][];
+            /**
+             * Loop
+             * @default false
+             */
+            loop: boolean;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
+        /** PatternOut */
+        PatternOut: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Tracks */
+            tracks: components["schemas"]["TrackIO"][];
+            /**
+             * Loop
+             * @default false
+             */
+            loop: boolean;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Version */
+            version: number;
+            /** Id */
+            id: string;
+            /** Duration S */
+            duration_s: number;
+            /** Meta */
+            meta?: {
+                [key: string]: unknown;
+            };
+        };
+        /** PatternSummary */
+        PatternSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Duration S */
+            duration_s: number;
+            /** Targets */
+            targets: string[];
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /**
          * PermissionOut
          * @description One entry of `GET /api/permissions`: may the asking person do this now, and if not,
@@ -3138,6 +3256,13 @@ export interface components {
             blocks_per_side: number;
             /** Dropout Z Um */
             dropout_z_um?: number[];
+        };
+        /** TrackIO */
+        TrackIO: {
+            /** Target */
+            target: string;
+            /** Points */
+            points: number[][];
         };
         /** UnlockIn */
         UnlockIn: {
@@ -6015,6 +6140,121 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Focus100xDefaults"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_patterns_api_patterns_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatternSummary"][];
+                };
+            };
+        };
+    };
+    get_pattern_api_patterns__pattern_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pattern_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatternOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_pattern_api_patterns__pattern_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pattern_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatternIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatternOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_pattern_api_patterns__pattern_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pattern_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

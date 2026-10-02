@@ -59,6 +59,8 @@ class PlaceholderEngine:
 
     frame_hz = 10.0
     position_every_s = 1.0
+    #: sample-plane size of one camera pixel, um: Kinetix 6.5 um behind a 60x objective
+    pixel_um = 0.108
     #: camera label -> blob indices it shows (0-4 shared phases, 5-6 red only)
     CAMERAS = {"Kinetix_blue": (0, 1, 2, 3, 4), "Kinetix_red": (0, 1, 2, 5, 6)}
 
@@ -152,7 +154,7 @@ class PlaceholderEngine:
             now = time.time()
             frames = {cam: (self._picture(now, blobs), {
                 "t": now, **self._positions, "bit_depth": 12, "placeholder": True,
-                "camera": cam}) for cam, blobs in self.CAMERAS.items()}
+                "camera": cam, "pixel_um": self.pixel_um}) for cam, blobs in self.CAMERAS.items()}
             self._frames = frames
             self._frame = frames["Kinetix_red"]
             self._emit("frame_ready")
@@ -294,11 +296,13 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
                   allowed_hosts=hosts or [], dev_origins=args.dev_origin,
                   web_dist=args.web_dist)
     auth = AuthSeat.from_config(args.config_dir)
+    from ..auth import config as auth_config
+    # designs, not records: one folder for the mock and the bench alike
+    common["patterns_root"] = auth_config.config_dir(args.config_dir) / "patterns"
     if args.backend == "placeholder":
         engine = PlaceholderEngine()
         return Built(create_app(engine, auth=auth, engine_name="placeholder", **common),
                      engine, "placeholder")
-    from ..auth import config as auth_config
     from ..engine.backend import is_bench
     from ..engine.runner import RunnerConfig
     from ..records import AutoCommitter, FolderStore, GitFolderStore, RecordsConfig
