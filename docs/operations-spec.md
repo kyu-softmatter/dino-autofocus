@@ -26,7 +26,7 @@
 매니저 결정 반영 (T-002 부록 3, main `69e6ba5`): `scan4x_<stamp>/` 폴더 유지 + `scan.json` 병행,
 `lights_off` 는 선점 명령, 상태 표시는 `position` 이벤트, `hole.fitted_at`, 원본 빈틈 세 가지.
 
-T-024 (실행17): 0.1 과 각 절의 호출 이름을 main `fc5329f` 의 `backend.py` (T-002-1, T-015), `events.py`, `guards.py` (T-002-2) 에 맞췄다.
+T-024 (실행17): 0.1 과 각 절의 호출 이름을 main `543c5ee` 의 `backend.py` (T-002-1, T-015), `events.py`, `guards.py` (T-002-2) 에 맞췄다.
 방향 기준은 PLAN v1.2 (5절, 9/30 기록): ZDrive 값이 커지면 시료 쪽이고 0 이 후퇴, 스윕은 상향, 영상은 재물대와 거울상,
 4x 타일은 serpentine. 이 문서의 서술은 이 기준과 맞는다.
 
@@ -36,12 +36,12 @@ T-024 (실행17): 0.1 과 각 절의 호출 이름을 main `fc5329f` 의 `backen
 
 "run" 표의 **엔진 호출** 열은 아래 이름을 쓴다. 백엔드 이름은 main 의
 `src/dino_autofocus/engine/backend.py` (T-002-1 프로토콜 + T-015 확장), 가드 이름은 `engine/guards.py` (T-002-2) 를
-따른다 (main `fc5329f`). "(T-015)" 는 T-015 가 넣은 메서드 표시다.
+따른다 (main `543c5ee`). "(T-015)" 는 T-015 가 넣은 메서드 표시다.
 
 | 구분 | 이름 | 스크립트 원본 |
 |---|---|---|
 | 백엔드 수명 | `open()` → `BackendInfo`, `close()` | `mm_grab.open_core` (config 로드, AutoShutter 0, 노출, ROI) |
-| 백엔드 정보 | `info()` → `BackendInfo`: kind, config, camera, sensor, roi, exposure_ms, pixel_um, objective, intermediate_mag, bit_depth, `ceiling_adu` (= 2^bit_depth − 1), `objectives[]` (`ObjectiveInfo`: state, label, magnification, pixel_um, free_wd_um), `stage_limits` (`StageLimits`: x_um, y_um, z_um, 모르면 None) | `open_core` 의 `info`, `core.getImageBitDepth()` |
+| 백엔드 정보 | `info()` → `BackendInfo`: kind, config, camera, sensor, roi, exposure_ms, pixel_um, objective, intermediate_mag, bit_depth, `ceiling_adu` (= 2^bit_depth − 1), `objectives[]` (`ObjectiveInfo`: state, label, magnification, pixel_um, free_wd_um), `stage_limits` (`StageLimits`: x_um, y_um, z_um, 모르면 None), `notes{}` (예: `aura.CYAN` = "unmeasured provisional"), `bench` (실제 현미경 mm-real 이면 True) | `open_core` 의 `info`, `core.getImageBitDepth()` |
 | 프레임 | `snap()` → `Frame` (image uint16, t_read, exposure_ms, x_um, y_um, z_um) | `core.snapImage(); core.getImage()` |
 | 설정 | `set_exposure(ms)` → 읽은 노출, `set_roi(size)` → 읽은 ROI (0 = 전체 센서) | `core.setExposure`, `core.setROI / clearROI` |
 | 위치 | `positions()` → `Positions`: x_um, y_um, z_um, piezo_um{}. 실패는 예외가 아니라 None + `errors{}` | `mm_grab.positions` |
@@ -56,10 +56,10 @@ T-024 (실행17): 0.1 과 각 절의 호출 이름을 main `fc5329f` 의 `backen
 | 연속 취득 (T-015) | `start_stream(interval_ms)`, `next_frame(timeout_s)`, `stop_stream()`, `streaming()`. 프레임 메타는 `snap()` 과 같다. 스트림 중 `snap()` 은 `StreamActive` 예외. 스트림은 엔진 (T-011) 소유 | `startContinuousSequenceAcquisition`, `popNextImageAndMD` (8절) |
 | 가드 Z 축 | `axis = FocusAxis(backend, objective, allow_motion=, dry_run=, sink=, op_id=)`. `objective` 는 label 또는 레지스트리 키 | `FocusAxis(core, key, allow_motion=, dry_run=)` |
 | | `axis.plan(c, half, step)`, `.describe()` | 같음 |
-| | `axis.sweep(plan, grab, score=, settle_s=)` → `.points[i].{z_um, z_readback_um, score, diagnostics}`, `.argmax_index`, `.peak_z_um`, `.peak_interior` | 같음 |
-| | `axis.move_to(z, allow_ascent_um=)`, `axis.park_at(z)` → 착지 z, `axis.position_um()` | 같음 |
+| | `axis.sweep(plan, grab, score=, settle_s=)` → `.points[i].{z_um, z_readback_um, score, diagnostics}`, `.argmax_index`, `.peak_z_um`, `.peak_interior`, `.at_top` (피크가 맨 위 평면) | 같음. `at_top` 은 새 이름 |
+| | `axis.move_to(z, allow_ascent_um=)` (목표는 창 2800–3200 안), `axis.park_at(z)` (하강만, 0 까지) → 착지 z readback, `axis.position_um()` | 같음 |
 | | `axis.require_pfs_quiet(disable=True)` | 같음 |
-| | `axis.approach(target_um, step_um=None, clearance=None)`: 2800 µm 아래면 2800 까지 한 번, 그다음 `OBJECTIVE_LIMITS[key].approach_step_um` 이하 걸음. 걸음마다 readback, 상승 확인, `clearance(z)` | 새 이름 (F5 7단계). 원본에 없음 |
+| | `axis.approach(target_um, step_um=None, clearance=None)`: 2800 µm 아래면 2800 까지 한 번, 그다음 `OBJECTIVE_LIMITS[key].approach_step_um` 이하 걸음. 걸음마다 readback, 상승 확인, `clearance(z)`. `info().bench` 가 True (실제 현미경) 이면 `clearance` 가 있어야 한다 (`backend.py`) | 새 이름 (F5 7단계). 원본에 없음 |
 | | `best_z_um(coarse, fine)` → `(z \| None, why)`, `registry_key(label)`, `limits_for(label)` → (`ObjectiveLimits`, 행 이름) | 같음. `limits_for` 는 새 이름 |
 | 렌즈 회전 | `rotate_nosepiece(backend, axis, state)` → 새 label. Z ≤ `RETRACTED_MAX_Z_UM` (1 µm), PFS off 이고 Out of Range 일 때만 | `setProperty("Nosepiece", "State", N)` |
 | 가드 XY | `xy = XYAxis(backend, XYBox.around(centre, half_um), allow_motion=, dry_run=, timeout_s=)`. 박스는 + 1 mm (`XY_BOX_MARGIN_UM`) | `scan_4x.goto_xy` 안의 `box` 검사 |
