@@ -95,7 +95,7 @@ MEASURED_AURA_LINES = ("GREEN",)  # 2026-09-30 bench run
 #: lens facts by nosepiece State, docs/runs/2026-09-30_substrate-scan.yaml; others unknown
 BENCH_PIXEL_UM = {0: 1.625, 5: 0.065}
 #: states 1-4 are catalog values (guards.FREE_WD_UM, 2026-10-02)
-BENCH_FREE_WD_UM = {0: 20000.0, 1: 4000.0, 2: 800.0, 3: 160.0, 4: 150.0, 5: 130.0}
+BENCH_FREE_WD_UM = {0: 20000.0, 1: 4000.0, 2: 800.0, 3: 170.0, 4: 150.0, 5: 130.0}
 DEFAULT_XY_TIMEOUT_S = 30.0  # unmeasured provisional: a full-travel XY move on the Ti2
 
 #: what only the microscope PC can confirm (review request "user check needed"; checklist)

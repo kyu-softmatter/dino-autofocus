@@ -49,8 +49,8 @@ configs/micromanager/*.cfg (byte-exact; `.gitattributes` keeps them `-text`).
 - DONE Camera allow-list: readout property is `ReadoutRate`, but its allowed values depend on `Port` (today
   `Port=Dynamic Range` → only `100MHz 16bit`). Add `Port` and `ReadoutRate` together or neither; 9/30's
   `100MHz 12bit` came from another Port (unconfirmed).
-- DONE FREE_WD (T-027b): catalog values from the librarian (E3): 10x 4 mm, 20x 0.8 mm, 40x WI 0.16 mm (safe end of
-  0.16–0.20; value at the 0.17 collar is an open gap), 60x Oil 0.15 mm. Candidates for `guards.FREE_WD_UM` and
+- DONE FREE_WD (T-027b): catalog values from the librarian (E3): 10x 4 mm, 20x 0.8 mm, 40x WI 0.17 mm (user, 2026-10-02;
+  catalog range 0.16–0.20, the 0.17-collar value is not in the catalog), 60x Oil 0.15 mm. Candidates for `guards.FREE_WD_UM` and
   `BENCH_FREE_WD_UM` (states 1–4). Effect: 10x and 20x may now approach above 2800 µm (WD ≥ the 400 µm window),
   40x-WI/60x-Oil get sweep ceilings and become F5 targets. Still blocked on the bench by `BENCH_APPROACH`.
 - Stage Y limit is at least 20498.8 µm (one +Y 15 mm step-out, readback within 5 µm, < 30 s at 25 mm/s).

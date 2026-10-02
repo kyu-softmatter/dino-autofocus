@@ -341,7 +341,7 @@ def test_approach_ceiling_per_lens(fake, key):
 
 def test_catalog_working_distances_set_the_sweep_ceiling(fake):
     """2026-10-02 catalog values: the sweep ceiling is centre + 0.4 x free WD."""
-    assert axis(fake, "40x-WI").plan(2900, 10, 5).ceiling_um == pytest.approx(2900 + 0.4 * 160)
+    assert axis(fake, "40x-WI").plan(2900, 10, 5).ceiling_um == pytest.approx(2900 + 0.4 * 170)
     assert axis(fake, "60x-Oil").plan(2900, 10, 5).ceiling_um == pytest.approx(2900 + 0.4 * 150)
 
 

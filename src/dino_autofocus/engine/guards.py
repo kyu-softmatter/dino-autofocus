@@ -62,9 +62,9 @@ RETRACT_Z_UM, RETURN_Z_UM = 0.0, 2800.0  # change_objective.py
 WD_FRACTION = 0.4
 #: free working distance per lens; add a lens only once known. 4x and 100x-Oil from the
 #: 2026-09-30 run; 10x, 20x, 40x-WI, 60x-Oil are catalog values (librarian E3, read
-#: 2026-10-02, docs/microscope-pc-checklist.md). 40x-WI takes the short end of the collar
-#: range 0.16-0.20 mm: the value at the 0.17 collar it sits at is still open.
-FREE_WD_UM = {"4x": 20000.0, "10x": 4000.0, "20x": 800.0, "40x-WI": 160.0,
+#: 2026-10-02, docs/microscope-pc-checklist.md). 40x-WI 0.17 mm: set by the user 2026-10-02
+#: (collar at 0.17; catalog range 0.16-0.20 mm, value at that collar not in the catalog).
+FREE_WD_UM = {"4x": 20000.0, "10x": 4000.0, "20x": 800.0, "40x-WI": 170.0,
               "60x-Oil": 150.0, "100x-Oil": 130.0}
 XY_BOX_MARGIN_UM = 1000.0
 
@@ -127,7 +127,7 @@ OBJECTIVE_LIMITS: dict[str, ObjectiveLimits] = {
     "4x": ObjectiveLimits(10000.0, 10.0),  # WD 20 mm
     "10x": ObjectiveLimits(1000.0, 10.0),  # WD 4 mm, field 1.56 mm
     "20x": ObjectiveLimits(777.0, 10.0),  # WD 0.8 mm, field 0.777 mm
-    "40x-WI": ObjectiveLimits(390.0, 10.0),  # WD 0.16 mm, field 0.39 mm
+    "40x-WI": ObjectiveLimits(390.0, 10.0),  # WD 0.17 mm, field 0.39 mm
     "60x-Oil": ObjectiveLimits(260.0, 10.0),  # WD 0.15 mm, field 0.26 mm
     "100x-Oil": ObjectiveLimits(156.0, 10.0),  # WD 0.13 mm, field 0.156 mm
 }
