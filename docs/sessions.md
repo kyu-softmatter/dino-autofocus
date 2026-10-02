@@ -21,6 +21,11 @@ To save tokens, **sessions talk to each other in English**: cross-session messag
 talks to the user in Korean. `docs/PLAN.md` stays Korean for the user; quote its section numbers
 instead of restating it. Older Korean task cards stay as they are; write new ones in English.
 
+**The user reads only the director session.** Every other session writes its own window output in
+English and keeps it minimal: no end-of-turn summaries for the user, at most one or two lines of status.
+Anything that matters goes into a commit, a task card or a message to the right seat. Questions for
+the user go to the manager, who sends them to the director; never ask the user in your own window.
+
 ## 세션 이름: 지금 하는 일을 보이게
 
 세션 이름은 사이드바에서 지금 무슨 개발을 하는지 알 수 있게 유지한다.
