@@ -1,9 +1,9 @@
 import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { Client, ClientProvider } from "../../app/client";
+import { Client, ClientProvider, type Transport } from "../../app/client";
 import { ScreenContextProvider } from "../../app/screenContext";
-import { fakeTransport, type Route } from "../../test/fakes";
+import { fakeTransport } from "../../test/fakes";
 import { type Permissions, SESSION_OPS, type SessionDetail } from "./api";
 import SessionsScreen from "./index";
 
@@ -116,12 +116,23 @@ function show(o: Partial<World> = {}, hash = "#/sessions", hostname = "127.0.0.1
     ...o,
   };
   const answer = server(world);
-  // every path goes to the fake server: a Proxy stands in for the route table
-  const routes = new Proxy({} as Record<string, Route>, { get: (_, path: string) => (init?: RequestInit) => answer(path, init) });
-  const t = fakeTransport(routes);
+  // the shared fake for sockets and the call log; every fetch goes to this file's fake server
+  // (its paths carry ids and queries, so no fixed route table fits them)
+  const t = fakeTransport({});
+  const transport: Transport = {
+    ...t.transport,
+    fetch: async (path, init) => {
+      t.calls.push({ path, init });
+      const { status, body } = answer(path, init);
+      return new Response(body === undefined ? null : JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  };
   window.location.hash = hash;
   render(
-    <ClientProvider client={new Client(t.transport, hostname)}>
+    <ClientProvider client={new Client(transport, hostname)}>
       <ScreenContextProvider area="sessions">
         <SessionsScreen />
       </ScreenContextProvider>
