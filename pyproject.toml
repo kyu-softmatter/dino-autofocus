@@ -3,27 +3,46 @@ name = "dino-autofocus"
 version = "0.0.1"
 description = "Frozen DINOv2 features for microscope autofocus (focus score / signed z-error)"
 requires-python = ">=3.12,<3.13"
+# Core = what the engine, focus verdicts, records and the agent-file reader import. Kept small
+# so soft-matter-agents can declare it (its validator check 82, pixi `mic` feature); see
+# docs/integration-sma.md P1. Everything heavy is an extra, imported at the use site.
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.10",
-    "scikit-image>=0.20",
-    "scikit-learn>=1.4",
-    "pyyaml>=6.0",
-    "matplotlib>=3.6",
+]
+
+[project.optional-dependencies]
+# DINO backbone, head scoring (live.py: joblib comes with scikit-learn) and head training
+ml = [
     "torch>=2.6",
     "torchvision>=0.21",
+    "scikit-learn>=1.4",
+]
+# mm-demo and mm-real backends; same pins as soft-matter-agents' pixi `mic` feature
+hw = [
     "pymmcore-plus==0.18.1",
     "pymmcore==12.5.0.75.0",
-    "pydantic>=2.7",
 ]
+# synthetic z-stacks (vendored psf-autofocus: optics configs, edge features)
+synth = [
+    "scikit-image>=0.20",
+    "pyyaml>=6.0",
+]
+# scripts/plot_*.py and other figure scripts
+plot = [
+    "matplotlib>=3.6",
+]
+all = ["dino-autofocus[ml,hw,synth,plot]"]
 
 [dependency-groups]
 # httpx2: the HTTP client starlette.testclient wants since starlette 1.x
-dev = ["pytest>=8", "ruff>=0.6", "httpx2>=2.13"]
+# dino-autofocus[all]: the dev env keeps every extra, so `uv sync` installs what it did before
+dev = ["pytest>=8", "ruff>=0.6", "httpx2>=2.13", "dino-autofocus[all]"]
 # local web app back end (FastAPI); pillow encodes the live-view JPEGs; anthropic is the
 # assistant's Claude provider (T-013), imported only when that provider is switched on
 # gsd reads HOOMD GSD trajectories for the simulation screen (T-012)
 server = [
+    "pydantic>=2.7",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pillow>=10",

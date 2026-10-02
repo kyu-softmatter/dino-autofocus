@@ -109,6 +109,7 @@ def test_reading_branches(reading, expected):
 
 
 def test_real_focus_reading_fits_the_protocol():
+    pytest.importorskip("joblib")  # the ml extra
     from dino_autofocus.live import FocusReading, Tile
 
     r = FocusReading(score=-2.5, sigma=0.8, n_used=1, tiles=[Tile(0, 0, 1.0)])

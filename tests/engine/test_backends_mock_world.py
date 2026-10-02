@@ -15,7 +15,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import yaml
 
 from dino_autofocus.engine.backends.mock_world import (
     OBJECTIVES,
@@ -68,6 +67,7 @@ def world():
 
 
 def test_objectives_match_the_ti2_configs():
+    yaml = pytest.importorskip("yaml")  # the synth extra
     for o in OBJECTIVES:
         key = o.key.split("-")[0]
         text = (CONFIGS / f"ti2_{key}.yaml").read_text(encoding="utf-8")
