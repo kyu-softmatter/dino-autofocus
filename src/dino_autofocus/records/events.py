@@ -92,7 +92,10 @@ class SampleState:
 
 
 def _stamp(e: SampleEvent) -> dict[str, Any]:
-    return {**e.payload, "t": e.t, "session_id": e.session_id, "user_id": e.user_id}
+    # seq is monotonic within one session's file and orders events in the same second
+    # (t has one-second resolution: a boundary mark and its undo can share a timestamp)
+    return {**e.payload, "t": e.t, "session_id": e.session_id, "user_id": e.user_id,
+            "seq": e.seq}
 
 
 def fold(events: Iterable[SampleEvent], sample_id: str) -> SampleState:

@@ -169,3 +169,16 @@ def test_open_session_start_time_for_the_retrace_rule(store):
     assert started == datetime.fromisoformat(a.info.started_at) and started.tzinfo
     a.close()
     assert open_session_started_at(store) is None
+
+
+def test_sample_event_seq_is_monotonic_within_a_session_file(store):
+    s = ExperimentSession.open(store, USER, "s1")
+    s.sample_event("boundary_point", x_um=1.0, y_um=1.0)
+    s.sample_event("boundary_clear")  # same second as the mark: only seq orders them
+    s.sample_event("boundary_point", x_um=2.0, y_um=2.0)
+    again = ExperimentSession.load(store, s.session_id)  # a reload continues the count
+    again.sample_event("note", text="after reload")
+    seqs = [json.loads(line)["seq"] for line in s.layout.sample_events.read_text().splitlines()]
+    assert seqs == [0, 1, 2, 3]
+    st = sample_state(store, "s1")
+    assert [p["seq"] for p in st.boundary] == [2] and st.notes[0]["seq"] == 3
