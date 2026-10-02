@@ -17,9 +17,10 @@ b9fb6cc), T-018 `auth/roles.py` (`exec13/T-018-auth-core`).
   are recorded. The screen does not combine the steps itself, and a value selected in a form is not a state
   check (PLAN F3, ui-spec 7.3).
 - Sample state is append-only (decision D1 from AF 업무분배보조, PLAN 5절 v0.9): geometry entries and loading
-  steps are entries in the open experiment session's `records/sample_events.jsonl`, folded by one engine
-  reader. `sample.json` and `map.json` are derived views. `sample.py` reads only through that reader and
-  never opens sample files directly (G1).
+  steps are entries in the open experiment session's `records/sample_events.jsonl`. T-019
+  `records.events.fold()` is the only fold; `engine/sample.py` (T-027) projects it into one named sample view
+  (geometry, loading, boundary, flags, candidates, `awaiting_return`, last session). `sample.json` and
+  `map.json` are derived files. `sample.py` reads only that view and never opens sample files directly (G1).
 - Images never go into the prompt context (D7). Prompt context: sample id, geometry values with their
   sources, loading-check state (ui-spec 7.3).
 
@@ -55,14 +56,15 @@ Response bodies are pydantic models; the TypeScript types are generated from Ope
 
 | Route | Returns |
 |---|---|
-| `GET /api/sample/list` | `SampleSummary[]`: `sample_id` (`YYYYMMDD_HHMM_n`), `created`, `fitted_at \| null`, `objectives_used[]`, `last_session {session_id, opened_at} \| null`, `awaiting_return: bool`, `reserved: bool`. Newest first (last three from the T-027 reader, G8). A reserved sample (made by `sample_new`, no session yet) is listed with its id, folder and `created` from the folder; `fitted_at` and `last_session` are null, `objectives_used` is empty |
+| `GET /api/sample/list` | `SampleSummary[]`: `sample_id` (`YYYYMMDD_HHMM_n`), `created`, `fitted_at \| null`, `objectives_used[]`, `last_session {session_id, opened_at} \| null`, `awaiting_return: bool`, `reserved: bool`. Newest first (last three from the sample view, G8). A reserved sample (made by `sample_new`, no session yet) is listed with its id, folder and `created` from the folder; `fitted_at` and `last_session` are null, `objectives_used` is empty |
 | `GET /api/sample/geometry-fields` | `GeometryField[]` (section 2) |
 | `GET /api/sample/{sample_id}` | `SampleDetail`: the summary + `dir` (path string), `hole {centre_um, diameter_mm, fit_rms_um, n_points, arc_deg, fitted_at} \| null`, `calibration {um_per_px, objective} \| null`, `counts {scans, maps, flags}`, `can_open_folder: bool` (true only when this request is local; section 4) |
 | `GET /api/sample/{sample_id}/geometry` | `Geometry`: `{values: {key: GeometryValue}}` for every field in section 2 |
-| `GET /api/sample/{sample_id}/loading` | `LoadingState`: `session_id \| null`, `geometry {done, by, t}`, `person {done, by, t}`, `image {done, ok, by, t, why \| null, result_ref \| null}`, `confirmed: bool` (computed by the engine reader, G6) |
+| `GET /api/sample/{sample_id}/loading` | `LoadingState`: `session_id \| null`, `geometry {done, by, t}`, `person {done, by, t}`, `image {done, ok, by, t, why \| null, result_ref \| null}`, `confirmed: bool` (from the sample view, G6) |
 
-404 `ApiError` for an unknown `sample_id`. The open sample id comes from `GET /api/state` and `sample_opened`
-(T-009, T-010), not from `sample.py`.
+404 `ApiError` for an unknown `sample_id`. The current sample comes from `GET /api/state`, i.e. engine
+`snapshot()["sample"]` = `{sample_id, reserved, session_id}` (T-011), and then from `sample_opened`; not from
+`sample.py`.
 
 ## 4. Commands (T-009 `POST /api/commands`, body = engine `Command`)
 
@@ -104,7 +106,7 @@ wrote them, and the screen re-reads the matching GET.
 
 ## 6. Loading check (ui-spec 7.3, three steps)
 
-| Step | Done when (engine reader) | Screen |
+| Step | Done when (sample view) | Screen |
 |---|---|---|
 | 1 geometry | every `safety: true` field has an `entered` or `default` value for this sample (G5) | tick, with the source of each safety value |
 | 2 person | a `loading_confirm_person` entry in the open session (G6) | tick, `"confirmed by <by> <t>"` |
@@ -116,14 +118,14 @@ wrote them, and the screen re-reads the matching GET.
 
 | # | Question | Answer |
 |---|---|---|
-| G1 | Where geometry and loading entries live | The open session's `records/sample_events.jsonl` is the truth. `geometry_set` and `loading_step` are sample-event kinds written through T-019 `session.sample_event()` (T-027). `sample_new` only reserves the id and the folder and writes no event (T-027 option (b)); when the first session for that sample opens, the engine writes `sample_created` as the first event of that session's `sample_events.jsonl`. Until then the sample is `reserved` in the list. `D:\AutoFocus\samples\<id>\` keeps the derived views (`sample.json`, `map.json`) and large files outside git. One reader in `engine/sample.py` (T-027) returns summary, detail, geometry and loading state; `sample.py` calls only that |
+| G1 | Where geometry and loading entries live | The open session's `records/sample_events.jsonl` is the truth. `geometry_set` and `loading_step` are sample-event kinds written through T-019 `session.sample_event()` (T-027). `sample_new` only reserves the id and the folder and writes no event (T-027 option (b)); when the first session for that sample opens, the engine writes `sample_created` as the first event of that session's `sample_events.jsonl`. Until then the sample is `reserved` in the list. `D:\AutoFocus\samples\<id>\` keeps the derived views (`sample.json`, `map.json`) and large files outside git. T-019 `records.events.fold()` is the only fold; `engine/sample.py` (T-027) projects it into one named sample view, the only thing `sample.py` reads |
 | G2 | `sample_opened`, `map_changed` not in `EVENT_KINDS` | Added by T-011 |
 | G3 | The five op names | T-027 (AF 실행1) uses them as written here |
 | G4 | Who may send the five ops | All five use the existing `OPERATE` action (local operator with control). One sample per experiment session (manager, main 9052f48): `sample_open` / `sample_new` need no session and are refused when a session is open for another sample; `sample_geometry_set`, `loading_confirm_person`, `loading_check_image` need that sample's open session. This replaces the earlier "all five need an open session" |
 | G5 | `not_set` safety fields; F3.1 field list | Dependent ops refuse while thickness or orientation is `not_set`. **Open**: the field list, units and choices stay provisional until the user confirms F3.1 (PLAN 10절) |
 | G6 | Scope of the loading state | Per experiment session and sample; a new session or `sample_open` starts unconfirmed; changing a safety field after confirmation clears steps 2–3 |
 | G7 | `loading_check_image` gate and result | Gate in T-028 (AF 실행17): camera, DiaLamp, 4x; not 4x → `preflight_failed`, no objective change. `finished.data.summary` = `{ok, metric, value, grade: "computed", why, frame_ref}`, `end_state` light readback off (field names assumed until T-027) |
-| G8 | Source of `awaiting_return` and last session | The T-027 reader |
+| G8 | Source of `awaiting_return` and last session | The T-027 sample view |
 | G9 | Role for `"Open folder"` | Any logged-in local user, never remote. A route in `sample.py`, not an engine op |
 
 Until T-027 merges, stage B tests use a fake engine with these op names and a fixture sample root
