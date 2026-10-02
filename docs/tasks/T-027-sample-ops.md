@@ -59,3 +59,8 @@
   `loading_check_image` need the open session of that sample.
 - Build on the T-019 API. `geometry_set` and `loading_step` are new sample-event kinds written through
   `session.sample_event()`. Do not edit `records/*`.
+
+## Boundary ops (added)
+
+- `boundary_mark`, `boundary_undo`, `boundary_reset` are sample events too (no hardware), so they live here.
+  They are record-only ops that run beside a hardware op (T-011). They need an open session.

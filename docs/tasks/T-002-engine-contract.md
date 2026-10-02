@@ -247,3 +247,5 @@ T-002 는 열 개가 넘는 과제의 선행이다. 한 번에 끝내지 말고 
   Q13, 1623710): 10 µm for every objective to start (100x Oil about WD/13), marked "unmeasured provisional".
   The approach keeps the bench procedure: one move 0 → 2800 µm (bottom of the sample Z window), then steps up
   from 2800 with the clearance check live at every step. Must be confirmed before M4 bench use.
+- Also in T-002-4 (merge review of 2fa751a, item d): a sink that raises inside `operation()`'s error emit
+  must not replace the original exception. Keep the original, log the sink failure, still write the summary.
