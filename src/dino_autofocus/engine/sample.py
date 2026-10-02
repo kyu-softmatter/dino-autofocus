@@ -118,6 +118,38 @@ def new_sample_id(root: Path, now: time.struct_time | None = None) -> str:
     return f"{stamp}_{n}"
 
 
+# A hole fit counts as a closed loop when edge_trace stopped on its full-loop condition,
+# or (fits without trace_stop, e.g. 2026-09-30's 352 deg) when the arc covers at least
+# this much. Unmeasured provisional.
+FULL_LOOP_ARC_DEG = 330.0
+FULL_LOOP_STOP = "full loop"  # edge_trace: "back where the edge was first seen: full loop"
+
+
+def hole_loop(hole: dict[str, Any] | None) -> dict[str, Any]:
+    """{closed, why, fitted_at, trace_stop, arc_deg} for a hole fit, next to fitted_at, so
+    the re-trace rule and scan_4x can tell a partial arc from a full fit."""
+    if not hole:
+        return {"closed": False, "why": "no hole fit", "fitted_at": None, "trace_stop": None,
+                "arc_deg": None}
+    stop, arc = hole.get("trace_stop"), hole.get("arc_deg")
+    try:
+        arc_f = None if arc is None else float(arc)
+    except (TypeError, ValueError):
+        arc_f = None
+    if stop is not None and FULL_LOOP_STOP in str(stop):
+        closed, why = True, f"trace stopped on a full loop ({stop})"
+    elif stop is not None:
+        closed, why = False, f"partial trace: {stop}"
+    elif arc_f is not None and arc_f >= FULL_LOOP_ARC_DEG:
+        closed, why = True, f"arc {arc_f:.0f} deg >= {FULL_LOOP_ARC_DEG:.0f} deg"
+    else:
+        closed = False
+        why = ("no arc recorded" if arc_f is None else
+               f"arc {arc_f:.0f} deg < {FULL_LOOP_ARC_DEG:.0f} deg")
+    return {"closed": closed, "why": why, "fitted_at": hole.get("fitted_at"),
+            "trace_stop": stop, "arc_deg": arc_f}
+
+
 class SampleGeometry:
     """Geometry values keyed by GEOMETRY_FIELDS, for the sample.json derived view.
 

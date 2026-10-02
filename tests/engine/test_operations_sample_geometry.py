@@ -13,6 +13,7 @@ from dino_autofocus.engine.sample import (
     SampleGeometry,
     SampleInfo,
     geometry_view,
+    hole_loop,
     loading_view,
     validate_geometry,
 )
@@ -94,3 +95,15 @@ def test_a_safety_change_after_confirmation_clears_steps_two_and_three():
     s = loading_view(base + [geo({"orientation": "flipped"})], "s1")
     assert s["geometry"]["done"] and not s["person"]["done"] and not s["image"]["done"]
     assert not s["confirmed"]
+
+
+def test_hole_loop_tells_a_partial_arc_from_a_full_fit():
+    full = {"fitted_at": "2026-10-01T18:00:00", "arc_deg": 352.0,
+            "trace_stop": "back where the edge was first seen: full loop"}
+    assert hole_loop(full)["closed"] and hole_loop(full)["fitted_at"] == "2026-10-01T18:00:00"
+    partial = {"fitted_at": "2026-10-01T18:00:00", "arc_deg": 352.0, "trace_stop": "aborted"}
+    assert not hole_loop(partial)["closed"]  # a stopped trace is partial whatever its arc
+    assert hole_loop({"arc_deg": 352.0})["closed"]  # 2026-09-30 fit, no trace_stop yet
+    assert not hole_loop({"arc_deg": 180.0})["closed"]
+    assert hole_loop(None) == {"closed": False, "why": "no hole fit", "fitted_at": None,
+                               "trace_stop": None, "arc_deg": None}
