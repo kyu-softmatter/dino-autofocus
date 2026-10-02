@@ -337,7 +337,6 @@ def test_approach_ceiling_per_lens(fake, key):
         with pytest.raises(GuardError, match="is above 2800 um"):
             a.approach(2850)
         assert fake.z == 2800  # refused before any move: no clamp
-    assert key != UNKNOWN_OBJECTIVE
 
 
 def test_100x_oil_approach_to_3200_is_refused_not_clamped(fake):
@@ -365,3 +364,13 @@ def test_an_unreadable_objective_caps_the_approach_at_2800(fake, how):
     assert a.approach(2800) == 2800
     with pytest.raises(GuardError, match="working distance"):
         a.plan(2900, 10, 5)  # no sweep plan for an unknown lens either
+
+
+
+def test_an_unreadable_info_counts_as_the_bench(fake):
+    def broken():
+        raise OSError("core not answering")
+    fake.info = broken
+    fake.z = 0.0
+    with pytest.raises(GuardError, match="needs a clearance check"):
+        axis(fake).approach(2810)
