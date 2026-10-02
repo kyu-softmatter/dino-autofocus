@@ -32,8 +32,8 @@ in um as the XY stage reports them (Ti2; piezo offsets are not added yet).
 Seams for the pieces that are not on main yet, each one argument of `run_edge_trace`:
 - `grab`: the acquisition stream (T-011 / T-015 `start_stream` / `next_frame`). The default
   uses `next_frame` while the backend streams, else `snap`.
-- `move_rel`: an XY relative move through the guards. The default is `XYAxis.goto(here + d)`
-  (box and long-move rules apply); T-015's `move_xy_rel` replaces it once the guards wrap it.
+- `move_rel`: an XY relative move through the guards. The default is `XYAxis.goto_rel`
+  (T-002-4: box, long-move rule and readback apply).
 - `on_point`: boundary points. The default appends to `map.json` through `engine.sample`;
   T-027's `boundary_mark` replaces it.
 - `confirm`, `check`, `sleep`, `clock`: the runner's `ctx.confirm`, abort check, abortable
@@ -664,16 +664,6 @@ def _default_grab(backend: Backend) -> Callable[[float], np.ndarray]:
     return grab
 
 
-def _guarded_move_rel(backend: Backend, axis: XYAxis) -> Callable[[np.ndarray], tuple]:
-    def move_rel(d: np.ndarray) -> tuple[float, float]:
-        p = backend.positions()
-        if p.x_um is None or p.y_um is None:
-            raise GuardError(f"XY unreadable before a relative move: {p.errors}")
-        return axis.goto(p.x_um + float(d[0]), p.y_um + float(d[1]))
-
-    return move_rel
-
-
 def run_edge_trace(backend: Backend, sample: Sample, args: dict, sink: EventSink = null_sink, *,
                    confirm: Callable[[str, str], bool],
                    check: Callable[[], None] = lambda: None,
@@ -721,7 +711,7 @@ def run_edge_trace(backend: Backend, sample: Sample, args: dict, sink: EventSink
         for w in warnings:
             scope.emit(Event("log", scope.op_id, {"level": "warning", "text": w}))
         if a.light == "brightfield":
-            scope.lights(switch(backend, scope, LightRequest("brightfield")))
+            switch(backend, scope, LightRequest("brightfield"))
         if a.exposure_ms is not None:
             backend.set_exposure(a.exposure_ms)
         binfo = backend.info()
@@ -735,7 +725,7 @@ def run_edge_trace(backend: Backend, sample: Sample, args: dict, sink: EventSink
                       sink=scope.emit, op_id=scope.op_id)
         tracer = EdgeTracer(
             grab=grab or _default_grab(backend),
-            move_rel=move_rel or _guarded_move_rel(backend, axis),
+            move_rel=move_rel or (lambda d: axis.goto_rel(float(d[0]), float(d[1]))),
             xy=lambda: np.array(_xy(backend)), pixel_um=binfo.pixel_um,
             exposure_ms=binfo.exposure_ms,
             args=a, log=log, on_point=on_point or _MapPoints(sample),
