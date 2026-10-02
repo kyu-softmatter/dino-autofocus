@@ -2,8 +2,8 @@
 
 Sample and loading-check screen (PLAN.md 2절 F3, 9절 WP-H). This file is the contract between the screen
 (`web/src/features/sample/`), its router (`server/api/sample.py`, mounted at `/api/sample` by T-009) and the
-engine operations. Layout and wording come from `docs/ui-spec.md` 7.0 and 7.3 (branch `exec5/T-004-ui-spec`
-6fcd8a8); they are cited here, not restated. Items marked **gap** are open requests (section 7).
+engine operations. Layout and wording come from `docs/ui-spec.md` 7.0 and 7.3 (main); they are cited here,
+not restated. Items marked **gap** are open requests (section 7).
 
 Names checked against: main 770291d `engine/events.py`, T-009 `server/app.py` (`exec7/T-009-server-skeleton`
 b9fb6cc), T-018 `auth/roles.py` (`exec13/T-018-auth-core`).
@@ -68,17 +68,17 @@ Response bodies are pydantic models; the TypeScript types are generated from Ope
 
 | Input (ui-spec 7.3) | Body | Who may send it |
 |---|---|---|
-| pick from the list | `{"kind": "start", "op": "sample_open", "args": {"sample_id": "<id>"}}` | Local operator (**gap G4**) |
-| `"New sample"` | `{"kind": "start", "op": "sample_new"}`. The engine assigns the id; it comes back in `finished.data.summary.sample_id`, then the geometry form opens | Local operator (G4) |
-| geometry `"Save"` | `{"kind": "start", "op": "sample_geometry_set", "args": {"sample_id", "values": {"<key>": <value>}}}`, changed keys only. The engine stamps `by` and `t` | Local operator (G4); needs an open session if entries go to the session folder (G1) |
-| `"Sample is on the stage"` | `{"kind": "start", "op": "loading_confirm_person", "args": {"sample_id"}}` (manual-step record) | Local operator (G4), open session (G1) |
+| pick from the list | `{"kind": "start", "op": "sample_open", "args": {"sample_id": "<id>"}}` | Local operator, control, open session (G4) |
+| `"New sample"` | `{"kind": "start", "op": "sample_new"}`. The engine assigns the id; it comes back in `finished.data.summary.sample_id`, then the geometry form opens | Local operator, control, open session (G4) |
+| geometry `"Save"` | `{"kind": "start", "op": "sample_geometry_set", "args": {"sample_id", "values": {"<key>": <value>}}}`, changed keys only. The engine stamps `by` and `t` | Local operator, control, open session (G4) |
+| `"Sample is on the stage"` | `{"kind": "start", "op": "loading_confirm_person", "args": {"sample_id"}}` (manual-step record) | Local operator, control, open session (G4) |
 | `"Check with an image"` | `{"kind": "start", "op": "loading_check_image", "args": {"sample_id"}}`. Turns on brightfield, takes one 4x frame, turns the light off; classical edge check | Local operator **with control and an open experiment session** (D15, like motion). Gate: camera, DiaLamp, 4x in place (**gap G7**) |
 
 `"Open folder"` is not an engine command (it writes no record): `POST /api/sample/{sample_id}/open-folder`,
 local requests only. Remote requests get 403 and the screen shows the path from `SampleDetail.dir` instead
 of the button. The action that opens Explorer is injected into the router (`app.state.open_folder`), and
 tests replace it with a recorder, so tests never open a window (docs/sessions.md). Role for it: any logged-in
-user (assumption, **gap G9**).
+local user, never remote (G9, approved).
 
 On refusal, the screen shows the reason next to the control in ui-spec 7.0 order (remote, role, control,
 session, gate, running op, preflight), from the 403 `detail` or `preflight_failed.why`. It never works out
@@ -116,12 +116,12 @@ wrote them, and the screen re-reads the matching GET.
 | G1 | Where geometry and loading entries live. D1 puts sample state in the open session's `records/sample_events.jsonl`; T-002 `sample.py` has a sample root `D:\AutoFocus\samples` with `sample.json` | Entries `geometry_set {sample_id, values, by, t}` and `loading_step {sample_id, step, ok, by, t, ...}` in `sample_events.jsonl`; one reader in `engine/sample.py` returns summary, detail, geometry and loading state, and `sample.py` calls only that. So `sample_geometry_set` and `loading_confirm_person` need an open session. Also say where `sample_new` creates the sample folder (sample root or records) |
 | G2 | `sample_opened` and `map_changed` are not in `EVENT_KINDS` (main `engine/events.py`) | T-011: add them, or say which kind carries them. Same request as T-102 G5 |
 | G3 | `sample_open`, `sample_new` (ui-spec 4.0) and `sample_geometry_set`, `loading_confirm_person`, `loading_check_image` (ui-spec 7.3, BACKLOG WP-H) are proposals | Confirm the five names with the WP-H engine work |
-| G4 | T-018 has no action for a local operator's record write without device control: `OPERATE` needs control, and `/api/commands` has no op → action map | Add an action (e.g. `WRITE_SAMPLE`: operator, local) and an op → action map in `/api/commands`: the four record ops → `WRITE_SAMPLE`, `loading_check_image` → `OPERATE` (+ session). Open question: should `sample_open` and `sample_geometry_set` also need control, since they change the sample and safety inputs that the controller's motion uses? Recommended: yes |
+| G4 | Who may send the five ops; `/api/commands` has no op → action map | Interim rule (AF 업무분배보조, until the manager decides): all five need the local operator with control and an open experiment session, i.e. `OPERATE` + session. They change the sample and the safety inputs that the controller's motion uses. Stage B builds to this |
 | G5 | F3.1 field list, units and choices are provisional (PLAN 10절); no rule for safety fields that are `not_set` | User confirms F3.1. Engine: ops whose limits use a safety field refuse with `preflight_failed` while it is `not_set`; the screen only shows that reason |
-| G6 | Scope of the loading state is not defined | Per experiment session and sample: a new session or `sample_open` starts unconfirmed; changing a safety field after confirmation clears steps 2–3 |
+| G6 | Scope of the loading state | **Approved**: per experiment session and sample; a new session or `sample_open` starts unconfirmed; changing a safety field after confirmation clears steps 2–3 |
 | G7 | `loading_check_image` result fields and its gate are not defined | `gates.py` entry (camera, DiaLamp, 4x); not 4x → `preflight_failed`, no objective change. `finished.data.summary` = `{ok, metric, value, grade: "classical", why, frame_ref}` with `end_state` light readback off |
 | G8 | `awaiting_return` and the last session per sample have no source yet | The G1 reader derives them from `session.json` (sample field) and the last F5 `aborted.end_state` |
-| G9 | Role for `"Open folder"` | Local request, any logged-in user (it only shows files). The route is in `sample.py`, not an engine op |
+| G9 | Role for `"Open folder"` | **Approved**: any logged-in local user, never remote. The route is in `sample.py`, not an engine op |
 
 Until the engine side merges, stage B tests use a fake engine with these op names and a fixture sample root
 (`tests/server/fixtures/sample/`) in the G1 proposed shape.
