@@ -105,7 +105,7 @@ interface LooseCommand {
   args?: Record<string, unknown>;
 }
 
-/** `update` is not in the generated CommandIn yet (T-011 adds it; docs/screens/map.md G5) */
+/** The one cast for `update` (edge-trace speed): remove after T-011 merges and gen:api reruns. */
 function toCommand(c: LooseCommand): CommandIn {
   return { kind: c.kind as CommandIn["kind"], op: c.op ?? "", op_id: c.op_id ?? "", args: c.args ?? {}, origin: "human" };
 }
