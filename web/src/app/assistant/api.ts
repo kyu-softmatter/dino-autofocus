@@ -4,7 +4,7 @@
 // screen's proposal for server/api/assistant.py; once it is in and `npm run gen:api` has run,
 // the types come from src/api/ and this file keeps only the clients.
 
-import type { Transport } from "../client";
+import { type Client, type CommandRefused, refusalOf, REMOTE_VIEW } from "../client";
 
 export interface Usage {
   input_tokens?: number;
@@ -109,84 +109,84 @@ export class AssistantError extends Error {
   }
 }
 
-// -- the real client over the shell's transport ----------------------------------------------
-
-async function detail(r: Response): Promise<string> {
-  try {
-    const b = (await r.json()) as { detail?: unknown };
-    return typeof b.detail === "string" ? b.detail : `HTTP ${r.status}`;
-  } catch {
-    return `HTTP ${r.status}`;
-  }
-}
+// -- the real client: the app's shared client ------------------------------------------------
 
 /**
- * Paths (proposal for T-013's router): GET status, POST ask (NDJSON stream of AskEvent),
- * GET conversations/{id}, POST proposals/{id}/confirm, POST proposals/{id}/reject.
+ * Over `useClient()` (T-014b): reads go through `client.get` and decisions through
+ * `client.post`, so a 401 / 423 starts the shell's re-login and a 403 `remote_view` turns the
+ * app read-only; any other refusal is the action's own reason and stays on the card.
+ *
+ * The answer is a stream, which `client.post` cannot return, so `ask` POSTs over the shared
+ * transport (no socket of its own) and hands a refusal to the same rules through
+ * `reportRefusal`.
+ *
+ * Paths (fixed in the T-013 card for T-013b's router): GET status, POST ask (NDJSON stream of
+ * AskEvent), GET conversations/{id}, POST proposals/{id}/confirm, POST proposals/{id}/reject.
  */
-export function transportAssistantApi(transport: Transport): AssistantApi {
-  const json = async <T>(path: string, init?: RequestInit): Promise<T> => {
-    const r = await transport.fetch(path, init);
-    if (!r.ok) throw new AssistantError(r.status, await detail(r));
-    return (await r.json()) as T;
-  };
-  const init = (body: unknown): RequestInit => ({
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  // the one POST helper, with the signature of T-010's useClient().post (stage 3, 479d215);
-  // it is swapped for that once stage 3 is on main
-  const post = async <T>(path: string, body?: unknown): Promise<T | null> => {
-    const r = await transport.fetch(path, body === undefined ? { method: "POST" } : init(body));
-    if (!r.ok) throw new AssistantError(r.status, await detail(r));
-    const text = r.status === 204 ? "" : await r.text();
-    return text === "" ? null : (JSON.parse(text) as T);
-  };
+export function clientAssistantApi(client: Client): AssistantApi {
   const decided = async (path: string, body: unknown): Promise<Proposal> => {
-    const p = await post<Proposal>(path, body);
+    const p = await client.post<Proposal>(path, body);
     if (p === null) throw new AssistantError(500, "the server sent no proposal back");
     return p;
   };
   return {
     status: async () => {
       try {
-        return await json<Status>("/api/assistant/status");
+        return await client.get<Status>("/api/assistant/status");
       } catch {
         return null;
       }
     },
     ask: async (req, onEvent) => {
-      // a streamed POST over the shared transport: no socket of its own
-      const r = await transport.fetch("/api/assistant/ask", init(req));
-      if (!r.ok || !r.body) throw new AssistantError(r.status, await detail(r));
-      const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
-      let buffer = "";
-      let answer: Answer | null = null;
-      const line = (s: string) => {
-        if (!s.trim()) return;
-        const ev = JSON.parse(s) as AskEvent;
-        onEvent(ev);
-        if (ev.type === "done") answer = ev.answer;
-        if (ev.type === "error") throw new AssistantError(500, ev.error);
-      };
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += value;
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        lines.forEach(line);
-      }
-      line(buffer);
-      if (answer === null) throw new AssistantError(500, "the answer stream ended early");
-      return answer;
+      const r = await client.transport.fetch("/api/assistant/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+        body: JSON.stringify(req),
+      });
+      if (!r.ok || !r.body) throw await reportRefusal(client, r);
+      return readAnswer(r.body, onEvent);
     },
-    conversation: (id) => json(`/api/assistant/conversations/${encodeURIComponent(id)}`),
+    conversation: (id) => client.get(`/api/assistant/conversations/${encodeURIComponent(id)}`),
     confirm: (id) => decided(`/api/assistant/proposals/${encodeURIComponent(id)}/confirm`, {}),
     reject: (id, note = "") => decided(`/api/assistant/proposals/${encodeURIComponent(id)}/reject`, { note }),
-    permissions: (ops) => json(`/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`),
+    permissions: (ops) => client.get(`/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`),
   };
+}
+
+/**
+ * The shared client's rules for a response it did not fetch itself: remote_view sets
+ * read-only, and a 401 / 423 makes the client re-read the login (a GET of /api/auth/me goes
+ * through `client.get`, which tells the login gate). Returns the error to throw.
+ */
+async function reportRefusal(client: Client, r: Response): Promise<CommandRefused> {
+  const refused = await refusalOf(r);
+  if (refused.status === 403 && refused.code === REMOTE_VIEW) client.readOnly.refuse(refused.detail);
+  if (refused.status === 401 || refused.status === 423) await client.get("/api/auth/me").catch(() => {});
+  return refused;
+}
+
+export async function readAnswer(body: NonNullable<Response["body"]>, onEvent: (ev: AskEvent) => void): Promise<Answer> {
+  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  let answer: Answer | null = null;
+  const line = (s: string) => {
+    if (!s.trim()) return;
+    const ev = JSON.parse(s) as AskEvent;
+    onEvent(ev);
+    if (ev.type === "done") answer = ev.answer;
+    if (ev.type === "error") throw new AssistantError(500, ev.error);
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value;
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    lines.forEach(line);
+  }
+  line(buffer);
+  if (answer === null) throw new AssistantError(500, "the answer stream ended early");
+  return answer;
 }
 
 // -- the fake: a scripted provider in memory, for tests and before the router -------------------

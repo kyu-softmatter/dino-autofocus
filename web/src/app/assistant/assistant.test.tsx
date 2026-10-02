@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { fakeTransport } from "../../test/fakes";
 import { Client, ClientProvider } from "../client";
 import { ScreenContextProvider, useScreenContext } from "../screenContext";
-import { type AssistantApi, createFakeAssistantApi, type FakeStep, transportAssistantApi } from "./api";
+import { type AssistantApi, clientAssistantApi, createFakeAssistantApi, type FakeStep } from "./api";
 import { AssistantApiContext, CHECKING_PERMISSIONS, PERMISSION_CHECK_UNAVAILABLE } from "./hooks";
 import PromptBox, { turnsFrom } from "./index";
 
@@ -202,29 +202,74 @@ describe("turnsFrom", () => {
   });
 });
 
-describe("transportAssistantApi", () => {
-  it("reads the NDJSON answer stream", async () => {
-    const lines = [
-      { type: "text", text: "a" },
-      { type: "text", text: "b" },
-      { type: "done", answer: { conversation_id: "c1", text: "ab", stop_reason: "end_turn", provider: "fake", usage: {}, tool_calls: [], proposals: [], grade: "model" } },
-    ]
+describe("clientAssistantApi over the shared client", () => {
+  const ANSWER = { conversation_id: "c1", text: "ab", stop_reason: "end_turn", provider: "fake", usage: {}, tool_calls: [], proposals: [], grade: "model" };
+  const refused = (status: number, code: string, message: string) => () => ({ status, body: { detail: { code, message } } });
+
+  function streaming(routes: Parameters<typeof fakeTransport>[0], ask: () => Response) {
+    const fake = fakeTransport(routes);
+    const fetch = fake.transport.fetch;
+    fake.transport.fetch = async (path, init) => {
+      if (path === "/api/assistant/ask") {
+        fake.calls.push({ path, init });
+        return ask();
+      }
+      return fetch(path, init);
+    };
+    return fake;
+  }
+
+  it("reads the NDJSON answer stream over the shared transport", async () => {
+    const lines = [{ type: "text", text: "a" }, { type: "text", text: "b" }, { type: "done", answer: ANSWER }]
       .map((l) => JSON.stringify(l))
       .join("\n");
-    const calls: string[] = [];
-    const api = transportAssistantApi({
-      fetch: async (path) => {
-        calls.push(path);
-        return new Response(lines, { status: 200 });
-      },
-      openSocket: () => {
-        throw new Error("no socket in this test");
-      },
-    });
+    const fake = streaming({}, () => new Response(lines, { status: 200 }));
+    const api = clientAssistantApi(new Client(fake.transport, "127.0.0.1"));
     const seen: string[] = [];
     const answer = await api.ask({ question: "q", context: { area: "map" }, conversation_id: null }, (e) => seen.push(e.type));
     expect(answer.text).toBe("ab");
     expect(seen).toEqual(["text", "text", "done"]);
-    expect(calls).toEqual(["/api/assistant/ask"]);
+    expect(fake.sockets).toHaveLength(0); // no socket of its own
+  });
+
+  it("a 401 on ask makes the shared client re-read the login", async () => {
+    const fake = streaming(
+      { "/api/auth/me": refused(401, "login_required", "log in first") },
+      () => new Response(JSON.stringify({ detail: { code: "login_required", message: "log in first" } }), { status: 401 }),
+    );
+    const client = new Client(fake.transport, "127.0.0.1");
+    const failures: number[] = [];
+    client.onAuthFailure((s) => failures.push(s));
+    const err = await clientAssistantApi(client)
+      .ask({ question: "q", context: { area: "map" }, conversation_id: null }, () => {})
+      .catch((e) => e);
+    expect(err.status).toBe(401);
+    expect(failures).toEqual([401]);
+  });
+
+  it("a remote_view refusal on confirm turns the app read-only; another 403 does not", async () => {
+    const fake = fakeTransport({
+      "/api/assistant/proposals/p1/confirm": refused(403, "remote_view", "remote view: confirm on the microscope PC"),
+      "/api/assistant/proposals/p2/confirm": refused(403, "role", "role viewer may not run move_xy"),
+    });
+    const client = new Client(fake.transport, "127.0.0.1");
+    const api = clientAssistantApi(client);
+    const role = await api.confirm("p2").catch((e) => e);
+    expect(role.message).toContain("may not run move_xy");
+    expect(client.readOnly.get().readOnly).toBe(false);
+    await api.confirm("p1").catch(() => {});
+    expect(client.readOnly.get().readOnly).toBe(true);
+  });
+
+  it("a remote_view refusal on ask turns the app read-only too", async () => {
+    const fake = streaming({}, () =>
+      new Response(JSON.stringify({ detail: { code: "remote_view", message: "remote view" } }), {
+        status: 403,
+        headers: { "X-DinoAF-Refusal": "remote_view" },
+      }),
+    );
+    const client = new Client(fake.transport, "127.0.0.1");
+    await clientAssistantApi(client).ask({ question: "q", context: { area: "map" }, conversation_id: null }, () => {}).catch(() => {});
+    expect(client.readOnly.get().readOnly).toBe(true);
   });
 });
