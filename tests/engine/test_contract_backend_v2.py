@@ -1,4 +1,5 @@
-"""Backend contract v2 (T-015): set_property allow-list, light tokens, notes.
+"""Backend contract v2 (T-015): set_property allow-list, light tokens, notes, discovery
+reads, relative XY and the acquisition stream.
 
 `BackendContract` holds the checks every backend must pass. It is not collected on its own
 (no `Test` prefix); a backend's test file subclasses it and provides a `backend` fixture
@@ -12,6 +13,8 @@
 
 The light property used for the token check defaults to the bench DiaLamp; a backend with
 other device names sets `light_write` (device, prop, value). The value switches light off.
+`xy_tol_um` is the XY readback tolerance of the relative-move check (raise it for a backend
+with injected readback error). The fixture must leave no stream running (close() stops it).
 """
 
 from __future__ import annotations
@@ -29,8 +32,15 @@ from dino_autofocus.engine.backend import (
     MOTION_DEVICES,
     PROVISIONAL,
     Backend,
+    ConfigRecord,
+    DeviceInfo,
+    Frame,
+    NosepieceLabel,
+    PiezoReading,
+    PropertyInfo,
     PropertyNotAllowed,
     Readback,
+    StreamActive,
     UnguardedMotion,
     check_set_property,
 )
@@ -44,6 +54,7 @@ def _where(b: Backend) -> tuple:
 class BackendContract:
     light_write: tuple[str, str, object] = ("DiaLamp", "State", 0)
     unlisted_write: tuple[str, str, object] = ("LightPath", "State", "4-L100")
+    xy_tol_um: float = 0.01
 
     def test_meets_the_protocol(self, backend):
         assert isinstance(backend, Backend)
@@ -99,6 +110,69 @@ class BackendContract:
             assert isinstance(r.notes, dict)
             json.dumps(asdict(r))
 
+    # -- discovery reads
+    def test_discovery_reads_change_nothing_and_are_json_safe(self, backend):
+        before = (_where(backend), backend.light_state())
+        devices = backend.describe_devices()
+        labels = backend.nosepiece_labels()
+        cfg = backend.config_record()
+        piezo = backend.piezo_read("")
+        assert (_where(backend), backend.light_state()) == before
+        json.dumps([asdict(d) for d in devices] + [asdict(n) for n in labels]
+                   + [asdict(cfg), asdict(piezo)])
+        assert devices and all(isinstance(d, DeviceInfo) for d in devices)
+        assert all(d.write_verified is None for d in devices)  # discovery never writes
+        assert backend.info().camera in {d.label for d in devices}
+        assert all(isinstance(p, PropertyInfo) for d in devices for p in d.properties.values())
+        assert all(not d.properties for d in backend.describe_devices(include_properties=False))
+        assert isinstance(cfg, ConfigRecord)
+
+    def test_nosepiece_labels_cover_every_state_and_the_current_one(self, backend):
+        labels = backend.nosepiece_labels()
+        assert all(isinstance(n, NosepieceLabel) for n in labels)
+        assert len({n.state for n in labels}) == len(labels)
+        assert backend.nosepiece() in {n.label for n in labels}
+
+    def test_piezo_not_opened_is_a_field(self, backend):
+        r = backend.piezo_read("")
+        assert isinstance(r, PiezoReading) and r.port == "" and not r.connected
+
+    # -- relative XY
+    def test_move_xy_rel_needs_the_token_and_moves_by_the_step(self, backend):
+        p0 = backend.positions()
+        with pytest.raises(UnguardedMotion):
+            backend.move_xy_rel(10.0, -5.0, token=None)
+        assert backend.positions().x_um == p0.x_um
+        x, y = backend.move_xy_rel(10.0, -5.0, token=GUARD_TOKEN)
+        p1 = backend.positions()
+        assert (x, y) == pytest.approx((p1.x_um, p1.y_um), abs=self.xy_tol_um)
+        assert (p1.x_um - p0.x_um, p1.y_um - p0.y_um) == pytest.approx((10.0, -5.0),
+                                                                     abs=self.xy_tol_um)
+
+    # -- stream
+    def test_stream_frames_have_snap_meta_and_block_snap(self, backend):
+        keys = set(backend.snap().meta())
+        assert not backend.streaming()
+        backend.start_stream()
+        try:
+            assert backend.streaming()
+            f = backend.next_frame(timeout_s=5.0)
+            assert isinstance(f, Frame) and set(f.meta()) == keys
+            assert f.image.dtype.name == "uint16"
+            with pytest.raises(StreamActive):
+                backend.snap()
+        finally:
+            backend.stop_stream()
+        assert not backend.streaming()
+        backend.stop_stream()  # second stop is a no-op
+        assert backend.next_frame(timeout_s=0.01) is None
+        assert isinstance(backend.snap(), Frame)
+
+    def test_close_stops_the_stream(self, backend):
+        backend.start_stream()
+        backend.close()
+        assert not backend.streaming()
+
 
 class TestFakeBackendContract(BackendContract):
     @pytest.fixture
@@ -133,6 +207,19 @@ def test_refused_writes_never_reach_the_fake_device():
         with pytest.raises((UnguardedMotion, PropertyNotAllowed)):
             b.set_property(*args)
     assert not b.props and not b.calls
+
+
+def test_fake_piezo_and_stream_details():
+    b = FakeBackend()
+    assert b.piezo_read("COM4").error == "no piezo on COM4"
+    b.piezo_um = (1.0, 2.0, 9.94)
+    r = b.piezo_read("COM4")
+    assert r.connected and r.z_um == 9.94
+    b.start_stream(interval_ms=100)
+    frames = [b.next_frame() for _ in range(3)]
+    b.close()
+    assert b.stream_frames == 3 and all(f is not None for f in frames)
+    assert ("start_stream", 100) in b.calls and ("stop_stream",) in b.calls
 
 
 def test_notes_round_trip_and_default_empty():

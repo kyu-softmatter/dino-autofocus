@@ -131,6 +131,77 @@ class Frame:
                 "y_um": self.y_um, "z_um": self.z_um, "shape": list(self.image.shape)}
 
 
+# ---------------------------------------------------------------- discovery reads (F2)
+# Shapes follow `hardware_profile.json` in docs/operations-spec.md 5. Discovery writes
+# nothing, moves nothing and switches nothing on; a read that fails is a field.
+
+
+@dataclass
+class PropertyInfo:
+    value: str | None  # None when the read failed (`read_ok` False, reason in `error`)
+    read_only: bool | None = None
+    allowed: list[str] = field(default_factory=list)  # empty = free value
+    limits: tuple[float, float] | None = None
+    read_ok: bool = True
+    error: str | None = None
+
+
+@dataclass
+class DeviceInfo:
+    """A loaded device. `read_back`: its state can be read. `write_verified` stays None until
+    a write was read back, which discovery never does (soft-matter-agents preflight names)."""
+
+    label: str
+    type: str  # Micro-Manager DeviceType name: "CameraDevice", "XYStageDevice", ...
+    library: str
+    description: str
+    read_back: bool
+    write_verified: bool | None = None
+    properties: dict[str, PropertyInfo] = field(default_factory=dict)
+
+
+@dataclass
+class NosepieceLabel:
+    state: int
+    label: str
+    pixel_um: float | None  # from the backend's pixel-size table; None if it has none
+
+
+@dataclass
+class PiezoReading:
+    """Read-only piezo position. Not opening (`port` "") or failing to open is a field."""
+
+    port: str
+    connected: bool
+    x_um: float | None = None
+    y_um: float | None = None
+    z_um: float | None = None
+    error: str | None = None
+    t: float = field(default_factory=time.time)
+
+
+@dataclass
+class ConfigRecord:
+    """What loading the configuration did at `open()`.
+
+    `changed_during_load`: the file's sha256 differed before and after the load.
+    `autoshutter`: AutoShutter 0 written at open and read back. `startup_preset`: the
+    group/preset the load applied (Micro-Manager System/Startup), None if there is none.
+    """
+
+    path: str
+    sha256: str | None
+    changed_during_load: bool | None
+    autoshutter: Readback | None
+    startup_preset: str | None = None
+    t_loaded: float | None = None
+    notes: dict[str, str] = field(default_factory=dict)
+
+
+class StreamActive(RuntimeError):
+    """`snap()` while the acquisition stream runs. The engine pauses the stream first (T-011)."""
+
+
 class MotionToken:
     """Held by `engine.guards`. A motion or light-on call without it is refused by the backend."""
 
@@ -228,6 +299,20 @@ class Backend(Protocol):
     def pfs(self) -> PfsState: ...
     def light_state(self) -> dict[str, str]: ...  # e.g. {"DiaLamp": "0", "Aura": "0"}
 
+    # -- discovery reads (F2, hardware_scan): write nothing, move nothing, switch nothing on
+    def describe_devices(self, include_properties: bool = True) -> list[DeviceInfo]: ...
+    def nosepiece_labels(self) -> list[NosepieceLabel]: ...  # every state, not only the current
+    def piezo_read(self, port: str) -> PiezoReading: ...  # "" = do not open the port
+    def config_record(self) -> ConfigRecord: ...
+
+    # -- acquisition stream, owned by the engine (T-011). Frames carry the same meta as
+    # snap(). snap() while streaming raises StreamActive. next_frame returns the newest
+    # frame not yet returned (older ones are dropped), or None after timeout_s.
+    def start_stream(self, interval_ms: float | None = None) -> None: ...  # None = camera rate
+    def next_frame(self, timeout_s: float = 1.0) -> Frame | None: ...
+    def stop_stream(self) -> None: ...  # no-op when not streaming
+    def streaming(self) -> bool: ...
+
     # -- writes, each returning what it read back. set_property: check_set_property first
     def set_property(self, device: str, prop: str, value: Any, *,
                      token: MotionToken | None = None) -> Readback: ...
@@ -243,5 +328,9 @@ class Backend(Protocol):
     def move_z(self, z_um: float, *, token: MotionToken) -> float: ...  # returns z read back
     def move_xy(self, x_um: float, y_um: float, *, token: MotionToken,
                 timeout_s: float | None = None) -> tuple[float, float]: ...
+    # relative to the current XY read (edge_trace steps); same guards as move_xy. Returns
+    # the XY read back after the move
+    def move_xy_rel(self, dx_um: float, dy_um: float, *, token: MotionToken,
+                    timeout_s: float | None = None) -> tuple[float, float]: ...
     def set_nosepiece(self, state: int, *, token: MotionToken) -> Readback: ...
     def pfs_off(self, *, token: MotionToken) -> Readback: ...
