@@ -124,3 +124,6 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 - 임시 가드 값 (T-015): 큰 XY 이동 문턱 min(렌즈 시야, 1 mm), z_safe 0 µm, F5 이탈 거리 기본값 없음
 - Microscope PC: free working distance (`FREE_WD_UM`) for 10x, 20x, 40x WI, 60x before they become rotation targets (T-029).
 - Microscope PC (T-036b, b7c8c98): the bench cfg passes `check_load_settings` (no motion device in System/Startup, System/Shutdown or post-init Property lines), and whether the core applies System/Shutdown at unload.
+- Watch (2026-10-02): a native crash / hang in the full pytest run under heavy parallel load, seen three times
+  (실행5, 검토보조2 hang at 25%, AF 검토 Windows fatal exception); reruns pass. No test or native frame captured yet.
+  Reviewers keep the full pytest log (faulthandler on). When a frame names a module, card a fix.
