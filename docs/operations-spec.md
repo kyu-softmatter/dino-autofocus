@@ -88,12 +88,15 @@ T-024 (실행17): 0.1 과 각 절의 호출 이름을 main `543c5ee` 의 `backen
 
 - 이벤트 종류는 T-002 `events.py` 의 `EVENT_KINDS` 를 쓴다: `planned`, `preflight_ok / preflight_failed`,
   `started`, `progress`, `frame_ready`, `reading`, `finished`, `aborted`, `error`, `position`,
-  `light_changed`, `property_set`, `motion`, `confirm_required`, `confirmed`, `log`.
-  모든 이벤트는 `kind`, `op_id`, `data` (JSON 기본형), `t` 를 가진다.
+  `light_changed`, `property_set`, `motion`, `confirm_required`, `confirmed`, 명령에 대한
+  `proposed`, `approved`, `rejected`, `refused`, `updated`, 화면 상태의 `map_changed`, `sample_opened`,
+  `objective`, `session_changed`, 그리고 `log`. 모든 이벤트는 `kind`, `op_id`, `data` (JSON 기본형), `t` 를 가진다.
 - 명령 종류는 `COMMAND_KINDS`: `start` (`op`, `args`), `abort` (`op_id`), `confirm` (`op_id`,
-  `args = {"key": <confirm_required 의 data["key"]>, "ok": bool}`), `lights_off` (선점). 모든 명령에
+  `args = {"key": <confirm_required 의 data["key"]>, "ok": bool}`), `lights_off` (선점), `update`
+  (`op_id`, 작업이 선언한 인자만 실행 중에 바꾼다), `approve` / `reject` (assistant 제안의 결정). 모든 명령에
   `origin` (`human` / `assistant`), `user_id`, `session_id` 가 붙는다 (아직 없으면 None).
-  실행 중 인자 변경 `update` 와 `confirm_required` 의 `manual_step` 종류는 T-011 이 `events.py` 에 넣는다.
+  `confirm_required` 의 종류는 `CONFIRM_KINDS`: `question` 과 `manual_step` (F5 "Loading done", 요약의
+  `manual_steps` 에 남는다). 모두 main 의 `events.py` 에 있다 (T-011).
 - 아래 절의 `confirm_required("...")` 는 `scope.ask(key, text)` 의 질문 문구다. 답은 같은 `key` 의 `confirm` 명령으로
   오고, 엔진은 그 답을 `confirmed` 이벤트로 기록한다.
 - 기록 폴더는 T-002 대로 `<sample_dir>/<op>_<stamp>/log.jsonl` + `summary.json`.
@@ -828,7 +831,7 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 | 6 | `edge_point` (250 µm 마다) → `map.mark_boundary(Ti2 + piezo)` | `progress(edge_point)` + 샘플 `boundary` 에 추가 | 좌표는 Ti2 + 피에조 합 |
 | 7 | `cal_result` → `sample.calibration = {um_per_px, angle_deg, M_px_per_um, objective}` | 샘플 `stage_camera_calibration` | `scan_4x` 와 `plot_scan` 이 읽는다 |
 | 8 | 라이브 뷰가 10 초마다 `Sample.save()` → `hole` 피팅 (`XYMap.circle`) | 끝날 때 `hole` 피팅을 `sample.json` 에 쓰고 `fitted_at` 을 넣는다 | 피팅은 추적기 내부 원이 아니라 경계점 전체의 원 |
-| 9 | 실행 중 속도 변경 `set_speed` | 실행 중 인자 변경 명령 `update` (T-011 이 `events.py` 에 넣는다). T-002-1 의 `COMMAND_KINDS` 는 `start`, `abort`, `confirm`, `lights_off` 뿐이다 | T-011 에 넘김 |
+| 9 | 실행 중 속도 변경 `set_speed` | 실행 중 인자 변경 명령 `update` (`COMMAND_KINDS`, T-011). 작업은 바꿀 수 있는 인자를 `updatable` 로 선언한다 | T-011 에서 반영됨 |
 
 이동 한계: 한 걸음은 최대 200 µm, 보정은 200 µm. 이동 범위는 "시작점 7 mm 원" 이 지킨다. `goto_xy` 의 "큰 이동"
 문턱 (6.3) 보다 작아서 Z 후퇴 조건에 걸리지 않는다.
