@@ -6,6 +6,11 @@ import { defineConfig } from "vitest/config";
 // (tools/launcher/Launcher.cs).
 const SERVER = process.env.DINO_AF_SERVER ?? "http://127.0.0.1:8765";
 
+// The shared PC is often loaded (many sessions, review runs). With vitest's default
+// worker count (one per core, 24 here) App-level tests hit timeouts; two threads pass.
+// DINO_AF_TEST_WORKERS overrides the cap, e.g. on a quiet machine.
+const TEST_WORKERS = Number(process.env.DINO_AF_TEST_WORKERS) || 2;
+
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -21,8 +26,12 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    // Fork workers time out starting on the loaded shared PC; two threads are enough.
+    // Fork workers time out starting on the loaded shared PC; a few threads are enough.
     pool: "threads",
-    maxWorkers: 2,
+    maxWorkers: TEST_WORKERS,
+    // App-level tests (login gate, lazy screen, client, fake socket) do several awaited
+    // steps; under load 5 s is not enough. A passing test still ends as soon as it is done.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
   },
 });
