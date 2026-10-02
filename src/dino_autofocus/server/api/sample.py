@@ -87,7 +87,9 @@ class Hole(BaseModel):
 
 
 class Counts(BaseModel):
+    #: flags not retired (SampleView.active_flags)
     flags: int
+    #: candidates nobody has rejected (SampleView.open_candidates)
     candidates: int
     visits: int
     boundary_points: int
@@ -267,7 +269,8 @@ def sample_detail(sample_id: str, eng: Engine, sessions: Sessions) -> SampleDeta
     view = _view(seat, sid, sessions)
     root = Path(seat.samples_root)
     return SampleDetail(**_summary(view, root).model_dump(), dir=str(root / sid), hole=_hole(view),
-                        counts=Counts(flags=len(view.flags), candidates=len(view.candidates),
+                        counts=Counts(flags=len(view.active_flags()),
+                                      candidates=len(view.open_candidates()),
                                       visits=len(view.visits), boundary_points=len(view.boundary)))
 
 

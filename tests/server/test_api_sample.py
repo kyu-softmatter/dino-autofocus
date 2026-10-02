@@ -127,6 +127,15 @@ def test_detail_hole_status_is_the_engines_text(client, root):
     assert d["counts"] == {"flags": 0, "candidates": 0, "visits": 0, "boundary_points": 0}
 
 
+def test_counts_leave_out_retired_flags(client, records, tmp_path):
+    s = open_session(client, records, tmp_path, NEW)
+    for fid in ("f1", "f2"):
+        s.sample_event("flag_set", flag_id=fid, name=fid, note="", x_um=1.0, y_um=2.0,
+                       objective="4x")
+    s.sample_event("flag_remove", flag_id="f1")
+    assert client.get(f"/api/sample/{NEW}").json()["counts"]["flags"] == 1
+
+
 def test_geometry_sources_default_not_set_and_entered(client, records, tmp_path):
     s = open_session(client, records, tmp_path, NEW)
     g = client.get(f"/api/sample/{NEW}/geometry").json()["values"]
