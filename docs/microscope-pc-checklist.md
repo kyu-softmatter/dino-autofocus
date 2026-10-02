@@ -63,6 +63,16 @@
 | Kinetix_red 의 판독 모드 속성 이름과 값 목록 | 카메라 쓰기 허용 목록에 아직 없다. 9월 30일 기록에는 `ReadoutRate = 100MHz 12bit` 로 적혀 있어 이름은 `ReadoutRate` 로 보이지만 확인 전이다 | Micro-Manager 에서 Kinetix_red 속성 목록과 허용 값 읽기 |
 | Aura 의 GREEN 외 라인 이름 (VIOLET, CYAN, RED 등) 과 `<LINE>_Intensity` 속성 | GREEN 만 9월 30일에 썼다. 나머지는 `unmeasured provisional` | Aura 장치 속성 목록 읽기 |
 
+### 실제 장비 백엔드 (T-033)
+
+| 질문 | 지금 상태 | 확인 방법 |
+|---|---|---|
+| 벤치 설정 파일 경로와 Micro-Manager 설치 폴더 | 기존 스크립트(`scripts/mm_grab.py`)는 `C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg` 를 쓴다. 설치 폴더는 pymmcore-plus 가 찾는다 | 파일이 있는지, `uv run python -c "from pymmcore_plus import find_micromanager; print(find_micromanager())"` |
+| Core 의 AutoFocus 장치가 PFS 인가 | 확인 전 | 설정을 불러온 뒤 Core 의 AutoFocus 역할 읽기 |
+| `enableContinuousFocus(False)` 뒤에 꺼짐으로 읽히는가 | 확인 전 | 끄고 `isContinuousFocusEnabled()` 읽기 |
+| XY 이동 대기 시간 30 s 가 가장 긴 이동에 충분한가 | `DEFAULT_XY_TIMEOUT_S = 30` 임시값 | 가장 먼 두 점 사이 이동 시간 재기 |
+| 재물대 이동 한계 (X, Y) | 실제 장비 백엔드는 지금 "모름" 을 돌려준다. 그래서 **실제 장비에서는 F5 Y 이탈이 거부된다** | 재물대 한계 값 읽기 또는 측정 (Q12 와 함께) |
+
 ### 설치 상태 (T-020)
 
 | 질문 | 왜 필요한가 | 확인 명령 |
