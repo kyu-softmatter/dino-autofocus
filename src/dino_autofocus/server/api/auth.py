@@ -85,6 +85,10 @@ class RoleIn(_In):
     role: RoleName
 
 
+class PasswordIn(_In):
+    password: str
+
+
 class RevokeIn(_In):
     reason: str = Field(min_length=1)
 
@@ -319,6 +323,30 @@ def set_role(email: str, body: RoleIn, me: Login, auth: Auth) -> AccountOut:
 @router.post("/accounts/{email}/disable", response_model=AccountOut)
 def disable(email: str, me: Login, auth: Auth) -> AccountOut:
     return _admin_change(me, lambda admin: auth.accounts.disable(admin, email))
+
+
+@router.post("/accounts/{email}/enable", response_model=AccountOut)
+def enable(email: str, me: Login, auth: Auth) -> AccountOut:
+    return _admin_change(me, lambda admin: auth.accounts.enable(admin, email))
+
+
+@router.post("/accounts/{email}/password", response_model=AccountOut)
+def reset_password(email: str, body: PasswordIn, me: Login, auth: Auth) -> AccountOut:
+    """The admin sets a new password; every login of that account ends."""
+    def change(admin: str):
+        acc = auth.accounts.reset_password(admin, email, body.password)
+        auth.logins.end_user(acc.email, "password_reset")
+        return acc
+    try:
+        return _admin_change(me, change)
+    except PasswordPolicyError as e:
+        raise _refuse(422, "password_policy", str(e)).http() from e
+
+
+@router.post("/accounts/{email}/delete", response_model=AccountOut)
+def delete(email: str, me: Login, auth: Auth) -> AccountOut:
+    """Pending or disabled accounts only; the audit log keeps the history."""
+    return _admin_change(me, lambda admin: auth.accounts.delete(admin, email))
 
 
 # -- device control ---------------------------------------------------------------------

@@ -30,10 +30,11 @@ describe("area registry", () => {
     expect(areaIdOfPath("../features/live/View.tsx")).toBeNull();
   });
 
-  it("has the six areas of T-010, simulation (PLAN v0.4) and sessions (T-106)", () => {
+  it("has the six areas of T-010, simulation (PLAN v0.4), sessions (T-106) and admin-only accounts", () => {
     expect(registry.map((e) => e.id)).toEqual([
-      "console", "hardware", "sample", "map", "objective", "live", "simulation", "sessions",
+      "console", "hardware", "sample", "map", "objective", "live", "simulation", "sessions", "accounts",
     ]);
+    expect(registry.filter((e) => e.adminOnly).map((e) => e.id)).toEqual(["accounts"]);
   });
 });
 

@@ -12,8 +12,8 @@
   hashes only. Writes go to a temporary file and are swapped in, so a crash never leaves
   half a file.
 
-Creation, approval (with the approving admin and the role) and role changes go to the audit
-log when one is given.
+Creation, approval (with the approving admin and the role), role changes, disable, enable,
+password reset and delete go to the audit log when one is given.
 """
 
 from __future__ import annotations
@@ -303,6 +303,47 @@ class AccountStore:
             self._accounts[acc.email] = acc
             self._save()
         self._log(AuditKind.ACCOUNT_DISABLED, admin.email, account=acc.email)
+        return acc
+
+    def enable(self, admin_email: str, email: str) -> Account:
+        """Switch a disabled account back on with the role it had."""
+        with self._lock:
+            admin = self._require_admin(admin_email)
+            acc = self._target(email)
+            if acc.status is not AccountStatus.DISABLED:
+                raise AccountError(f"{acc.email} is not disabled ({acc.status})")
+            acc = replace(acc, status=AccountStatus.ACTIVE)
+            self._accounts[acc.email] = acc
+            self._save()
+        self._log(AuditKind.ACCOUNT_ENABLED, admin.email, account=acc.email, role=str(acc.role))
+        return acc
+
+    def reset_password(self, admin_email: str, email: str, password: str) -> Account:
+        """The admin sets a new password (policy-checked). The caller ends the old logins."""
+        password_hash = hash_password(password)  # policy check before anything is stored
+        with self._lock:
+            admin = self._require_admin(admin_email)
+            acc = self._target(email)
+            acc = replace(acc, password_hash=password_hash)
+            self._accounts[acc.email] = acc
+            self._save()
+        self._log(AuditKind.ACCOUNT_PASSWORD_RESET, admin.email, account=acc.email)
+        return acc
+
+    def delete(self, admin_email: str, email: str) -> Account:
+        """Remove a pending or disabled account from the file. The audit log keeps its history;
+        an active account is disabled first, so a delete is always a second, separate step."""
+        with self._lock:
+            admin = self._require_admin(admin_email)
+            acc = self._target(email)
+            if acc.email == admin.email:
+                raise AccountError("an admin cannot delete their own account")
+            if acc.status is AccountStatus.ACTIVE:
+                raise AccountError(f"{acc.email} is active; disable it before deleting")
+            del self._accounts[acc.email]
+            self._save()
+        self._log(AuditKind.ACCOUNT_DELETED, admin.email, account=acc.email, name=acc.name,
+                  role=str(acc.role), status=str(acc.status), created_at=acc.created_at)
         return acc
 
     # -- login --------------------------------------------------------------------------------

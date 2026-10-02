@@ -1,7 +1,8 @@
 import { type ReactNode, useState } from "react";
 
-import { ApprovalList, type ShellAuth, useControl } from "./auth";
+import { type ShellAuth, useControl } from "./auth";
 import { useReadOnly } from "./client";
+import { areaHref, navigate } from "./route";
 import { type AssistantStatus, type EngineStatus, type LastShutdown, useAssistantStatus, useEngineStatus } from "./status";
 import { EncoderZ } from "./Verdict";
 
@@ -38,14 +39,13 @@ function AssistantPart({ a }: { a: AssistantStatus }) {
 
 /**
  * The user part: name and role, the control holder with Take / Release for the
- * local operator, and the user menu (Log out, Lock, Approve accounts for an
- * admin). Nothing until T-105's login is in the build.
+ * local operator, Log out always in view, and the user menu (Lock, Manage
+ * accounts for an admin). Nothing until T-105's login is in the build.
  */
 export function UserPart({ auth }: { auth: ShellAuth | null }) {
   const me = auth?.me ?? null;
   const control = useControl(me);
   const [menu, setMenu] = useState(false);
-  const [approvals, setApprovals] = useState(false);
   if (!auth || !me) return null;
   const canHold = me.local && (me.role === "operator" || me.role === "admin");
   const holder = control.holder;
@@ -69,28 +69,30 @@ export function UserPart({ auth }: { auth: ShellAuth | null }) {
         </button>
       )}
       {control.error && <span className="warn"> {control.error}</span>}
-      <button type="button" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
+      <button type="button" onClick={() => void auth.logout()}>
+        Log out
+      </button>
+      <button type="button" aria-haspopup="menu" aria-expanded={menu} aria-label="User menu" onClick={() => setMenu((m) => !m)}>
         ▾
       </button>
       {menu && (
         <span role="menu" className="user-menu">
-          <button role="menuitem" type="button" onClick={() => void auth.logout()}>
-            Log out
-          </button>
           <button role="menuitem" type="button" onClick={() => void auth.lock()}>
             Lock
           </button>
           {me.role === "admin" && (
-            <button role="menuitem" type="button" onClick={() => setApprovals((a) => !a)}>
-              Approve accounts
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                setMenu(false);
+                navigate(areaHref("accounts"));
+              }}
+            >
+              Manage accounts
             </button>
           )}
         </span>
-      )}
-      {approvals && me.role === "admin" && (
-        <div className="user-approvals">
-          <ApprovalList api={auth.api} me={me} />
-        </div>
       )}
     </span>
   );

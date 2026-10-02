@@ -183,17 +183,6 @@ body {
   background: var(--panel);
 }
 
-.user-approvals {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  min-width: 420px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
-}
-
 .abort-button {
   padding: 6px 14px;
   border: 1px solid var(--warn);
@@ -223,4 +212,16 @@ body {
   border-color: var(--warn);
   color: var(--warn);
   font-weight: 600;
+}
+
+.accounts-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.accounts-password {
+  display: inline-flex;
+  gap: 4px;
 }

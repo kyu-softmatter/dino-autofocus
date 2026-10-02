@@ -61,3 +61,19 @@ def test_role_change_applies_at_once_and_disabling_ends_the_session(logins, logi
 
 def test_unknown_token(logins):
     assert logins.get("not-a-token") is None and not logins.logout("not-a-token")
+
+
+def test_end_user_ends_every_login_of_that_account_only(logins, login, audit):
+    a, b, other = login("vera@example.test"), login("vera@example.test"), login("otto@example.test")
+    assert logins.end_user("vera@example.test", "password_reset") == 2
+    assert logins.get(a) is None and logins.get(b) is None
+    assert logins.get(other) is not None
+    reasons = [e["reason"] for e in audit.entries() if e["kind"] == "logout"]
+    assert reasons.count("password_reset") == 2
+
+
+def test_deleting_an_account_ends_its_login(logins, login, seeded):
+    token = login("vera@example.test")
+    seeded.disable("admin@example.test", "vera@example.test")
+    seeded.delete("admin@example.test", "vera@example.test")
+    assert logins.get(token) is None

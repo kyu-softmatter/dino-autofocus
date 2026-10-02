@@ -138,6 +138,50 @@ def test_role_change_and_disable(engine, make_client, seat):
     assert bad.status_code == 422
 
 
+def test_enable_reset_password_and_delete(engine, make_client, seat):
+    viewer = make_client(engine, login=VIEWER)
+    c = make_client(engine, login=ADMIN)
+    assert c.post(f"/api/auth/accounts/{VIEWER}/enable").status_code == 409  # active already
+    r = c.post(f"/api/auth/accounts/{VIEWER}/password", json={"password": "fresh-pass-word-1"})
+    assert r.status_code == 200 and "password_hash" not in r.json()
+    assert viewer.get("/api/auth/me").status_code == 401  # the old login ended
+    assert make_client(engine).post("/api/auth/login", json={
+        "email": VIEWER, "password": "fresh-pass-word-1"}).status_code == 200
+    short = c.post(f"/api/auth/accounts/{VIEWER}/password", json={"password": "x"})
+    assert (short.status_code, detail(short)["code"]) == (422, "password_policy")
+    assert c.post(f"/api/auth/accounts/{VIEWER}/delete").status_code == 409  # disable first
+    c.post(f"/api/auth/accounts/{VIEWER}/disable")
+    assert c.post(f"/api/auth/accounts/{VIEWER}/enable").json()["status"] == "active"
+    c.post(f"/api/auth/accounts/{VIEWER}/disable")
+    assert c.post(f"/api/auth/accounts/{VIEWER}/delete").json()["email"] == VIEWER
+    assert seat.accounts.get(VIEWER) is None
+    assert c.post(f"/api/auth/accounts/{VIEWER}/delete").status_code == 404
+    kinds = audit_kinds(seat)
+    for k in ("account_password_reset", "account_enabled", "account_deleted"):
+        assert k in kinds, k
+
+
+@pytest.mark.parametrize("who", [OPERATOR, VIEWER])
+def test_non_admin_cannot_enable_reset_or_delete(engine, make_client, seat, who):
+    seat.accounts.disable(ADMIN, OPERATOR2)
+    c = make_client(engine, login=who)
+    for path, body in (("enable", None), ("password", {"password": "fresh-pass-word-1"}),
+                       ("delete", None)):
+        r = c.post(f"/api/auth/accounts/{OPERATOR2}/{path}", json=body)
+        assert (r.status_code, detail(r)["code"]) == (403, "role"), path
+    assert str(seat.accounts.get(OPERATOR2).status) == "disabled"
+
+
+def test_remote_admin_cannot_enable_reset_or_delete(engine, make_client, seat):
+    seat.accounts.disable(ADMIN, OPERATOR2)
+    c = make_client(engine, remote=True, login=ADMIN)
+    for path, body in (("enable", None), ("password", {"password": "fresh-pass-word-1"}),
+                       ("delete", None)):
+        r = c.post(f"/api/auth/accounts/{OPERATOR2}/{path}", json=body)
+        assert r.status_code == 403, path
+    assert seat.accounts.get(OPERATOR2) is not None
+
+
 # -- lock, unlock, activity -------------------------------------------------------------
 
 
@@ -235,7 +279,8 @@ def test_abort_while_locked_and_without_control(engine, make_client, seat):
 def test_the_auth_routes_are_in_the_openapi_schema(engine, make_client):
     paths = make_client(engine).get("/openapi.json").json()["paths"]
     for p in ("/api/auth/login", "/api/auth/me", "/api/auth/signup", "/api/auth/control/acquire",
-              "/api/auth/accounts/{email}/approve"):
+              "/api/auth/accounts/{email}/approve", "/api/auth/accounts/{email}/enable",
+              "/api/auth/accounts/{email}/password", "/api/auth/accounts/{email}/delete"):
         assert p in paths, p
 
 

@@ -57,8 +57,17 @@ describe("Shell", () => {
   it("shows every area in the navigation and a placeholder for one with no screen", () => {
     render(<Shell registry={buildRegistry({})} />);
     const nav = screen.getByRole("navigation", { name: "Areas" });
-    expect(nav.querySelectorAll("a")).toHaveLength(AREAS.length);
+    expect(nav.querySelectorAll("a")).toHaveLength(AREAS.filter((a) => !("adminOnly" in a)).length);
+    expect(screen.queryByRole("link", { name: "Accounts" })).toBeNull();
     expect(screen.getByText("Console: not implemented yet")).toBeTruthy();
+    expect(screen.getByText("Takatori Lab Console")).toBeTruthy();
+  });
+
+  it("shows the admin-only areas to an admin", () => {
+    render(<Shell registry={buildRegistry({})} admin />);
+    const nav = screen.getByRole("navigation", { name: "Areas" });
+    expect(nav.querySelectorAll("a")).toHaveLength(AREAS.length);
+    expect(screen.getByRole("link", { name: "Accounts" })).toBeTruthy();
   });
 
   it("switches area from the navigation and updates the hash", () => {

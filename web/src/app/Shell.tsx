@@ -100,8 +100,11 @@ export function Shell({
   registry = defaultRegistry,
   statusBar,
   notice,
+  admin = false,
 }: {
   registry?: AreaEntry[];
+  /** the logged-in user is an admin: admin-only areas show in the navigation */
+  admin?: boolean;
   statusBar?: ReactNode;
   /** shown above the area screen, e.g. the last-shutdown light readback */
   notice?: ReactNode;
@@ -112,8 +115,8 @@ export function Shell({
     <ScreenContextProvider area={entry.id}>
       <div className="shell">
         <header className="header">
-          <span className="title">DINO Autofocus</span>
-          <Nav entries={registry} current={entry.id} onSelect={go} />
+          <span className="title">Takatori Lab Console</span>
+          <Nav entries={registry.filter((e) => admin || !e.adminOnly)} current={entry.id} onSelect={go} />
         </header>
         <main className="main">
           {notice}

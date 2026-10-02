@@ -161,14 +161,28 @@ describe("user part", () => {
     expect(screen.queryByRole("button", { name: "Take" })).toBeNull();
   });
 
-  it("has Log out and Lock in the menu, and Approve accounts for an admin only", async () => {
+  it("shows Log out without opening the menu", async () => {
+    const auth = fakeAuth();
+    withClient(<UserPart auth={auth} />, { "/api/auth/control": control(null) });
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    await waitFor(() => expect(auth.calls).toContain("logout"));
+  });
+
+  it("has Lock in the menu, and Manage accounts for an admin only", async () => {
     const auth = fakeAuth({ role: "admin" });
     withClient(<UserPart auth={auth} />, { "/api/auth/control": control(null) });
-    fireEvent.click(screen.getByRole("button", { name: "▾" }));
+    fireEvent.click(screen.getByRole("button", { name: "User menu" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Lock" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
-    expect(screen.getByRole("menuitem", { name: "Approve accounts" })).toBeTruthy();
-    await waitFor(() => expect(auth.calls).toEqual(expect.arrayContaining(["lock", "logout"])));
+    await waitFor(() => expect(auth.calls).toContain("lock"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Manage accounts" }));
+    expect(window.location.hash).toBe("#/accounts");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("gives a non-admin no Manage accounts", () => {
+    withClient(<UserPart auth={fakeAuth()} />, { "/api/auth/control": control(null) });
+    fireEvent.click(screen.getByRole("button", { name: "User menu" }));
+    expect(screen.queryByRole("menuitem", { name: "Manage accounts" })).toBeNull();
   });
 });
 

@@ -21,10 +21,13 @@ T-009b refusals: `{"detail": {code, message}}` plus the `X-DinoAF-Refusal: <code
 | `POST /unlock` | logged in, locked | any | `{password}` → `Me`; `401` on a wrong password |
 | `POST /activity` | logged in | any | → `204`. The screen calls it on user input (throttled, at most every 30 s) so the idle lock does not fire while someone is working |
 | `GET /me` | logged in | any | → `Me`; `401` without a valid cookie |
-| `GET /accounts?status=pending` | admin | local | → `[Account]` (no hashes) |
+| `GET /accounts?status=` | admin | local | → `[Account]` (no hashes); `status` (pending / active / disabled) is optional |
 | `POST /accounts/{email}/approve` | admin | local | `{role}` → `Account`. Role is set only here (D12) |
 | `POST /accounts/{email}/role` | admin | local | `{role}` → `Account` |
-| `POST /accounts/{email}/disable` | admin | local | → `Account` |
+| `POST /accounts/{email}/disable` | admin | local | → `Account`. Never the last active admin |
+| `POST /accounts/{email}/enable` | admin | local | → `Account`. Disabled → active, role kept |
+| `POST /accounts/{email}/password` | admin | local | `{password}` → `Account`; every login of that account ends; `422 password_policy` |
+| `POST /accounts/{email}/delete` | admin | local | → `Account`. Pending or disabled only, never the caller; the audit log keeps the history |
 | `GET /control` | logged in | any | → `{holder: {user_id, name, since} \| null}` |
 | `POST /control/acquire` | operator, admin | local | → `{holder}`; `409` (`detail.code` `control_busy`, plus top-level `holder`) when someone else holds it |
 | `POST /control/release` | the holder | local | → `204` |
@@ -49,8 +52,8 @@ not the check.
 - The **device-control token never leaves the server.** When a logged-in holder sends a
   command, the server attaches its grant to the engine `Command`; the engine checks it with
   `DeviceControl.check` (T-011). The browser only knows `has_control`.
-- Every login, failed login, logout, lock, unlock, sign-up, approval, role change and control
-  change goes to `audit.jsonl` through T-018. The router adds no second log.
+- Every login, failed login, logout, lock, unlock, sign-up, approval, role change, disable,
+  enable, password reset, delete and control change goes to `audit.jsonl` through T-018. The router adds no second log.
 
 ## 3. Requests without a login
 
@@ -77,7 +80,7 @@ One component tree, shown by the shell instead of the areas when `GET /me` is 40
 | pending (login returned `pending_approval`) | "Your account is waiting for an administrator's approval." No retry loop |
 | disabled | "This account is disabled. Ask an administrator." |
 | locked | "Locked: enter your password to continue" over a dimmed app. **Running work and guards keep going, and the Abort button stays live on the lock screen.** The status bar stays visible |
-| admin approval list | Under the user menu, admin only and local only: pending accounts with name, email, created time, a role picker (viewer / operator / admin, no default chosen) and Approve. Hidden for everyone else |
+| accounts page | Area `#/accounts` (`web/src/features/accounts/`), in the navigation for an admin only and usable only locally; the user menu's "Manage accounts" opens it. Every account with a status filter. Pending: role picker (no default) and Approve, or Delete. Active: role picker and Set role, Disable, Reset password. Disabled: Enable, Reset password, Delete (with a confirm). The admin's own row has no actions |
 
 UI text in English. No email is prefilled, remembered or shown before login.
 
@@ -98,5 +101,6 @@ Requests to AF 업무분배보조, who forwards them to the manager:
    the app back to it. Hash routing stays as is; no `#/login` route is needed.
 5. **T-010: status bar items:** user name and role, a "remote · read only" badge when
    `local` is false, the control holder (`GET /control`) with Take / Release for the local
-   operator, and a user menu (Log out, Lock, and Approve accounts for an admin).
+   operator, a Log out button always in view, and a user menu (Lock, and Manage accounts for an
+   admin).
 6. **T-010: an activity hook** that calls `POST /api/auth/activity` on user input, throttled.

@@ -144,6 +144,14 @@ class LoginSessions:
             self._end(_hash(token), s, "logout")
         return True
 
+    def end_user(self, user_id: str, reason: str) -> int:
+        """End every login of ``user_id`` (an admin reset its password). Returns how many."""
+        with self._guard():
+            mine = [(k, s) for k, s in self._sessions.items() if s.user_id == user_id]
+            for key, s in mine:
+                self._end(key, s, reason)
+        return len(mine)
+
     def _end(self, key: str, s: _Session, reason: str) -> None:
         del self._sessions[key]
         self._log(AuditKind.LOGOUT, s.user_id, login_id=s.login_id, reason=reason)

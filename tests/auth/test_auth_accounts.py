@@ -114,6 +114,64 @@ def test_disabled_account_cannot_log_in(seeded, seed_password):
         LoginOutcome.DISABLED
 
 
+def test_disabled_account_is_enabled_with_its_role(seeded, audit, seed_password):
+    seeded.disable("admin@example.test", "otto@example.test")
+    acc = seeded.enable("admin@example.test", "otto@example.test")
+    assert acc.status is AccountStatus.ACTIVE and acc.role is Role.OPERATOR
+    assert seeded.authenticate("otto@example.test", seed_password).ok
+    entry = [e for e in audit.entries() if e["kind"] == "account_enabled"][-1]
+    assert (entry["user_id"], entry["account"]) == ("admin@example.test", "otto@example.test")
+    with pytest.raises(AccountError):
+        seeded.enable("admin@example.test", "otto@example.test")  # already active
+    with pytest.raises(AccountError):
+        seeded.enable("admin@example.test", "pat@example.test")  # pending: approve instead
+
+
+def test_admin_resets_a_password_and_the_old_one_stops_working(seeded, audit, seed_password):
+    seeded.reset_password("admin@example.test", "vera@example.test", "new-pass-word-1")
+    assert not seeded.authenticate("vera@example.test", seed_password).ok
+    assert seeded.authenticate("vera@example.test", "new-pass-word-1").ok
+    entry = [e for e in audit.entries() if e["kind"] == "account_password_reset"][-1]
+    assert (entry["user_id"], entry["account"]) == ("admin@example.test", "vera@example.test")
+    assert not any("pass-word" in json.dumps(e) for e in audit.entries())
+    with pytest.raises(PasswordPolicyError):
+        seeded.reset_password("admin@example.test", "vera@example.test", "x")
+    assert seeded.authenticate("vera@example.test", "new-pass-word-1").ok
+
+
+def test_delete_takes_pending_or_disabled_accounts_only(seeded, audit):
+    with pytest.raises(AccountError):
+        seeded.delete("admin@example.test", "vera@example.test")  # active: disable first
+    seeded.delete("admin@example.test", "pat@example.test")  # a sign-up turned down
+    seeded.disable("admin@example.test", "vera@example.test")
+    seeded.delete("admin@example.test", "vera@example.test")
+    assert seeded.get("pat@example.test") is None and seeded.get("vera@example.test") is None
+    deleted = [e for e in audit.entries() if e["kind"] == "account_deleted"]
+    assert [(e["account"], e["status"]) for e in deleted] == [
+        ("pat@example.test", "pending"), ("vera@example.test", "disabled")]
+    assert seeded.get("admin@example.test") is not None
+    with pytest.raises(AccountError):
+        seeded.delete("admin@example.test", "vera@example.test")  # gone
+
+
+def test_an_admin_cannot_delete_themselves(seeded):
+    seeded.set_role("admin@example.test", "otto@example.test", "admin")
+    seeded.disable("otto@example.test", "admin@example.test")
+    with pytest.raises(PermissionDenied):  # a disabled admin is no admin
+        seeded.delete("admin@example.test", "admin@example.test")
+    with pytest.raises(AccountError):
+        seeded.delete("otto@example.test", "otto@example.test")
+
+
+@pytest.mark.parametrize("act", ["enable", "reset_password", "delete"])
+def test_only_an_active_admin_enables_resets_or_deletes(seeded, act):
+    seeded.disable("admin@example.test", "vera@example.test")
+    args = ("new-pass-word-1",) if act == "reset_password" else ()
+    with pytest.raises(PermissionDenied):
+        getattr(seeded, act)("otto@example.test", "vera@example.test", *args)
+    assert seeded.get("vera@example.test").status is AccountStatus.DISABLED
+
+
 def test_file_round_trip_holds_hashes_only(seeded, tmp_path, seed_password):
     raw = (tmp_path / "config" / "accounts.json").read_text(encoding="utf-8")
     assert seed_password not in raw

@@ -30,6 +30,7 @@ function Connected() {
 
   return (
     <Shell
+      admin={auth?.me?.role === "admin"}
       statusBar={
         <StatusBarView
           status={status}

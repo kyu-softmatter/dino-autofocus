@@ -14,6 +14,8 @@ export const AREAS = [
   { id: "live", label: "Live" },
   { id: "simulation", label: "Simulation" },
   { id: "sessions", label: "Sessions" },
+  // shown in the navigation to an admin only; the server refuses everyone else anyway
+  { id: "accounts", label: "Accounts", adminOnly: true },
 ] as const;
 
 export type AreaId = (typeof AREAS)[number]["id"];
@@ -26,6 +28,8 @@ export type AreaLoader = () => Promise<AreaModule>;
 export interface AreaEntry {
   id: AreaId;
   label: string;
+  /** in the navigation for an admin only */
+  adminOnly?: boolean;
   /** undefined while the area has no `index.tsx`: the shell shows a placeholder */
   load?: AreaLoader;
 }
@@ -59,7 +63,12 @@ export function buildRegistry(
     }
     found.set(id, load);
   }
-  return AREAS.map((a) => ({ id: a.id, label: a.label, load: found.get(a.id) }));
+  return AREAS.map((a) => ({
+    id: a.id,
+    label: a.label,
+    ...("adminOnly" in a && a.adminOnly ? { adminOnly: true } : {}),
+    load: found.get(a.id),
+  }));
 }
 
 // Vite resolves this at build time. A new `features/<id>/index.tsx` is picked up
