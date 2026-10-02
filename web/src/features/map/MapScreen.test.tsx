@@ -86,6 +86,24 @@ describe("map screen", () => {
     expect(api.sent).toEqual([]);
   });
 
+  it("says Checking permissions… until the first answer, and treats a missing op as unavailable", async () => {
+    const api = fakeMapApi(fixture({ permissionsOmit: ["map_flag"] }));
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const first = api.permissions;
+    api.permissions = (ops) => gate.then(() => first(ops));
+    render(
+      <ScreenContextProvider area="map">
+        <MapScreen api={api} width={400} height={400} />
+      </ScreenContextProvider>,
+    );
+    expect((await screen.findByTestId("move-reason")).textContent).toBe("Click-to-move: Checking permissions…");
+    await act(async () => release());
+    const flags = screen.getByRole("region", { name: "Flags" });
+    await within(flags).findByText("Permission check unavailable");
+    await waitFor(() => expect(screen.queryByTestId("move-reason")).toBeNull());
+  });
+
   it("shows the engine's reason on the scan step for a partial trace", async () => {
     await mount({ permissions: deny("partial trace: the hole fit is not a closed loop", ["scan_4x"]) });
     const seq = screen.getByRole("region", { name: "Sequence" });

@@ -264,6 +264,8 @@ export interface FakeData {
   permissions: Permissions;
   /** make GET /api/permissions fail */
   permissionsFail?: boolean;
+  /** ops left out of the answer */
+  permissionsOmit?: string[];
   maps: Record<string, MapState>;
   results: Record<string, ResultSummary[]>;
   details: Record<string, ResultDetail>;
@@ -299,7 +301,7 @@ export function fakeMapApi(data: FakeData): FakeMapApi {
     permissions: (ops) =>
       data.permissionsFail
         ? Promise.reject(new ApiError(503, "permission check failed"))
-        : Promise.resolve(Object.fromEntries(ops.map((op) => [op, data.permissions[op] ?? { allowed: true, reason: null }]))),
+        : Promise.resolve(Object.fromEntries(ops.filter((op) => !data.permissionsOmit?.includes(op)).map((op) => [op, data.permissions[op] ?? { allowed: true, reason: null }]))),
     mapState: (id) => need(data.maps[id], `sample ${id}`),
     results: (id) => Promise.resolve(data.results[id] ?? []),
     result: (_id, rid) => need(data.details[rid], `result ${rid}`),

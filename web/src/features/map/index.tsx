@@ -361,7 +361,8 @@ export function MapScreen({ api, width = 640, height = 640 }: { api: MapApi; wid
     if (perms === null) return "Checking permissions…";
     for (const op of want) {
       const p = perms[op];
-      if (p && !p.allowed) return p.reason ?? `${op} is not allowed`;
+      if (!p) return PERMISSION_UNAVAILABLE; // an op missing from the answer
+      if (!p.allowed) return p.reason ?? `${op} is not allowed`;
     }
     return null;
   };
