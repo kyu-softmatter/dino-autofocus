@@ -34,6 +34,33 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
   (remote viewers can call signup) that an email is registered; and login/unlock have no attempt limit. Before real
   logins or remote viewing: a neutral signup answer and a per-account and per-client attempt limit with lockout.
 
+### 2026-10-02 bench results (not carded; code unchanged)
+
+Source: docs/microscope-pc-checklist.md "2026-10-02 현미경 PC 결과", docs/runs/2026-10-02_bench-properties.json,
+configs/micromanager/*.cfg (byte-exact; `.gitattributes` keeps them `-text`).
+
+- AURA lines: the Aura is "Aura III 5-NII-WA" with UV, CYAN, GREEN, RED, NIR. `engine/backend.py`
+  `AURA_LINES = ("VIOLET", "CYAN", "GREEN", "RED")` is wrong (no VIOLET; UV and NIR missing). Touches
+  LIGHT_PROPERTIES, mm_real/mm_demo provisional flags, the demo label map (mm_demo_core has no UV/NIR LED),
+  tests/engine/test_contract_runner.py:1041. Keep `MEASURED_AURA_LINES = ("GREEN",)`: only the names were read.
+- Camera allow-list: readout property is `ReadoutRate`, but its allowed values depend on `Port` (today
+  `Port=Dynamic Range` → only `100MHz 16bit`). Add `Port` and `ReadoutRate` together or neither; 9/30's
+  `100MHz 12bit` came from another Port (unconfirmed).
+- FREE_WD (T-027b): catalog values from the librarian (E3): 10x 4 mm, 20x 0.8 mm, 40x WI 0.16 mm (safe end of
+  0.16–0.20; value at the 0.17 collar is an open gap), 60x Oil 0.15 mm. Candidates for `guards.FREE_WD_UM` and
+  `BENCH_FREE_WD_UM` (states 1–4). Safety-relevant: widens what the guard allows; needs review and director OK.
+- Stage Y limit is at least 20498.8 µm (one +Y 15 mm step-out, readback within 5 µm, < 30 s at 25 mm/s).
+  X/Y limits are not readable as properties; mm-real still reports "unknown".
+- Core.Focus is empty in the bench cfg (`getFocusDevice()` = ""). mm-real names `ZDrive`, so fine; anything using
+  the default focus device fails.
+- Light path: the single-cam cfg has no CSU-W1 device, so `CSUW1-Port` keeps its previous value. If it was left at
+  State 0 (blue_only), Kinetix_red gets no light with no error. Candidate hardware_scan warning.
+  Port states (cfg labels + user): 0 blue_only (100/0 mirror), 1 blue_red (561 nm dichroic), 2 red_only (no mirror).
+  Tell the librarian session: this fills `csuw1_port_slots` state numbers; Lapp mirror is 50/50 (new).
+- Unexplained drift: between the first property read and the step-out, Z 485.16 → 483.62 µm and Y ~0.7 µm with no
+  software command. Hand contact unconfirmed. Check before trusting z readback across idle periods.
+- PFS: off from the start; `enableContinuousFocus(False)` reads off. Turning it off from on is still unchecked.
+
 ### Blocked on the user
 
 - T-036 unlock: the one-line `BENCH_MOTION = "UNLOCKED"` in engine/backends/mm_real.py was refused by the seat's
@@ -42,9 +69,10 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 - Second lock: `guards.BENCH_APPROACH = "UNMEASURED"` (T-029d) stays until the bench measurements below, then its own
   reviewed flip with the director's confirmation.
 - Microscope PC measurements and checks (see "현미경 PC" items below and docs/microscope-pc-checklist.md):
-  cfg passes `check_load_settings` with BENCH_DEVICES; whether System/Shutdown applies at unload; stage limits and
-  the +Y 15 mm step-out; Q13 (approach step) and Q20 (XY move needing a Z retract); FREE_WD for 10x/20x/40x WI/60x;
-  T-029d per-step read latency.
+  ~~cfg passes `check_load_settings` with BENCH_DEVICES~~ (OK, 2026-10-02); ~~whether System/Shutdown applies at
+  unload~~ (the bench cfg has no Shutdown preset); stage limits (Y ≥ 20498.8 µm; the +Y 15 mm step-out ran once
+  on 2026-10-02); Q13 (approach step) and Q20 (XY move needing a Z retract); FREE_WD for 10x/20x/40x WI/60x
+  (catalog values in, bench check and the 40x 0.17-collar value open); T-029d per-step read latency.
 - trajectory.txt samples (three layouts) and the WSL source path, for the T-012 txt reader (now "unverified").
 - Copy the old Desktop "DINO Autofocus.exe" aside before `build.ps1 -Force`.
 - Operator name in docs/runs/2026-09-30_* ("kyuchoi"): keep or replace before the repo goes public.

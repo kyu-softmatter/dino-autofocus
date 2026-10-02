@@ -109,3 +109,101 @@ uv run python -c "from pathlib import Path; from dino_autofocus.engine.backends.
 - 4x→100x 동초점 오프셋. 9월 30일에는 약 −60 µm 였고 기준 시료로 다시 잰다.
 - A4000 에서 DINO 지연 시간과 fp16 헤드의 실측 성능.
 - 40x WI 대물렌즈의 0.17 mm 보정 링 위치에서의 작동 거리. 이 값이 없으면 40x WI 경로는 막혀 있다.
+
+## 2026-10-02 현미경 PC 결과
+
+> 이 결과에 따른 코드 수정은 아직 하지 않았다 (동결). 할 일은 `docs/tasks/BACKLOG.md` 인계 절의
+> "2026-10-02 bench results" 항목에 있다.
+
+현미경 PC (Takatori_lab) 에서 확인했다. 저장소는 `dbfd023`. 장치 속성 전체는
+[runs/2026-10-02_bench-properties.json](runs/2026-10-02_bench-properties.json), 설정 파일 사본은
+`configs/micromanager/single_cam_red_noDMD_nocom10.cfg` (원본과 SHA-256 같음, `8184073E…3120`).
+
+### 설정 파일 (T-036b)
+
+- `check_load_settings` 는 `OK`. 불러올 때 설정되는 것은 `Core.Camera=Kinetix_red`, `Core.Shutter=LightEngine`,
+  `Core.AutoShutter=1`, `System/Startup: LappMainBranch1.State=1` 뿐이다.
+- `System/Shutdown` 프리셋은 없다.
+- `Core.Focus` 는 설정되어 있지 않다 (`getFocusDevice()` 가 빈 값). 새 백엔드는 `ZDrive` 를 이름으로 쓰므로 괜찮지만,
+  기본 초점 장치를 쓰는 코드는 실패한다.
+
+### 설치 상태 (T-020)
+
+- git `2.49.0.windows.1`
+- torch hub: `C:\Users\Takatori lab\.cache\torch\hub` (가중치는 그 아래 `checkpoints`)
+- Micro-Manager: `C:\Users\Takatori lab\AppData\Local\pymmcore-plus\pymmcore-plus\mm\Micro-Manager_2.0.3_20260806`
+
+### 장치 속성 (T-015, T-033)
+
+| 항목 | 결과 |
+|---|---|
+| Kinetix_red 판독 모드 | 이름은 `ReadoutRate` 가 맞다. 다만 지금 허용 값은 `100MHz 16bit` 하나뿐이고, 그때 `Port = Dynamic Range` 다 (`Port` 허용 값: `Dynamic Range`, `Sensitivity`, `Speed`, `Sub-Electron`). 9월 30일의 `100MHz 12bit` 는 다른 Port 에서 나온 것으로 보인다 (확인 전). 허용 목록에는 `Port` 와 `ReadoutRate` 를 함께 넣어야 한다. `Gain` 은 `1-Standard` 하나 |
+| Aura 라인 | Aura III 5-NII-WA (COM7). 라인은 **UV, CYAN, GREEN, RED, NIR**, 각각 on/off (0–1) 와 `<LINE>_Intensity` (0–1000). **VIOLET 은 Aura 에 없다.** 코드의 `AURA_LINES = ("VIOLET", "CYAN", "GREEN", "RED")` (`engine/backend.py`) 는 고쳐야 한다 |
+| LightEngine | Aura 와 다른 Spectra III 8-NII-XS (COM3). Core 셔터가 이것이고 설정은 AutoShutter 를 켠다. 라인은 VIOLET, BLUE, CYAN, TEAL, GREEN, YELLOW, RED, NIR |
+| Core AutoFocus 장치 | `PFS` |
+| PFS 끈 뒤 읽기 | 처음부터 꺼져 있었고 (`Out of Range`), `enableContinuousFocus(False)` 뒤에도 꺼짐. 켜진 상태에서 끄는 것은 아직 확인 전 |
+| 재물대 한계 (X, Y) | 속성으로는 읽을 수 없다. XYStage·ZDrive 에는 Speed, Tolerance, Invert/Transpose 만 있다. librarian 저장소에도 값이 없다 |
+
+### 렌즈 자유 작동 거리 (T-027b)
+
+librarian 저장소 `kb/entries/objective_*.json` 의 카탈로그 값 (E3). 서비스(`kb_query`)를 거치지 않고 파일을 직접 읽었다
+(발급된 `caller_id` 가 없었다). 그래서 쿼리 로그에 남지 않았다.
+
+| 렌즈 | 부품 번호 | 작동 거리 |
+|---|---|---|
+| 4x | MRD70040 | 20 mm (코드 값과 같음) |
+| 10x | MRD70170 | 4 mm |
+| 20x | MRD70270 | 0.8 mm |
+| 40x WI | MRD77400 | 0.16–0.20 mm (보정 링 전체 범위). 0.17 위치의 값은 카탈로그에 없고 저장소의 열린 gap (`objective_40x_wd_at_170um`). 안전한 쪽은 0.16 mm. 벤치에서 재면 닫힌다 |
+| 60x Oil | MRD71670 | 0.15 mm |
+| 100x Oil | MRD71970 | 0.13 mm (코드 값과 같음) |
+
+저장소는 이 작동 거리가 커버슬립의 렌즈 쪽 면까지 잰 값이라고 추론한다 (E4, `working_distance_is_measured_to_the_coverslip`).
+
+### F5 Y 이탈 한 번 (Q12 일부)
+
+사용자 요청으로 오일 로딩을 위해 한 번 움직였다. 앱의 잠금(`BENCH_MOTION`)은 그대로 두고, 일회용 스크립트가 core 를 직접 불렀다.
+순서는 operations-spec F5 대로: 4x·PFS 꺼짐·광원 꺼짐 확인 → Z 0 → Z 다시 읽기 → +Y 15 mm → readback.
+
+| | X (µm) | Y (µm) | Z (µm) |
+|---|---|---|---|
+| 이전 (복귀 위치) | −5134.4 | 5498.9 | 483.62 |
+| 이후 | −5134.6 | 20498.8 | −0.08 |
+
+- XY readback 은 5 µm 안. Y 한계는 적어도 20498.8 µm 이다.
+- 이동은 30 s 안에 끝났다 (속도 25 mm/s).
+- 사용자가 오일을 로딩했다. 대물렌즈는 4x 그대로이고, 렌즈 회전과 복귀는 하지 않았다.
+- 첫 속성 읽기와 이동 사이에 소프트웨어 명령 없이 Z 가 485.16 → 483.62 µm, Y 가 약 0.7 µm 바뀌었다. 손으로 건드렸는지 확인 전.
+
+### 40x WI 보정 링
+
+- 2026-10-02 사용자가 확인: 보정 링은 0.17 mm (커버슬립 두께 170 µm) 에 그대로 있다. librarian 의 `objective_40x_collar_setting` (2026-09-22 읽기) 과 같다.
+  작동 거리 값 (`objective_40x_wd_at_170um`) 은 여전히 열려 있다.
+
+### Q10 Aura State 0
+
+- 2026-10-02 사용자 답: Aura `State 0` 이면 모든 라인이 꺼진다.
+- librarian 과 같다: `aura_master_state_0_keeps_green_dark` (E1, 2026-09-24, GREEN 1000 에서 프레임이 어둡다),
+  `light_engine_master_state_gates_every_line` (E3, 두 Lumencor 모두).
+- librarian 의 `aura_reports_five_named_lines` (E1) 도 오늘 읽은 다섯 라인 (UV, CYAN, GREEN, RED, NIR) 과 같다.
+
+### Q9 Startup 프리셋의 광경로
+
+2026-10-02 사용자 메모.
+
+| 장치·값 | 뜻 |
+|---|---|
+| `LappMainBranch1` State 1 | Aura 경로가 켜진다. 50/50 거울이 들어간다 |
+| `CSUW1-Port` State 0 | blue 만 (100/0 거울) |
+| `CSUW1-Port` State 1 | blue 와 red 둘 다. 561 nm dichroic 이 파장으로 나눈다 (세기로 나누지 않음) |
+| `CSUW1-Port` State 2 | red 만 (거울 없음) |
+
+- librarian 의 `csuw1_port_slots` (E3, 2026-09-17) 는 세 슬롯 (빈 칸, 561 nm dichroic, 100/0 거울) 을 적고
+  "어느 슬롯이 어느 State 번호인지는 모른다" 고 했다. 이 메모가 그 번호를 준다. librarian 세션에 알릴 것.
+- librarian 의 `lapp_state_1_brings_the_aura_to_the_sample` (E3) 와 `single_cam_red_config_startup_puts_the_lapp_mirror_in` (E1) 과 같다.
+  50/50 거울이라는 것은 이 메모에서 새로 나왔다.
+- `DMD_dualcam_LUNF.cfg` 의 Startup 은 `LappMainBranch1` 1 과 `CSUW1-Port` 1 (blue 와 red 둘 다) 이다.
+  사본은 `configs/micromanager/DMD_dualcam_LUNF.cfg` (참고용). 이 설치에서는 `MightexPolygon1000` (장치 API v71) 때문에
+  불러오지 못한다. 그 파일의 `Label,CSUW1-Port` 줄도 `2 red_only`, `1 blue_red`, `0 blue_only` 로 이 메모와 같다.
+- `single_cam_red_noDMD_nocom10.cfg` 에는 CSU-W1 장치가 없어서 `LappMainBranch1` 1 만 적용된다. 포트는 이전 세션의 값으로 남으므로,
+  State 0 (blue 만) 에 남아 있으면 Kinetix_red 에는 빛이 가지 않는다.
