@@ -102,3 +102,9 @@ The review assistant checks each condition against the branch before passing it 
 ## Status names (from T-010)
 
 - `GET /api/assistant/status` returns exactly `{provider, connected, data_stage}`; the web shell reads these names.
+
+## HTTP router paths (fixed by the T-014 prompt box, 09a5500)
+
+- `GET /api/assistant/status`, `POST /api/assistant/ask` (NDJSON stream over plain fetch, no socket),
+  `GET /api/assistant/conversations/{id}`, `POST /api/assistant/proposals/{id}/confirm` and `/reject`.
+  Permissions come from `/api/permissions?ops=submit_question,<command op>`.
