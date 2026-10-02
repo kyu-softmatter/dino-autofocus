@@ -179,7 +179,9 @@ export class SubmitRefused extends Error {
 /**
  * Stand-in for the shell's `useClient().post<T>(path, body?)` (T-010 stage 3, in review), with the
  * same signature: JSON body, `null` for 204, `SubmitRefused` with the server's `detail` otherwise.
- * Replace with `client.post` when stage 3 merges; that one also handles 403 and 401/423.
+ * It changes no global state: a 403 here is the action's own reason (e.g. a viewer, D16) and is
+ * shown next to the form. Replace with `client.post` when stage 3 merges; only that one puts the
+ * app in read-only, and only for a 403 with `detail.code == "remote_view"` (T-009b, stage 4).
  */
 export async function post<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
   const r = await client.transport.fetch(path, {
@@ -192,6 +194,10 @@ export async function post<T>(client: Client, path: string, body?: unknown): Pro
     try {
       const b = (await r.json()) as { detail?: unknown };
       if (typeof b.detail === "string") detail = b.detail;
+      // T-009b may send {code, message}
+      else if (typeof (b.detail as { message?: unknown } | null)?.message === "string") {
+        detail = (b.detail as { message: string }).message;
+      }
     } catch {
       // not JSON; keep the status
     }

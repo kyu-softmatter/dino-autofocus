@@ -35,7 +35,7 @@ function renderConsole(data: FakeData = FAKE_DATA, hash = "#/console", hostname 
     </ClientProvider>,
   );
   const gets = (path: string) => fake.calls.filter((c) => c.path === path && c.init?.method !== "POST").length;
-  return { ...fake, submitted, gets, view };
+  return { ...fake, client, submitted, gets, view };
 }
 
 const ctx = () => JSON.parse(screen.getByTestId("ctx").textContent ?? "{}");
@@ -218,6 +218,24 @@ describe("ask a question", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Questions" }));
     expect(await screen.findByText("sim-20260923-001")).toBeTruthy();
+  });
+
+  it("shows a non-remote 403 next to the form and leaves the app writable (D16 viewer)", async () => {
+    const t = renderConsole(
+      { ...FAKE_DATA, postRefusal: { status: 403, body: { detail: "role viewer may not submit_question" } } },
+      "#/console/ask",
+    );
+    await screen.findByText("Store: mock");
+    fireEvent.change(screen.getByLabelText("Question"), { target: { value: "How fast?" } });
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(submitButton());
+    });
+    const form = screen.getByRole("form", { name: "Ask a question" });
+    expect((await within(form).findByRole("alert")).textContent).toBe("role viewer may not submit_question");
+    expect(t.client.readOnly.get()).toEqual({ readOnly: false, why: null });
+    expect(screen.queryByText(READ_ONLY_REMOTE)).toBeNull();
+    expect(submitButton().disabled).toBe(false);
   });
 
   it("submits to the mock store and re-reads the list", async () => {

@@ -26,6 +26,8 @@ export interface FakeData {
   questions: QuestionDetail[];
   runs: RunDetail[];
   inbox: InboxThread[];
+  /** the POST refuses with this whatever the permission answer said (it may be stale) */
+  postRefusal?: { status: number; body: unknown };
 }
 
 /**
@@ -60,6 +62,7 @@ export function consoleRoutes(data: FakeData): { routes: Record<string, Route>; 
   const list = routes[PATHS.questions()];
   routes[PATHS.questions()] = (init) => {
     if (init?.method !== "POST") return list(init);
+    if (data.postRefusal !== undefined) return data.postRefusal;
     const perm = data.permissions?.[SUBMIT_OP];
     if (perm === undefined || !perm.allowed) return { status: 403, body: { detail: perm?.reason ?? "refused" } };
     if (!data.store.writable) return { status: 409, body: { detail: READ_ONLY_STORE_REASON } };
