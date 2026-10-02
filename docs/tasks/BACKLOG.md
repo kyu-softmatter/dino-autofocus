@@ -30,6 +30,9 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 - T-038d runbook step 2c: remove "blocked" once goto_xy (T-032 stage 2) is on main (T-038 card).
 - T-101b (contingent) align features/hardware + server/api/hardware.py if T-028 field names change.
 - T-107 browser M1 walk-through in web/e2e/ reusing T-035's mock day; needs a headless-browser package decision.
+- SECURITY (from T-105 review, 검토보조3): `POST /api/auth/signup` answers 409 `account_exists`, which tells a caller
+  (remote viewers can call signup) that an email is registered; and login/unlock have no attempt limit. Before real
+  logins or remote viewing: a neutral signup answer and a per-account and per-client attempt limit with lockout.
 
 ### Blocked on the user
 
