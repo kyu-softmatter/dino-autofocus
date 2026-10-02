@@ -261,3 +261,7 @@
   non-bench backends (`is_bench(info)` False) default to a separate root (e.g. `D:\AutoFocus\records-mock`); only a
   bench backend (mm-real) uses `D:\AutoFocus\records`. An explicit `--records-root` pointing at the real root with a
   non-bench backend is refused with a clear message. Tests for both defaults and the refusal.
+- Addition (검토보조3): `server/__main__.py` calls `create_app` without `records=` or `committer=`, so the real server
+  answers `/api/sessions` with 503 `no_records`. T-009i passes the GitFolderStore at the backend-dependent root
+  (above) and an AutoCommitter on it. Test: `main([...])`'s app has `app.state.records` and `app.state.committer`, and
+  opening a session through the API succeeds.
