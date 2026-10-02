@@ -175,3 +175,8 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
 
 - `snapshot()["sample"] = {sample_id, reserved, session_id}`, so the server can open a session for the current
   sample.
+
+## Bench backends need a clearance callback (from T-002-4 pre-review)
+
+- When the backend is a bench backend (mm-real), the runner refuses any op that calls `approach()` without a
+  clearance callback. Before M4.

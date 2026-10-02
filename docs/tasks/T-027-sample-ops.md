@@ -71,3 +71,8 @@
 - `engine/sample.py` calls it and projects the result into one named view (geometry, loading steps, boundary,
   flags, candidates, awaiting_return, last session). The sample, map and sessions screens all read that view
   through the server. `records/*` is not edited for engine kinds.
+
+## guards.py follow-up (from T-002-4 pre-review)
+
+- In `operation()`'s error branch, `rec.sink(ev)` runs outside the try, so a failing record writer (disk full)
+  still replaces the original exception. Move it inside, keep the original, test it.

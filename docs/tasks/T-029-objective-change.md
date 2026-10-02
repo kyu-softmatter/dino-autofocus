@@ -27,3 +27,8 @@
   with the clearance check live at every step.
 - The F5 Y step-out sign is still open with the user. Until it is set, the step-out refuses in preflight
   (no default sign). Take it from the guards table, not a literal.
+
+## Clearance callback required (from T-002-4 pre-review)
+
+- `approach(clearance=None)` runs without a clearance check. `objective_change` always passes a real clearance
+  callback, and on bench backends (mm-real) the op refuses in preflight without one. Mock/demo may pass a stub.
