@@ -221,3 +221,6 @@
   0.142.2 / starlette 1.7.0, `include_router` adds one `_IncludedRouter` (path None), so area paths never appear and
   the test fails for the first real area (실행8, T-013b on 336ec69). Check `app.openapi()["paths"]` (or request each
   route) instead, with a temporary package holding a real router and one route. tests/server only.
+- Item 2 (from 실행13, T-105): `test_server_access.py::test_login_routes_open_to_remote_viewers` asserts 404 for
+  `POST /api/auth/{login,…,signup}` with `json={}` ("until T-018 adds them"). With T-105's router it gets 422, or 401
+  for lock/activity. Assert what the test means: a remote viewer is not refused with 403 `remote_view` on those paths.
