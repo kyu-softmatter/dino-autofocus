@@ -3,9 +3,41 @@ import { describe, expect, it } from "vitest";
 
 import { fakeTransport, type Route } from "../test/fakes";
 import { App } from "./App";
-import { Client } from "./client";
-import { lightIsOn, readAssistantStatus, readLights } from "./status";
+import { Client, ClientProvider } from "./client";
+import { lightIsOn, readAssistantStatus, readLights, useEngineStatus } from "./status";
 import { ShutdownNoticeView } from "./StatusBar";
+
+describe("useEngineStatus after an unlock", () => {
+  function Probe({ resumed }: { resumed?: number }) {
+    const s = useEngineStatus(resumed);
+    return <p data-testid="loaded">{String(s.loaded)}</p>;
+  }
+
+  it("re-reads /api/state when useAuth().resumed changes, and only then", async () => {
+    const t = fakeTransport({ "/api/state": () => ({ status: 200, body: { running: [] } }) });
+    const client = new Client(t.transport, "127.0.0.1");
+    const reads = () => t.calls.filter((c) => c.path === "/api/state").length;
+    const { rerender } = render(
+      <ClientProvider client={client}>
+        <Probe resumed={0} />
+      </ClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("loaded").textContent).toBe("true"));
+    const before = reads();
+    rerender(
+      <ClientProvider client={client}>
+        <Probe resumed={0} />
+      </ClientProvider>,
+    );
+    expect(reads()).toBe(before);
+    rerender(
+      <ClientProvider client={client}>
+        <Probe resumed={1} />
+      </ClientProvider>,
+    );
+    await waitFor(() => expect(reads()).toBe(before + 1));
+  });
+});
 
 const SNAPSHOT = {
   positions: { x_um: 8026.0, y_um: 571.6, z_um: 3048.7, errors: {} },

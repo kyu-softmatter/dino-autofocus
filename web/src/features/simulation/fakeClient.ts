@@ -1,5 +1,4 @@
 import type { SimulationClient } from "./client";
-import { ClientError } from "./client";
 import type { FrameJson } from "./frame";
 import type { ProgressState, RunProgressJson, RunSeriesJson, SimRunInfoJson, ZipEntryJson } from "./types";
 
@@ -9,6 +8,19 @@ import type { ProgressState, RunProgressJson, RunSeriesJson, SimRunInfoJson, Zip
  * that keeps going while the screen is open. Data is drawn from a seeded generator, so a run
  * looks the same each time; the temperature, energy and pressure columns are made up.
  */
+
+/** A refusal of the fake, shaped like the shared client's (`status`). */
+export class ClientError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "ClientError";
+  }
+}
+
+export const FAKE_PROGRESS_MS = 1000;
 
 interface Spec {
   runId: string;
@@ -277,6 +289,18 @@ export function fakeClient(now: () => number = Date.now): SimulationClient {
           .files.map((f) => ({ name: `${id}/${f.name}`, size: f.size, optional: f.name.startsWith("trajectory.") })),
       ),
     zipUrl: () => null,
+    watchProgress: (id, onProgress) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const tick = () => {
+        const r = runs.get(id);
+        if (!r) return;
+        const p = r.progress(now());
+        onProgress(p);
+        if (p.state === "running") timer = setTimeout(tick, FAKE_PROGRESS_MS);
+      };
+      timer = setTimeout(tick, 0);
+      return () => clearTimeout(timer);
+    },
   };
 }
 

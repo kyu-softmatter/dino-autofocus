@@ -231,3 +231,10 @@
   `server/schemas/common.py`, `{"type": "lock", "locked": true|false}`, sent once on connect and on every change of the
   login's lock state. While locked, no `event` messages are sent; replies to commands (`accepted` / `error`) still
   are, since stops stay allowed. Test the sequence connect → lock → unlock.
+
+## T-009g (AF 실행7, after T-009c and T-028 merge; review AF 검토보조3) — wire the hardware provider (from T-028)
+
+- In `create_app`: `hw = register_hardware(OPERATIONS, ProfileStore(<records root>/microscope/hardware))` and
+  `Runner(..., hardware=hw)`; the assistant's tool `gates=` uses `hw.check`. The profile store lives in the
+  microscope's own records folder, not per session (manager decision, from 실행17). Test that hardware_scan and
+  hardware_confirm are registered and that a gated op is refused through the server.

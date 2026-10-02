@@ -409,7 +409,7 @@ class NpzTrajectory:
     """The mock's trajectory: one .npz with positions (F, N, 3), step (F,), typeid (N,),
     types (T,), box (6,), dimensions (), and optionally more (F, N, ...) arrays."""
 
-    def __init__(self, path: str | os.PathLike[str]) -> None:
+    def __init__(self, path: str | os.PathLike[str], meta: dict[str, Any] | None = None) -> None:
         self.path = Path(path)
         with np.load(self.path, allow_pickle=False) as z:
             self._data = {k: z[k] for k in z.files}
@@ -450,7 +450,7 @@ class GsdTrajectory:
     "charge", "diameter", "mass" and any other `particles` attribute.
     """
 
-    def __init__(self, path: str | os.PathLike[str]) -> None:
+    def __init__(self, path: str | os.PathLike[str], meta: dict[str, Any] | None = None) -> None:
         try:
             import gsd.hoomd  # type: ignore[import-not-found]
         except ImportError as e:
@@ -488,7 +488,149 @@ class GsdTrajectory:
         self._f.close()
 
 
-READERS: dict[str, type] = {"npz": NpzTrajectory, "gsd": GsdTrajectory}
+class TxtTrajectory:
+    """The text trajectory of soft-matter-agents' HOOMD backends (`format: "txt"`).
+
+    UNVERIFIED LAYOUT: no sample file has been checked yet (T-012; the samples are a user
+    item). The layout is guessed from trajectory_meta.json, which gives the column names
+    (step, particle, x, y[, z][, theta ...]), the frame count and the particle count: one row
+    per particle per frame, whitespace or comma separated, `#` comments and a header line
+    skipped, frames in order of step. Every guess is checked against those counts when the
+    file is opened; any mismatch raises TrajectoryUnavailable saying the layout is unverified,
+    so a wrong guess shows as "no trajectory", never as wrong frames.
+
+    Opening scans the file once for where each frame starts (cached per file size and mtime),
+    so reading a frame reads only its rows. Columns other than step, particle and x/y/z
+    (e.g. "theta") are per-particle fields. The file has no types: every particle is "A".
+    """
+
+    verified = False
+
+    def __init__(self, path: str | os.PathLike[str], meta: dict[str, Any] | None = None) -> None:
+        self.path = Path(path)
+        t = meta or {}
+        cols = [c.get("name") for c in t.get("columns", []) if isinstance(c, dict)]
+        if not cols or not all(isinstance(c, str) for c in cols):
+            raise self._unverified("trajectory_meta.json lists no column names")
+        missing = [c for c in ("step", "particle", "x", "y") if c not in cols]
+        if missing:
+            raise self._unverified(f"no {', '.join(missing)} column")
+        self.columns: list[str] = cols
+        box = t.get("box") if isinstance(t.get("box"), dict) else {}
+        dims = _int(box.get("dimensions")) or (3 if "z" in cols else 2)
+        length = _float(box.get("length_m")) or 0.0
+        self.dimensions = 3 if dims == 3 else 2
+        self.box = [length, length, length if self.dimensions == 3 else 0.0, 0.0, 0.0, 0.0]
+        self._index = _txt_index(self.path, len(cols), cols.index("step"))
+        if not self._index:
+            raise self._unverified("no data rows")
+        counts = {n for _, n in self._index}
+        if len(counts) != 1:
+            raise self._unverified(f"frames have different row counts {sorted(counts)[:5]}")
+        self.n = counts.pop()
+        frames, particles = _int(t.get("frames")), _int(t.get("particles"))
+        if particles is not None and self.n != particles:
+            raise self._unverified(f"{self.n} rows per frame, trajectory_meta says "
+                                   f"{particles} particles")
+        if frames is not None and len(self._index) != frames:
+            raise self._unverified(f"{len(self._index)} frames, trajectory_meta says {frames}")
+
+    def _unverified(self, why: str) -> TrajectoryUnavailable:
+        return TrajectoryUnavailable(_unverified_txt(self.path, why))
+
+    def __len__(self) -> int:
+        return len(self._index)
+
+    def frame(self, i: int, fields: Sequence[str] = ()) -> Frame:
+        i = _check_index(i, len(self))
+        col = {c: k for k, c in enumerate(self.columns)}
+        plain = {"step", "particle", "x", "y", "z"}
+        for name in fields:
+            if name in plain or name not in col:
+                raise NotFoundError(f"no per-particle field {name!r} in {self.path.name}")
+        offset, count = self._index[i]
+        rows: list[list[float]] = []
+        with self.path.open("rb") as f:
+            f.seek(offset)
+            while len(rows) < count:
+                line = f.readline()
+                if not line:
+                    break
+                tokens = _txt_tokens(line)
+                if tokens is not None:
+                    rows.append([float(x) for x in tokens])
+        a = np.asarray(rows, dtype=np.float64)
+        if a.shape != (self.n, len(self.columns)):
+            raise self._unverified(f"frame {i} changed while reading")
+        a = a[np.argsort(a[:, col["particle"]], kind="stable")]
+        pos = np.zeros((self.n, 3), dtype=np.float32)
+        for k, axis in enumerate("xyz"):
+            if axis in col:
+                pos[:, k] = a[:, col[axis]]
+        return Frame(
+            index=i,
+            step=int(a[0, col["step"]]),
+            positions=pos,
+            typeid=np.zeros(self.n, dtype=np.int32),
+            types=["A"],
+            box=list(self.box),
+            dimensions=self.dimensions,
+            fields={name: a[:, col[name]] for name in fields},
+        )
+
+    def close(self) -> None:
+        pass
+
+
+def _unverified_txt(path: Path, why: str) -> str:
+    return f"{path.name}: unverified txt layout ({why}); no sample file has been checked yet"
+
+
+def _txt_tokens(line: bytes) -> list[bytes] | None:
+    """The values of a data row, or None for a blank, `#` comment or header line."""
+    s = line.strip()
+    if not s or s.startswith(b"#"):
+        return None
+    tokens = s.replace(b",", b" ").split()
+    try:
+        float(tokens[0])
+    except ValueError:
+        return None  # a header line of column names
+    return tokens
+
+
+_TXT_INDEX_CACHE: dict[tuple[str, int, int], list[tuple[int, int]]] = {}
+
+
+def _txt_index(path: Path, ncols: int, step_col: int) -> list[tuple[int, int]]:
+    """(byte offset, row count) of each frame, a frame being a run of rows with one step."""
+    st = path.stat()
+    key = (str(path.resolve()), st.st_size, st.st_mtime_ns)
+    if key in _TXT_INDEX_CACHE:
+        return _TXT_INDEX_CACHE[key]
+    index: list[tuple[int, int]] = []
+    step: bytes | None = None
+    offset = 0
+    with path.open("rb") as f:
+        for lineno, line in enumerate(f, 1):
+            tokens = _txt_tokens(line)
+            if tokens is not None:
+                if len(tokens) != ncols:
+                    raise TrajectoryUnavailable(_unverified_txt(
+                        path, f"line {lineno} has {len(tokens)} values, trajectory_meta names "
+                              f"{ncols} columns"))
+                if tokens[step_col] != step:
+                    step = tokens[step_col]
+                    index.append((offset, 0))
+                index[-1] = (index[-1][0], index[-1][1] + 1)
+            offset += len(line)
+    if len(_TXT_INDEX_CACHE) > 16:
+        _TXT_INDEX_CACHE.clear()
+    _TXT_INDEX_CACHE[key] = index
+    return index
+
+
+READERS: dict[str, type] = {"npz": NpzTrajectory, "gsd": GsdTrajectory, "txt": TxtTrajectory}
 
 
 def default_trajectory_roots() -> list[Path]:
@@ -526,7 +668,8 @@ def open_trajectory(run_dir: str | os.PathLike[str],
     reader = READERS.get(fmt)
     if reader is None:
         raise TrajectoryUnavailable(f"no reader for trajectory format {fmt!r}")
-    return reader(path)
+    meta = _small_json(Path(run_dir) / "trajectory_meta.json").get("trajectory")
+    return reader(path, meta if isinstance(meta, dict) else None)
 
 
 def _check_index(i: int, n: int) -> int:

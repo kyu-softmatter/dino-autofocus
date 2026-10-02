@@ -13,7 +13,7 @@ import json
 import math
 
 import pytest
-from conftest import OFF, OPERATOR, after, need, read_jsonl
+from e2e_helpers import OFF, OPERATOR, after, need, read_jsonl
 
 from dino_autofocus.auth import ControlBusy, ControlError
 from dino_autofocus.engine.backends.mock_world import SampleSpec

@@ -37,3 +37,19 @@
   allowed in this task, imports only). Measure peak memory before and after (e.g. psutil in a conftest hook or
   `pytest --durations`), and put the numbers in the review request.
 - Keep coverage the same. Done when tests/e2e passes alone and in the full run, and the peak is lower.
+- Also in T-035b (from 검토보조2, the "hang" diagnosed): `tests/e2e/conftest.py` `Bench.wait()` defaults to
+  `timeout=240` s. A predicate that never matches (e.g. `lamp_is_on` before T-011e's d518cf5) or a slow edge_trace
+  under load makes each safety test sit 4 min, which is what both "hangs" at 20-27 % were
+  (test_e2e_safety.py: abort_mid_trace, lights_off_preempts, watched_trace_stops). Set the default to 30 s (a test
+  that needs more passes it explicitly, with a comment), and fail with the predicate's name and the last events seen.
+  No new dependency (pyproject is held by T-012).
+
+## T-035c (AF 실행6, after T-035b; review AF 검토보조1) — one BLAS thread in every test process
+
+- numpy and scipy each commit about 500 MiB of OpenBLAS thread buffers at import on the 16-thread desktop (measured:
+  `import numpy` 506 MiB, + `scipy.special` 1007 MiB; with `OPENBLAS_NUM_THREADS=1`, 24 / 41 MiB). That is most of
+  the commit charge behind the 0xc000070a / 0x8007000e crashes.
+- Add a root `tests/conftest.py` (setup only, nothing imported from it) that does
+  `os.environ.setdefault(...)` for `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and `MKL_NUM_THREADS` = "1" before any
+  numpy import, so a run can still override it. Move T-035b's setting there. Check the torch/DINO tests still pass.
+- The running app is out of scope: whether the server process should cap BLAS threads is a separate decision.

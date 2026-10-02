@@ -63,3 +63,11 @@ Stage B, implementation (mock first):
   `git diff --stat main...HEAD`), T-010's npm checks (`ci`, `build`, `test`, type check)
 - Commit with `git commit -- <paths>`; no `git add -A`, no `--amend`, no push. Trailer `Session: AF 실행18`
 - `[검토요청 T-100]` to the review assistant above, with branch, hash, changed files and test counts
+
+## Follow-up T-100b (after 실행4 regenerates web/src/api/schema.ts)
+
+- Owner: AF 실행18. Branch from main's hash after the regeneration commit.
+- Replace the hand-written router and permission types in `web/src/features/console/api.ts` with the
+  generated ones. Keep only what the schema does not cover (the shared reason texts, PATHS).
+- Owned paths: `web/src/features/console/` only. Run your own test files plus ruff (sessions.md b4a60e6).
+- `[검토요청 T-100b]` to AF 검토보조4.
