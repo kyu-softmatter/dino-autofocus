@@ -74,6 +74,7 @@ def real():
 
 class TestMmRealOnDemoContract(BackendContract):
     light_write = ("White Light Shutter", "State", 0)
+    bench = True  # mm-real is the bench even on the demo config
 
     @pytest.fixture
     def backend(self, real):
