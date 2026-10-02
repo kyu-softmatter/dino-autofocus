@@ -25,7 +25,10 @@ Items marked **gap** are open requests (section 7).
 
 ## 2. Read endpoints (`server/api/map.py`, all GET, everyone incl. remote and viewer)
 
-The router reads sample files through one reader function (**gap G1**: where flags and candidates live).
+Storage (manager decision D1, G1): boundary points, flags and candidates are append-only events in
+the open experiment session's `records/sample_events.jsonl`; one engine reader folds them into the
+sample state. `sample.json` and `map.json` are derived views. The router calls only that reader,
+behind one function in `map.py`, so a storage change is a one-place change.
 Response bodies are pydantic models; the TypeScript types are generated from OpenAPI (PLAN.md 5절).
 
 | Route | Returns |
@@ -79,14 +82,19 @@ Every one of these routes:
 1. passes T-009's loopback/origin middleware (remote requests get 403 before the route runs);
 2. checks T-018 `auth/roles.py` `WRITE_MAP_FLAG` (operator, local) for the logged-in user; refusal is
    403 `{"detail": "Needs the operator role on the microscope PC"}`;
-3. submits the command with `user_id` and `session_id` and returns `CommandAccepted {op_id}`. The
+3. requires an open experiment session (the entry goes into its `records/sample_events.jsonl`, D1);
+   without one, 409 `{"detail": "Open an experiment session first"}`;
+4. submits the command with `user_id` and `session_id` and returns `CommandAccepted {op_id}`. The
    entry itself is written by the engine; the screen sees it via `map_changed`.
+
+Tests per route: viewer refused, remote operator refused, local operator without an open session
+refused, local operator with a session accepted.
 
 None of these overwrite: confirm/reject add an entry with `decides: <candidate_id>`, retire adds
 `retired_at`, a note edit adds a flag with `replaces` (ui-spec 7.4, operations-spec 6.2).
 
-Bypass: `/api/commands` must refuse these four op names, otherwise a viewer could post them there
-(**gap G2**). Assistant proposals for them must pass the same check when a human confirms (**gap G3**).
+Bypass: `/api/commands` refuses these four op names (G2, now in T-009). Assistant proposals for them
+pass the same check when a human confirms (G3, now in T-013).
 
 ## 4. Events the screen reads (`/ws/events`)
 
