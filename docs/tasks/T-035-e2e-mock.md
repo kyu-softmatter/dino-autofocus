@@ -53,3 +53,11 @@
   `os.environ.setdefault(...)` for `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and `MKL_NUM_THREADS` = "1" before any
   numpy import, so a run can still override it. Move T-035b's setting there. Check the torch/DINO tests still pass.
 - The running app is out of scope: whether the server process should cap BLAS threads is a separate decision.
+
+## T-035d (AF 실행6, low priority; review AF 검토보조1) — torch only when a torch test runs
+
+- `import torch` commits about 720 MiB per process (cu126 libraries) regardless of threads. `tests/test_backbone.py`
+  (and any tests/focus file doing the same) imports it at module level, so every collection pays it even when no
+  torch test is selected. Move the import into the tests or a module-scoped fixture
+  (`torch = pytest.importorskip("torch")`), same coverage. This task may edit those import lines only.
+- Measure the collection-only peak commit before and after (e.g. `pytest --collect-only` on tests/).
