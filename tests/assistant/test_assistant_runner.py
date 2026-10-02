@@ -147,10 +147,17 @@ def test_reject_is_recorded_and_never_reaches_the_engine():
         [[tool_use("propose_scan_4x", sample_id="s1", reason="map it")], [text("proposed")]]
     )
     pid = a.ask("scan").proposals[0]["proposal_id"]
-    out = a.reject(pid, by="kyu", note="not now")
+    # T-013c: clearing a card needs the permission confirming it would (operate, local)
+    for role, local in [("viewer", True), ("operator", False), (None, True)]:
+        with pytest.raises(PermissionError):
+            a.reject(pid, by="someone", role=role, local=local)
+    assert len(a.records.entries("reject_refused")) == 3
+    assert a.proposals.get(pid).status == "proposed"
+    out = a.reject(pid, by="kyu", note="not now", role="operator", local=True)
     assert out["status"] == "rejected" and out["note"] == "not now"
     (rec,) = a.records.entries("proposal_rejected")
     assert rec["proposal_id"] == pid and rec["user_id"] == "kyu"
+    assert rec["permission"] == "operate"
     with pytest.raises(ValueError):
         a.confirm(pid, by="kyu")
     assert engine.submitted == []

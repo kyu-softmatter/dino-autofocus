@@ -10,7 +10,8 @@
 
 The middleware has already refused writes without a live unlocked login, from a remote PC or
 from a foreign page. Here each route adds what depends on the content: `submit_question` for a
-question, and for a confirmation the same rule the command's own route uses, so a Claude
+question, and for a confirmation or a rejection (T-013c: clearing a card is a write too) the
+same rule the command's own route uses, so a Claude
 proposal cannot get round it: a stop as a stop, a map write by WRITE_MAP_FLAG (D16, as in
 `/api/map`), anything else as a `start` of that operation (role OPERATE). The engine then
 checks control, session and state, as for any command.
@@ -301,6 +302,24 @@ def _not_found(what: str) -> Refusal:
     return Refusal(404, NOT_FOUND, f"no {what}")
 
 
+def _decision_gate(request: Request, proposal_id: str) -> tuple[LoginState, Assistant]:
+    """Who decides a card, checked the same way for confirm and reject: the rule of the
+    card's command (`confirm_why`), and a login (a stop passes without one, a card decision
+    does not). The assistant's book checks the role once more."""
+    me = login_state(request)
+    a = get_assistant(request)
+    try:
+        p = a.proposals.get(proposal_id)
+    except KeyError as e:
+        raise _not_found("proposal with that id").http() from e
+    remote_abort = getattr(request.app.state, "remote_abort", True)
+    if why := confirm_why(me, p.command, remote_abort):
+        raise why.http()
+    if me.info is None:
+        raise Refusal(401, "login_required", "log in first").http()
+    return me, a
+
+
 def confirm_why(me: LoginState, command: dict, remote_abort: bool) -> Refusal | None:
     """The rule of the command's own route (see the module docstring)."""
     perm = required_permission(command)
@@ -396,17 +415,7 @@ def conversation(conversation_id: str, request: Request) -> ConversationOut:
 
 @router.post("/proposals/{proposal_id}/confirm", response_model=ProposalOut, responses=ERRORS)
 def confirm(proposal_id: str, request: Request) -> ProposalOut:
-    me = login_state(request)
-    a = get_assistant(request)
-    try:
-        p = a.proposals.get(proposal_id)
-    except KeyError as e:
-        raise _not_found("proposal with that id").http() from e
-    remote_abort = getattr(request.app.state, "remote_abort", True)
-    if why := confirm_why(me, p.command, remote_abort):
-        raise why.http()
-    if me.info is None:  # stops pass without a login; a card decision still needs a person
-        raise Refusal(401, "login_required", "log in first").http()
+    me, a = _decision_gate(request, proposal_id)
     state = request.app.state
     try:
         out = a.confirm(
@@ -428,20 +437,22 @@ def confirm(proposal_id: str, request: Request) -> ProposalOut:
 
 @router.post("/proposals/{proposal_id}/reject", response_model=ProposalOut, responses=ERRORS)
 def reject(proposal_id: str, request: Request, body: RejectIn | None = None) -> ProposalOut:
-    me = login_state(request)
-    if me.info is None:
-        raise Refusal(401, "login_required", "log in first").http()
+    """Clearing a card needs the same permission as confirming it (T-013c, D16)."""
+    me, a = _decision_gate(request, proposal_id)
     state = request.app.state
-    a = get_assistant(request)
     try:
         out = a.reject(
             proposal_id,
             by=me.user_id,
             note=(body.note if body else ""),
+            role=str(me.info.role),
+            local=me.local,
             submit=request_submit(state.engine, me, state.auth),
         )
     except KeyError as e:
         raise _not_found("proposal with that id").http() from e
+    except PermissionError as e:
+        raise Refusal(403, "role", str(e)).http() from e
     except ValueError as e:
         raise Refusal(409, "decided", str(e)).http() from e
     return ProposalOut.of(out)

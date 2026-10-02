@@ -440,3 +440,45 @@ def test_card_gate_comes_from_the_hardware_provider_when_there_is_one(setup):
         "reasons": ["no 4x objective in the hardware profile"],
     }
     assert hw.asked == [("scan_4x", {"sample_id": "s1"})]
+
+
+# -- T-013c: rejecting needs the same permission as confirming ---------------------------
+
+
+def _client_for(app, seat, email, where=LOCAL):
+    c = TestClient(app, base_url="http://127.0.0.1:8765", client=where)
+    c.cookies.set(SESSION_COOKIE, seat.logins.login(email, TEST_PASSWORD).token)
+    return c
+
+
+@pytest.mark.parametrize(
+    "tool, inp",
+    [
+        ("propose_goto_xy", {"x_um": 1.0, "y_um": 2.0, "sample_id": "s"}),
+        ("propose_map_flag", {"sample_id": "s", "x_um": 1.0, "y_um": 2.0, "name": "n"}),
+    ],
+)
+def test_viewer_and_remote_cannot_reject(setup, seat, tool, inp):
+    client, engine, app = setup([[tool_use(tool, reason="r", **inp)], [text("x")]])
+    _, lines = ask(client)
+    pid = proposal_id(lines)
+    r = _client_for(app, seat, VERA).post(f"/api/assistant/proposals/{pid}/reject")
+    assert (r.status_code, r.json()["detail"]["code"]) == (403, "role")
+    assert r.headers["X-DinoAF-Refusal"] == "role"
+    r = _client_for(app, seat, OTTO, REMOTE).post(f"/api/assistant/proposals/{pid}/reject")
+    assert (r.status_code, r.json()["detail"]["code"]) == (403, "remote_view")
+    assert app.state.assistant.proposals.get(pid).status == "proposed"
+    assert [c.kind for c in engine.commands] == ["start"]  # no reject reached the engine
+    r = client.post(f"/api/assistant/proposals/{pid}/reject", json={"note": "no"})
+    assert r.status_code == 200 and r.json()["status"] == "rejected"
+    assert engine.kinds()[-1] == ("reject", "", "human")
+
+
+def test_a_stop_card_may_be_cleared_by_anyone_allowed_to_stop(setup, seat):
+    client, _, app = setup(
+        [[tool_use("propose_lights_off", reason="r")], [text("x")]], control=False
+    )
+    _, lines = ask(client)
+    pid = proposal_id(lines)
+    r = _client_for(app, seat, VERA).post(f"/api/assistant/proposals/{pid}/reject")
+    assert r.status_code == 200 and r.json()["decided_by"] == VERA
