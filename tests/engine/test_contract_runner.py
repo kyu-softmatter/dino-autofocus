@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -860,6 +861,42 @@ def test_snapshot_sample_block(make):
                                       "session_id": None}
     r.set_experiment_session(SESSION, 3000.0)
     assert r.snapshot()["sample"]["session_id"] == SESSION
+
+
+def test_ops_write_their_own_files_into_ctx_record_dir(fake, tmp_path):
+    class WritesScan(Operation):
+        name = "writes_scan"
+        record_prefix = "scan4x"
+
+        def plan(self) -> dict:
+            return {"record_dir": self.ctx.record_dir}
+
+        def run(self) -> dict:
+            (self.ctx.record_dir / "scan.json").write_text("{}", encoding="utf-8")
+            return {"dir": str(self.ctx.record_dir)}
+
+    reg = Registry()
+    reg.register(WritesScan)
+    r = Runner(fake, registry=reg, control=AllowAll(), config=QUIET,
+               records=folder_records(lambda meta: tmp_path / "s1"))
+    r.start()
+    r.set_experiment_session(SESSION, 1000.0)
+    sink = Collect()
+    r.subscribe(sink)
+    try:
+        fin = sink.wait("finished", r.submit(start("writes_scan")))
+        rec_dir = Path(fin.data["record_dir"])
+        assert rec_dir.name.startswith("scan4x_") and fin.data["summary"]["dir"] == str(rec_dir)
+        assert (rec_dir / "scan.json").is_file() and (rec_dir / "summary.json").is_file()
+        assert r.plan(start("writes_scan"))["plan"] == {"record_dir": None}  # no record yet
+    finally:
+        r.shutdown("test", timeout=T)
+    bare = Runner(fake, registry=reg, control=AllowAll(), config=QUIET).start()
+    try:
+        bare.set_experiment_session(SESSION, 1000.0)
+        assert bare.plan(start("writes_scan"))["plan"]["record_dir"] is None
+    finally:
+        bare.shutdown("test", timeout=T)
 
 
 def test_folder_records_write_log_and_summary(fake, tmp_path):
