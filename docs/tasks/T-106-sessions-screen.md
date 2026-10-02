@@ -50,3 +50,14 @@ Stage B, implementation:
   `git diff --stat main...HEAD`), T-010's npm checks (`ci`, `build`, `test`, type check)
 - Commit with `git commit -- <paths>`; no `git add -A`, no `--amend`, no push. Trailer `Session: AF 실행2`
 - `[검토요청 T-106]` to the review assistant above, with branch, hash, changed files and test counts
+
+## T-106b (AF 실행2, after T-106 and T-009i merge; review AF 검토보조3) — sessions carry the backend kind
+
+- Director: every experiment session record (session.json) carries the backend `kind` and `bench` (from
+  `snapshot()["backend_info"]` / `is_bench`), written at open and on continue, so a downstream librarian can skip
+  non-bench sessions. `records/session.py` gets the optional field (this task may edit it; 실행2 owns records).
+  Tests: a mock session records kind "mock", bench False; an mm-real-flagged FakeBackend records bench True.
+- Integration item (BACKLOG, M6): the soft-matter-agents librarian skips non-bench sessions found in the real root.
+- T-106c (AF 실행2, after T-106b; review AF 검토보조3; director): our own `records/librarian_mock.py` skips sessions
+  with `bench: false` found in the real records root, so the rule is tested here and the M6 item is a port. Tests: a
+  non-bench session in the real root is skipped (and logged); a bench session is ingested; the mock root is unaffected.

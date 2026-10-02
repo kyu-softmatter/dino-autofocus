@@ -16,6 +16,7 @@ from server_fakes import (  # noqa: F401 - re-export for one transition (T-015e)
     TEST_PASSWORD,
     USERS,
     VIEWER,
+    EventsSocket,
     FakeEngine,
     FakeFrameEngine,
     LoopbackClient,
