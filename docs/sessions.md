@@ -55,6 +55,9 @@ git -C D:\codes\github\dino-autofocus worktree add ..\dino-autofocus-wt\execN -b
   체크아웃된 브랜치를 밖에서 옮기면 그 worktree 의 인덱스만 옛 상태로 남아, 다음 커밋이 새 커밋들을 되돌린다
   (2026-10-01, exec13 과 exec1 에서 같은 모양으로 두 번). 내 브랜치를 main 에 맞추는 것은 내 worktree 안에서 `git merge main` 으로 한다.
 - **임시 인덱스(`GIT_INDEX_FILE`)는 자기 scratchpad 안의 파일만 가리킨다.** 검토의 `commit-tree` 는 객체만 만들고 참조를 바꾸지 않는다.
+- **`git stash` 는 쓰지 않는다.** stash 목록(`refs/stash`)은 모든 worktree 가 하나를 같이 쓴다. 한 세션이 넣은 stash 를
+  다른 세션이 꺼내면 남의 옛 변경이 내 인덱스와 파일에 들어온다. 작업을 잠시 치워야 하면 내 브랜치에 커밋하거나
+  `git diff > <scratchpad>/x.patch` 로 저장한다.
 - **커밋 전에 `git diff --cached --stat` 를 본다.** 내가 올리지 않은 변경이나 최근 커밋을 되돌리는 변경이 보이면 커밋하지 말고 매니저에게 알린다.
 - **테스트는 자기 worktree 의 `.venv` 로만 돌린다.** 공유 폴더의 `.venv` 를 여러 세션이 함께 쓰면 멈출 수 있다.
 - 공유 폴더(`D:\codes\github\dino-autofocus`)는 검토 세션과 매니저, 총괄만 쓴다.
