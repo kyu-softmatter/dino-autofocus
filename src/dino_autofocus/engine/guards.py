@@ -303,6 +303,25 @@ class FocusAxis:
             raise GuardError("park_at only descends")
         return self._send(z, "park_at")
 
+    def retract(self) -> dict:
+        """Z to z_safe (Z_SAFE_UM, 0 um; unmeasured provisional): away from the sample, so
+        no clearance check. Read back within the Z tolerance (a mismatch raises GuardError
+        with the commanded and read values). Already at z_safe: no move, the readback is
+        still recorded. Returns {commanded_um, readback_um, verified, moved, from_um}."""
+        here = self.position_um()
+        basis = {"z_safe_um": PROVISIONAL}
+        if here <= Z_SAFE_UM + self.tol:
+            rec = {"axis": "z", "how": "retract", "target_um": Z_SAFE_UM, "read_um": here,
+                   "sent": False, "why": "already at z_safe",
+                   "basis": {"tol_um": PROVISIONAL, **basis}}
+            self.motions.append(rec)
+            self.emit(Event("motion", self.op_id, rec))
+            return {"commanded_um": Z_SAFE_UM, "readback_um": here, "verified": True,
+                    "moved": False, "from_um": here}
+        read = self._send(Z_SAFE_UM, "retract", basis)
+        return {"commanded_um": Z_SAFE_UM, "readback_um": read, "verified": True,
+                "moved": True, "from_um": here}
+
     def require_pfs_quiet(self, disable: bool = True) -> PfsState:
         s = self.b.pfs()
         if s.enabled and disable and not self.dry_run:

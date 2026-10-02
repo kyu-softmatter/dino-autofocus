@@ -41,7 +41,7 @@ def lamp_is_on(op_id):
     def pred(e) -> bool:
         return (e.kind == "light_changed" and e.op_id == op_id
                 and any(r["device"] == "DiaLamp" and str(r["read"]) == "1"
-                        for r in e.data.get("readbacks", [])))
+                        for r in e.data.get("records") or e.data.get("readbacks", [])))
     return pred
 
 
@@ -107,7 +107,7 @@ def test_the_watched_trace_stops_when_the_local_viewer_leaves(bench):
     bench.ready()  # local_gone_abort_s is 0.3 s on this bench
     op_id = tracing(bench)
     bench.runner.set_local_viewers(0)
-    ended_all_off(bench, bench.wait_end(op_id, timeout=60), "aborted")
+    ended_all_off(bench, bench.wait_end(op_id), "aborted")
 
 
 def test_closing_the_session_mid_trace_stops_it(bench):
@@ -198,3 +198,14 @@ def test_the_server_side_check_lets_anyone_stop_but_only_local_operators_operate
     assert not c.authorize(Action.OPERATE, login, None, local=True).allowed
     viewer = bench.login("vera@example.test")
     assert not c.authorize(Action.OPERATE, viewer, grant, local=True).allowed
+
+
+# -- the bench itself ------------------------------------------------------------------------
+
+def test_a_wait_that_never_matches_fails_fast_and_says_what_it_waited_for(bench):
+    bench.take_control()
+    assert bench.run("status").kind == "finished"
+    with pytest.raises(AssertionError) as err:
+        bench.wait(lambda e: False, timeout=0.2, what="an event that never comes")
+    msg = str(err.value)
+    assert "an event that never comes" in msg and "Last events" in msg and "finished:" in msg

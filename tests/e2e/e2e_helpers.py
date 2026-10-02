@@ -38,6 +38,7 @@ import pytest
 from dino_autofocus.auth import AccountStore, AuditLog, DeviceControl, LoginSessions
 from dino_autofocus.engine import operations as operations_pkg
 from dino_autofocus.engine.backends.mock import MockBackend
+from dino_autofocus.engine.backends.mock_world import Faults, MockWorld
 from dino_autofocus.engine.events import Command, Event, queue_sink
 from dino_autofocus.engine.guards import OperationAborted, OpScope, exclusive
 from dino_autofocus.engine.operations import edge_trace, light_set
@@ -182,10 +183,44 @@ def stand_ins(bench: Bench) -> list[type[Operation]]:
 
 # -- the bench -------------------------------------------------------------------------------
 
-class Bench:
-    """One engine on the mock with its auth and records, for one test module or one test."""
+#: default wait for one event; a test that needs longer passes `timeout=` and says why
+WAIT_S = 30.0
 
-    def __init__(self, root: Path, *, seed: int = 0, local_gone_abort_s: float = 10.0):
+
+def _brief(ev: Event) -> str:
+    d = ev.data if isinstance(ev.data, dict) else {}
+    detail = d.get("key") or d.get("status") or d.get("why") or d.get("message") or ""
+    return f"{ev.kind}:{ev.op_id}" + (f" ({str(detail)[:60]})" if detail else "")
+
+
+def records_store(root: Path) -> FolderStore:
+    """The records repository as on the microscope PC (local git; plain folders when this
+    machine has no git). One per test module: `git init` once, not per test (T-035b)."""
+    cfg = RecordsConfig(records_root=root / "records", data_root=root / "data")
+    return GitFolderStore(cfg) if shutil.which("git") else FolderStore(cfg)
+
+
+class SharedWorld:
+    """One MockWorld for a module's benches, put back to its first state for each one, so
+    the virtual sample is built once (T-035b). Faults and state are reset; the sample and
+    its particles are the same seeded ones a fresh MockWorld would draw."""
+
+    def __init__(self, seed: int = 0):
+        self.world = MockWorld(seed=seed)
+        self._first = self.world.state_dict()
+
+    def fresh(self) -> MockWorld:
+        self.world.faults = Faults()
+        self.world.load_state(self._first)
+        return self.world
+
+
+class Bench:
+    """One engine on the mock with its auth and records, for one test module or one test.
+    `store` and `world` may be shared with other benches of the same module."""
+
+    def __init__(self, root: Path, *, seed: int = 0, local_gone_abort_s: float = 10.0,
+                 store: FolderStore | None = None, world: MockWorld | None = None):
         self.root = root
         self.clock = SimClock()
         self.session: ExperimentSession | None = None
@@ -202,12 +237,11 @@ class Bench:
         self.logins = LoginSessions(self.accounts, audit=self.audit)
         self.control = DeviceControl(self.logins, audit=self.audit)
 
-        cfg = RecordsConfig(records_root=root / "records", data_root=root / "data")
-        self.store = GitFolderStore(cfg) if shutil.which("git") else FolderStore(cfg)
+        self.store = store if store is not None else records_store(root)
         self.samples_root = root / "samples"
         self.samples_root.mkdir(parents=True, exist_ok=True)
 
-        self.backend = MockBackend(seed=seed)
+        self.backend = MockBackend(world) if world is not None else MockBackend(seed=seed)
         self.registry = registry = Registry()
         self.stand_ins: list[str] = []
         for cls in stand_ins(self):
@@ -294,7 +328,11 @@ class Bench:
     def answer(self, op_id: str, key: str, ok: bool = True, **kw: Any) -> str:
         return self.submit("confirm", op_id=op_id, args={"key": key, "ok": ok}, **kw)
 
-    def wait(self, pred: Callable[[Event], bool], timeout: float = 240.0) -> Event:
+    def wait(self, pred: Callable[[Event], bool], timeout: float = WAIT_S,
+             what: str | None = None) -> Event:
+        """The first event matching `pred`. Fails after `timeout` s naming what it waited
+        for (`what`, else the predicate's name) and the last events seen, so a predicate
+        that never matches costs 30 s, not minutes (T-035b)."""
         for ev in self.events:
             if pred(ev):
                 return ev
@@ -302,8 +340,10 @@ class Bench:
         while True:
             left = deadline - time.monotonic()
             if left <= 0:
-                kinds = [(e.kind, e.op_id) for e in self.events[-12:]]
-                raise AssertionError(f"no matching event within {timeout} s; last: {kinds}")
+                name = what or getattr(pred, "__qualname__", repr(pred))
+                last = [_brief(e) for e in self.events[-12:]]
+                raise AssertionError(f"waited {timeout:g} s for {name}; nothing matched. "
+                                     f"Last events: {last}")
             try:
                 ev = self._q.get(timeout=left)
             except queue.Empty:
@@ -313,19 +353,23 @@ class Bench:
                 return ev
 
     def wait_for(self, kind: str, op_id: str, **kw: Any) -> Event:
-        return self.wait(lambda e: e.kind == kind and e.op_id == op_id, **kw)
+        return self.wait(lambda e: e.kind == kind and e.op_id == op_id,
+                         what=f"{kind} of {op_id}", **kw)
 
     def wait_end(self, op_id: str, **kw: Any) -> Event:
-        return self.wait(lambda e: e.kind in ENDS and e.op_id == op_id, **kw)
+        return self.wait(lambda e: e.kind in ENDS and e.op_id == op_id,
+                         what=f"the end of {op_id}", **kw)
 
     def run(self, op: str, args: dict | None = None, *, answers: dict[str, bool] | None = None,
-            **kw: Any) -> Event:
-        """Start `op`, answer its confirms from `answers` (default yes), wait for its end."""
+            timeout: float = WAIT_S, **kw: Any) -> Event:
+        """Start `op`, answer its confirms from `answers` (default yes), wait for its end
+        (at most `timeout` s between two of its events that matter)."""
         op_id = self.start(op, args, **kw)
         answers = dict(answers or {})
         while True:
             ev = self.wait(lambda e: e.op_id == op_id
-                           and (e.kind in ENDS or e.kind == "confirm_required"))
+                           and (e.kind in ENDS or e.kind == "confirm_required"),
+                           timeout=timeout, what=f"a confirm or the end of {op_id}")
             if ev.kind in ENDS:
                 return ev
             self.events.remove(ev)  # answered: a later wait must not find it again
