@@ -105,6 +105,9 @@ class BackendInfo:
     objectives: list[ObjectiveInfo] = field(default_factory=list)
     stage_limits: StageLimits = field(default_factory=StageLimits)
     notes: dict[str, str] = field(default_factory=dict)  # e.g. {"aura.CYAN": PROVISIONAL}
+    #: True on the real stand (mm-real): guards and the runner then require a clearance
+    #: callback for `FocusAxis.approach()`
+    bench: bool = False
 
     @property
     def ceiling_adu(self) -> int:

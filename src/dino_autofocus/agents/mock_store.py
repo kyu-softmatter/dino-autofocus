@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .sma_files import SmaFiles
+from .sma_files import SmaFiles, long_path
 from .store import (
     QID_PREFIX,
     Agent,
@@ -42,27 +43,50 @@ FIRST_MOCK_NUMBER = 901  # mock qids run mic-YYYYMMDD-901.. so they do not look 
 
 
 class MockStore:
-    """AgentStore over the sample in `mock_data/` and the questions submitted to it."""
+    """AgentStore over the sample in `mock_data/` and the questions submitted to it.
+
+    Without a `write_dir`, the store makes a temporary one on the first submit and owns it:
+    `close()` (or leaving a `with MockStore() as store:` block) deletes it. A `write_dir`
+    the caller gave is never deleted.
+    """
+
+    writable = True
 
     def __init__(self, write_dir: str | os.PathLike[str] | None = None, *,
                  data_dir: str | os.PathLike[str] | None = None,
                  clock: Callable[[], datetime] | None = None):
         self.sample = SmaFiles(data_dir if data_dir is not None else MOCK_DATA, source="mock")
         self._write_dir = _checked_write_dir(write_dir) if write_dir is not None else None
+        self._owns_write_dir = False
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def __repr__(self) -> str:
         return f"MockStore(write_dir={self._write_dir!r}, data_dir={str(self.sample.root)!r})"
+
+    def __enter__(self) -> MockStore:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Delete the temporary write folder if this store made it. Safe to call twice;
+        a later submit makes a new one."""
+        if self._owns_write_dir and self._write_dir is not None:
+            shutil.rmtree(long_path(self._write_dir), ignore_errors=True)
+            self._write_dir = None
+            self._owns_write_dir = False
 
     @property
     def write_dir(self) -> Path:
         """Where submitted questions go. Made on first use when none was given."""
         if self._write_dir is None:
             self._write_dir = Path(tempfile.mkdtemp(prefix="dino-af-mock-store-"))
+            self._owns_write_dir = True
         return self._write_dir
 
     def _submitted(self) -> SmaFiles | None:
-        if self._write_dir is None or not self._write_dir.is_dir():
+        if self._write_dir is None or not long_path(self._write_dir).is_dir():
             return None
         return SmaFiles(self._write_dir, source="mock-submitted")
 
@@ -107,7 +131,7 @@ class MockStore:
             raise ValueError(f"purpose must be one of {PURPOSES}, got {purpose!r}")
 
         now = self._clock().astimezone(UTC)
-        questions = self.write_dir / f"{target}_agent" / "questions"
+        questions = long_path(self.write_dir) / f"{target}_agent" / "questions"
         questions.mkdir(parents=True, exist_ok=True)
         qid, qdir = self._new_question_dir(questions, QID_PREFIX[target], now)
 

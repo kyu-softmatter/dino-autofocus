@@ -127,3 +127,10 @@
 
 - A pydantic `Snapshot` model for `GET /api/state` (lights, positions, running op, sample, hardware,
   last_shutdown_lights, unclean_shutdown), so the web side gets generated types instead of an untyped dict.
+- T-009b test (director): a request from another loopback origin without a session cookie gets nothing beyond the
+  login routes (no state, no events, no commands except abort per D13).
+
+## Mark remote refusals (T-009b, from the screen manager)
+
+- The remote middleware's 403 carries `detail.code = "remote_view"` (and a header `X-DinoAF-Refusal: remote_view`).
+  Every other 403 (D16, session owner, role) uses its own code. Test both.

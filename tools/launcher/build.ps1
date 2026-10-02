@@ -1,7 +1,8 @@
 # Build "DINO Autofocus.exe" with the .NET Framework compiler in Windows (no SDK needed).
 #   powershell -ExecutionPolicy Bypass -File tools\launcher\build.ps1 [-Port 8765] [-Out path] [-Force]
 # The repo path compiled into the exe is the clone this script runs from. The default output
-# is the Desktop; an existing exe there is replaced only with -Force. See docs\runbooks\launcher.md.
+# is the Desktop; an existing exe there is replaced only with -Force, which first copies it to
+# "<name>.prev.exe" (or "<name>.prev.<stamp>.exe" if that exists). See docs\runbooks\launcher.md.
 param(
     [int]$Port = 8765,
     [string]$Out = (Join-Path ([Environment]::GetFolderPath("Desktop")) "DINO Autofocus.exe"),
@@ -22,7 +23,19 @@ if (Test-Path $Out) {
         Write-Output "exists: $Out ($($old.Length) bytes, $($old.LastWriteTime)); add -Force to replace it"
         exit 1
     }
+    # keep the replaced exe next to it; never overwrite an earlier copy
+    $base = Join-Path $outDir ([IO.Path]::GetFileNameWithoutExtension($Out))
+    $prev = "$base.prev.exe"
+    if (Test-Path $prev) {
+        $prev = "$base.prev.$(Get-Date -Format 'yyyyMMdd-HHmmss').exe"
+        $n = 2
+        while (Test-Path $prev) {
+            $prev = "$base.prev.$(Get-Date -Format 'yyyyMMdd-HHmmss')_$n.exe"; $n++
+        }
+    }
+    Copy-Item -LiteralPath $Out -Destination $prev
     Write-Output "replacing: $Out ($($old.Length) bytes, $($old.LastWriteTime))"
+    Write-Output "kept the old exe as: $prev"
 }
 if (-not (Test-Path $ico)) {
     Push-Location $repo
