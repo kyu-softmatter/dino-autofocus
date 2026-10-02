@@ -4,7 +4,7 @@
 // screen's proposal for server/api/assistant.py; once it is in and `npm run gen:api` has run,
 // the types come from src/api/ and this file keeps only the clients.
 
-import { type Client, type CommandRefused, refusalOf, REMOTE_VIEW } from "../client";
+import type { Client } from "../client";
 
 export interface Usage {
   input_tokens?: number;
@@ -116,9 +116,8 @@ export class AssistantError extends Error {
  * `client.post`, so a 401 / 423 starts the shell's re-login and a 403 `remote_view` turns the
  * app read-only; any other refusal is the action's own reason and stays on the card.
  *
- * The answer is a stream, which `client.post` cannot return, so `ask` POSTs over the shared
- * transport (no socket of its own) and hands a refusal to the same rules through
- * `reportRefusal`.
+ * The answer is an NDJSON stream: `ask` uses `client.postStream` (T-010-11), which applies the
+ * same rules and returns the response unread. No socket of its own.
  *
  * Paths (fixed in the T-013 card for T-013b's router): GET status, POST ask (NDJSON stream of
  * AskEvent), GET conversations/{id}, POST proposals/{id}/confirm, POST proposals/{id}/reject.
@@ -138,12 +137,8 @@ export function clientAssistantApi(client: Client): AssistantApi {
       }
     },
     ask: async (req, onEvent) => {
-      const r = await client.transport.fetch("/api/assistant/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
-        body: JSON.stringify(req),
-      });
-      if (!r.ok || !r.body) throw await reportRefusal(client, r);
+      const r = await client.postStream("/api/assistant/ask", req); // refusals already thrown
+      if (!r.body) throw new AssistantError(500, "the answer stream is empty");
       return readAnswer(r.body, onEvent);
     },
     conversation: (id) => client.get(`/api/assistant/conversations/${encodeURIComponent(id)}`),
@@ -151,18 +146,6 @@ export function clientAssistantApi(client: Client): AssistantApi {
     reject: (id, note = "") => decided(`/api/assistant/proposals/${encodeURIComponent(id)}/reject`, { note }),
     permissions: (ops) => client.get(`/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`),
   };
-}
-
-/**
- * The shared client's rules for a response it did not fetch itself: remote_view sets
- * read-only, and a 401 / 423 makes the client re-read the login (a GET of /api/auth/me goes
- * through `client.get`, which tells the login gate). Returns the error to throw.
- */
-async function reportRefusal(client: Client, r: Response): Promise<CommandRefused> {
-  const refused = await refusalOf(r);
-  if (refused.status === 403 && refused.code === REMOTE_VIEW) client.readOnly.refuse(refused.detail);
-  if (refused.status === 401 || refused.status === 423) await client.get("/api/auth/me").catch(() => {});
-  return refused;
 }
 
 export async function readAnswer(body: NonNullable<Response["body"]>, onEvent: (ev: AskEvent) => void): Promise<Answer> {
