@@ -13,7 +13,9 @@ everything off again and the operation ends in `error`. On success the light sta
 (the runner's `keep_lights_on_finish`); every other exit path switches off.
 
 Who may run it (D15: M3, operator with the control grant, open session) is the runner's
-permission table (`light_set` is a light action there), not this module.
+permission table (`light_set` is a light action there), not this module. `LightSetOp` is the
+runner's `light_set` (`keep_lights_on_finish`); `run_light_set` is the same switch on the
+T-002 record lifecycle for callers without a runner.
 
 Light-on takes the control token (T-015), which only `engine.guards` may hold, so `switch`
 goes through the operation scope's helpers `OpScope.lamp_on()` / `OpScope.aura_line_on()`
@@ -31,6 +33,7 @@ from ..backend import Backend, Readback
 from ..events import Event, EventSink, fan_out, null_sink
 from ..guards import GuardError, OpScope, lights_off, snapshot
 from ..records import OpRecord
+from ..runner import OpContext, Operation, register_operation
 
 NAME = "light_set"
 MODES = ("brightfield", "aura", "off")
@@ -134,3 +137,42 @@ def run_light_set(backend: Backend, parent: Path, args: dict, sink: EventSink = 
         rec.finish(status, lights=lights, end_state=snapshot(backend), result=result,
                    error=error)
     return {"status": status, "error": error, "result": result, "record": str(rec.dir)}
+
+
+def scope_for(ctx: OpContext) -> OpScope:
+    """An OpScope over a runner context, so an operation can use the guards' light helpers
+    (they carry the token). Its events go out through the context; the record and the exit
+    path stay the runner's."""
+    return OpScope(ctx.op_id, None, lambda ev: ctx.emit(ev.kind, **ev.data),
+                   backend=ctx.backend)
+
+
+@register_operation
+class LightSetOp(Operation):
+    """`start("light_set", {mode, line, percent})`. An unverified readback raises GuardError:
+    the runner ends the operation in error and switches everything off."""
+
+    name = NAME
+    motion = False
+    keep_lights_on_finish = True
+
+    def plan(self) -> dict:
+        try:
+            return plan(self.args)
+        except ValueError as exc:  # preflight reports it as a failed check
+            return {"op": NAME, "text": f"not allowed: {exc}", "request": None}
+
+    def preflight(self) -> list[dict]:
+        try:
+            req = parse(self.args)
+        except ValueError as exc:
+            return [{"name": "args", "ok": False, "want": "allow-listed light",
+                     "read": dict(self.args), "why": str(exc)}]
+        return [{"name": "args", "ok": True, "want": "allow-listed light", "read": asdict(req),
+                 "why": ""}]
+
+    def run(self) -> dict:
+        req = parse(self.args)
+        rbs = switch(self.ctx.backend, scope_for(self.ctx), req)
+        return {"mode": req.mode, "line": req.line, "percent": req.percent,
+                "readbacks": [asdict(r) for r in rbs], "verified": True}

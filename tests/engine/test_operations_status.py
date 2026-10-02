@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from conftest import FakeBackend
 
@@ -60,3 +61,57 @@ def test_status_record_when_asked_keeps_lights_as_they_were(fake, tmp_path) -> N
     assert fake.lights["DiaLamp"] == "1"  # nothing was switched
     assert not [c for c in fake.calls if c[0] == "light"]
     assert len((folder / "log.jsonl").read_text(encoding="utf-8").splitlines()) == 3
+
+
+# ---------------------------------------------------------------- under the T-011 runner
+def test_registered_ops_run_under_the_runner(fake: FakeBackend, tmp_path) -> None:
+    import dino_autofocus.engine.operations.edge_trace  # noqa: F401 - registers
+    import dino_autofocus.engine.operations.light_set  # noqa: F401
+    from dino_autofocus.engine.events import Command
+    from dino_autofocus.engine.runner import (
+        OPERATIONS,
+        AllowAll,
+        Runner,
+        RunnerConfig,
+        folder_records,
+    )
+
+    assert {"status", "light_set", "edge_trace"} <= set(OPERATIONS.names())
+    r = Runner(fake, control=AllowAll(), config=RunnerConfig(position_interval_s=None),
+               records=folder_records(lambda meta: tmp_path / "records"))
+    events = []
+    r.subscribe(events.append)
+    r.start()
+    r.set_experiment_session("20261001_1200_1", 1000.0)
+    try:
+        ends = ("finished", "aborted", "error", "preflight_failed")
+
+        def run(op: str, **args) -> str:
+            op_id = r.submit(Command("start", op=op, args=args, user_id="u1",
+                                     session_id="20261001_1200_1"))
+            deadline = time.monotonic() + 10
+            while not any(e.op_id == op_id and e.kind in ends for e in list(events)):
+                assert time.monotonic() < deadline, [e.kind for e in events if e.op_id == op_id]
+                time.sleep(0.01)
+            assert r.wait_idle(10)
+            return op_id
+
+        lid = run("light_set", mode="brightfield")
+        assert any(e.kind == "finished" and e.op_id == lid for e in events)
+        assert fake.lights["DiaLamp"] == "1"  # keep_lights_on_finish
+        sid = run("status")
+        end = next(e for e in events if e.op_id == sid and e.kind == "finished")
+        assert end.data["summary"]["status"]["nosepiece_label"] == "1-Plan Apo LmbdD20 4x"
+        assert any(e.kind == "reading" and e.op_id == sid for e in events)
+        assert fake.lights["DiaLamp"] == "1"  # a status after light_set keeps the light
+        assert r.snapshot()["hardware"]["last_status"]["op_id"] == sid
+
+        bad = run("light_set", mode="aura", line="UV", percent=1)
+        assert any(e.kind == "preflight_failed" and e.op_id == bad for e in events)
+        fake.stuck.add("Aura")
+        err = run("light_set", mode="aura", line="GREEN", percent=1)
+        assert any(e.kind == "error" and e.op_id == err for e in events)
+        assert fake.lights["DiaLamp"] == "0"  # the runner's exit path switched all off
+    finally:
+        r.shutdown("test teardown", timeout=5)
+        assert r.wait_idle(5)

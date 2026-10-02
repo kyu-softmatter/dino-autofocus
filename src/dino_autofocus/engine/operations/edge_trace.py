@@ -51,16 +51,26 @@ import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, fields
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from ..backend import Backend
 from ..events import Event, EventSink, null_sink
-from ..guards import GuardError, OperationAborted, XYAxis, XYBox, operation, registry_key
+from ..guards import (
+    GuardError,
+    OperationAborted,
+    OpScope,
+    XYAxis,
+    XYBox,
+    operation,
+    registry_key,
+)
 from ..records import stamp
-from ..sample import Sample
-from .light_set import LightRequest, switch
+from ..runner import Aborted, OpContext, Operation, register_operation
+from ..sample import SAMPLES_ROOT, Sample
+from .light_set import LightRequest, scope_for, switch
 
 NAME = "edge_trace"
 WATCHED = True  # D14: abort when every local viewer is gone
@@ -666,86 +676,104 @@ def _default_grab(backend: Backend) -> Callable[[float], np.ndarray]:
     return grab
 
 
+def prepare(sample: Sample, a: EdgeTraceArgs, confirm: Callable[[str, str], bool]) -> list[str]:
+    """The two confirmations before anything moves; returns the backups made.
+
+    A sample with a hole fit or boundary asks `replace_hole_fit` (yes: back up and clear the
+    boundary only), then `start_trace`. A no raises OperationAborted."""
+    info = sample.load_info()
+    backups: list[str] = []
+    if sample.load_map().boundary or info.hole:
+        when = (info.hole or {}).get("fitted_at") or "an earlier trace"
+        if not confirm("replace_hole_fit", f"replace the hole fit from {when}? (backed up)"):
+            raise OperationAborted("the operator kept the previous hole fit")
+        backups = _backup_and_clear(sample, stamp())
+    if not confirm("start_trace", f"trace the edge: XY moves only, within "
+                                  f"{a.max_radius_um / 1000:g} mm of here"):
+        raise OperationAborted("the operator did not start the trace")
+    return backups
+
+
+def _is_abort(exc: BaseException) -> bool:
+    """OperationAborted (T-002 lifecycle), the runner's Aborted, or Ctrl+C."""
+    return isinstance(exc, (OperationAborted, KeyboardInterrupt)) or type(exc).__name__ == "Aborted"
+
+
+def trace(backend: Backend, sample: Sample, a: EdgeTraceArgs, scope: OpScope, *,
+          warnings: list[str], check: Callable[[], None] = lambda: None,
+          sleep: Callable[[float], None] = time.sleep,
+          clock: Callable[[], float] = time.monotonic, wall: Callable[[], float] = time.time,
+          grab: Callable[[float], np.ndarray] | None = None,
+          move_rel: Callable[[np.ndarray], Any] | None = None,
+          on_point: Callable[[float, float], None] | None = None,
+          on_tracer: Callable[[EdgeTracer], None] | None = None) -> dict:
+    """The trace itself, inside a scope the caller owns (the record and the exit-path lights
+    are the caller's: `operation()` or the runner). Returns the result dict."""
+    def log(d: dict) -> None:
+        ev = dict(d)
+        name = ev.pop("event")
+        scope.emit(Event("progress", scope.op_id, {"op": NAME, "status": name, "data": ev}))
+
+    for w in warnings:
+        scope.emit(Event("log", scope.op_id, {"level": "warning", "text": w}))
+    if a.light == "brightfield":
+        switch(backend, scope, LightRequest("brightfield"))
+    if a.exposure_ms is not None:
+        backend.set_exposure(a.exposure_ms)
+    binfo = backend.info()
+    try:
+        objective = registry_key(backend.nosepiece())
+    except GuardError:
+        objective = "unknown"
+    start = _xy(backend)
+    axis = XYAxis(backend, XYBox.around(start, a.max_radius_um), allow_motion=True,
+                  sink=scope.emit, op_id=scope.op_id)
+    tracer = EdgeTracer(
+        grab=grab or _default_grab(backend),
+        move_rel=move_rel or (lambda d: axis.goto_rel(float(d[0]), float(d[1]))),
+        xy=lambda: np.array(_xy(backend)), pixel_um=binfo.pixel_um,
+        exposure_ms=binfo.exposure_ms, args=a, log=log,
+        on_point=on_point or _MapPoints(sample),
+        reference=reference_calibration(sample.load_info().stage_camera_calibration, objective),
+        check=check, sleep=sleep, clock=clock, wall=wall)
+    if on_tracer:
+        on_tracer(tracer)
+    result: dict[str, Any] = {"warnings": warnings, "objective": objective,
+                              "start_um": list(start)}
+    scope.result = result
+    try:
+        result["why"] = tracer.run()
+    except BaseException as exc:
+        tracer.log({"event": "track_stop",
+                    "why": "aborted" if _is_abort(exc) else f"error: {exc}"})
+        raise
+    finally:
+        result.update(_finish(sample, tracer, objective, a, warnings))
+    return result
+
+
 def run_edge_trace(backend: Backend, sample: Sample, args: dict, sink: EventSink = null_sink, *,
                    confirm: Callable[[str, str], bool],
-                   check: Callable[[], None] = lambda: None,
-                   sleep: Callable[[float], None] = time.sleep,
-                   clock: Callable[[], float] = time.monotonic,
-                   wall: Callable[[], float] = time.time,
-                   grab: Callable[[float], np.ndarray] | None = None,
-                   move_rel: Callable[[np.ndarray], Any] | None = None,
-                   on_point: Callable[[float, float], None] | None = None,
-                   on_tracer: Callable[[EdgeTracer], None] | None = None,
-                   user_id: str | None = None, session_id: str | None = None) -> dict:
+                   user_id: str | None = None, session_id: str | None = None,
+                   **seams: Any) -> dict:
     """Run edge_trace on the T-002 lifecycle (record in `<sample>/edge_trace_<stamp>/`).
 
     `confirm(key, text)` answers `replace_hole_fit` and `start_trace`; a no raises
-    OperationAborted before anything moves. `on_tracer` receives the tracer once it exists,
-    so the caller can route `update{speed_um_s}` to `tracer.set_speed`. Returns the result
-    (also the summary's `result`). Preflight failures raise GuardError before any record."""
+    OperationAborted before anything moves. `seams` are `trace`'s keyword arguments
+    (check, sleep, clock, wall, grab, move_rel, on_point, on_tracer). Preflight failures
+    raise GuardError before any record."""
     checks = preflight(backend, args)
     failed = [c for c in checks if not c["ok"]]
     if failed:
         raise GuardError("preflight failed: " + "; ".join(f"{c['name']}: {c['why']}"
                                                           for c in failed))
     a = EdgeTraceArgs.from_dict(args)
-    info = sample.load_info()
-    m = sample.load_map()
-    backups: list[str] = []
-    if m.boundary or info.hole:
-        when = (info.hole or {}).get("fitted_at") or "an earlier trace"
-        if not confirm("replace_hole_fit", f"replace the hole fit from {when}? (backed up)"):
-            raise OperationAborted("the operator kept the previous hole fit")
-        backups = _backup_and_clear(sample, stamp())
-        info = sample.load_info()
-    if not confirm("start_trace", f"trace the edge: XY moves only, within "
-                                  f"{a.max_radius_um / 1000:g} mm of here"):
-        raise OperationAborted("the operator did not start the trace")
-
+    backups = prepare(sample, a, confirm)
     with operation(backend, sample.dir, NAME, sink, args=dict(args), user_id=user_id,
                    session_id=session_id) as scope:
-        def log(d: dict) -> None:
-            ev = dict(d)
-            name = ev.pop("event")
-            scope.emit(Event("progress", scope.op_id, {"op": NAME, "status": name, "data": ev}))
-
-        warnings = [c["warning"] for c in checks if c.get("warning")]
-        for w in warnings:
-            scope.emit(Event("log", scope.op_id, {"level": "warning", "text": w}))
-        if a.light == "brightfield":
-            switch(backend, scope, LightRequest("brightfield"))
-        if a.exposure_ms is not None:
-            backend.set_exposure(a.exposure_ms)
-        binfo = backend.info()
-        try:
-            objective = registry_key(backend.nosepiece())
-        except GuardError:
-            objective = "unknown"
-        p = backend.positions()
-        start = (float(p.x_um), float(p.y_um))
-        axis = XYAxis(backend, XYBox.around(start, a.max_radius_um), allow_motion=True,
-                      sink=scope.emit, op_id=scope.op_id)
-        tracer = EdgeTracer(
-            grab=grab or _default_grab(backend),
-            move_rel=move_rel or (lambda d: axis.goto_rel(float(d[0]), float(d[1]))),
-            xy=lambda: np.array(_xy(backend)), pixel_um=binfo.pixel_um,
-            exposure_ms=binfo.exposure_ms,
-            args=a, log=log, on_point=on_point or _MapPoints(sample),
-            reference=reference_calibration(info.stage_camera_calibration, objective),
-            check=check, sleep=sleep, clock=clock, wall=wall)
-        if on_tracer:
-            on_tracer(tracer)
-        result: dict[str, Any] = {"backups": backups, "warnings": warnings,
-                                  "objective": objective, "start_um": list(start)}
-        scope.result = result
-        try:
-            why = tracer.run()
-        except (OperationAborted, KeyboardInterrupt):
-            tracer.log({"event": "track_stop", "why": "aborted"})
-            raise
-        finally:
-            result.update(_finish(sample, tracer, objective, a, warnings))
-        result["why"] = why
+        result = trace(backend, sample, a, scope,
+                       warnings=[c["warning"] for c in checks if c.get("warning")], **seams)
+        result["backups"] = backups
     return result
 
 
@@ -789,3 +817,87 @@ def _finish(sample: Sample, tracer: EdgeTracer, objective: str, a: EdgeTraceArgs
     out["warnings"] = warnings
     return out
 
+
+def _runner_grab(ctx: OpContext) -> Callable[[float], np.ndarray]:
+    """Frames under the runner: the engine's stream when it runs (its newest published frame
+    taken after `not_before`), else a snap."""
+
+    def grab(not_before: float) -> np.ndarray:
+        if ctx.stream.running():
+            for _ in range(400):
+                latest = ctx.runner.latest_frame()
+                if latest is not None and latest[1].get("t_read", 0.0) >= not_before:
+                    return latest[0]
+                ctx.sleep(0.025)
+            raise GuardError("no fresh frame from the acquisition stream in 10 s")
+        return ctx.backend.snap().image
+
+    return grab
+
+
+@register_operation
+class EdgeTraceOp(Operation):
+    """`start("edge_trace", {...})` on the open sample (or `sample_id` in the args).
+
+    Operator-watched (D14); `update{speed_um_s}` changes the pace mid-run. A declined
+    confirmation ends it aborted before anything moves. Sample folders live under the
+    runner's installed `sample_seat.samples_root` (T-027), else `samples_root`."""
+
+    name = NAME
+    watched = WATCHED
+    updatable = UPDATABLE
+    samples_root = SAMPLES_ROOT
+
+    def __init__(self, ctx: OpContext):
+        super().__init__(ctx)
+        self._tracer: EdgeTracer | None = None
+        self._checks: list[dict] = []
+
+    def _trace_args(self) -> dict:
+        return {k: v for k, v in self.args.items() if k != "sample_id"}
+
+    def _root(self) -> Path:
+        seat = getattr(self.ctx.runner, "sample_seat", None)
+        return Path(getattr(seat, "samples_root", None) or self.samples_root)
+
+    def _sample_id(self) -> str | None:
+        return self.args.get("sample_id") or self.ctx.runner.snapshot()["sample"]["sample_id"]
+
+    def plan(self) -> dict:
+        try:
+            return plan(self._trace_args())
+        except (TypeError, ValueError) as exc:  # preflight reports it as a failed check
+            return {"op": NAME, "text": f"invalid arguments: {exc}"}
+
+    def preflight(self) -> list[dict]:
+        sid = self._sample_id()
+        folder = None if not sid else self._root() / sid
+        ok = folder is not None and folder.is_dir()
+        self._checks = [{"name": "sample", "ok": ok, "want": "an open sample folder",
+                         "read": None if folder is None else str(folder),
+                         "why": "" if ok else "open a sample first (sample_open)"}]
+        self._checks += preflight(self.ctx.backend, self._trace_args())
+        return self._checks
+
+    def run(self) -> dict:
+        ctx = self.ctx
+        sample = Sample(self._sample_id(), self._root())
+        a = EdgeTraceArgs.from_dict(self._trace_args())
+        try:
+            backups = prepare(sample, a, lambda key, text: bool(ctx.confirm(key, text)["ok"]))
+        except OperationAborted as exc:
+            raise Aborted(str(exc)) from None
+        result = trace(ctx.backend, sample, a, scope_for(ctx),
+                       warnings=[c["warning"] for c in self._checks if c.get("warning")],
+                       check=ctx.check, sleep=ctx.sleep, grab=_runner_grab(ctx),
+                       on_tracer=self._set_tracer)
+        result["backups"] = backups
+        return result
+
+    def _set_tracer(self, tracer: EdgeTracer) -> None:
+        self._tracer = tracer
+
+    def update(self, args: dict) -> None:
+        super().update(args)
+        if self._tracer is not None and "speed_um_s" in args:
+            self._tracer.set_speed(float(args["speed_um_s"]))
