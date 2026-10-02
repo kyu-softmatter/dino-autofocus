@@ -44,3 +44,10 @@
 
 - Apply the same check to the `System/Shutdown` preset (applied at unload by some cores): refuse to open a config whose
   Shutdown preset touches MOTION_DEVICES, listing the devices. Owner AF 실행12, review AF 검토보조2.
+
+## T-036d follow-up (from 검토보조2's T-036b pass; lock-lift prerequisite)
+
+- The preset check matches the fixed `MOTION_DEVICES` names only. A bench cfg that labels the stage differently
+  (e.g. "TIZDrive") and is opened with `DeviceNames` pointing at that label would let a Startup preset move it.
+  Also refuse settings on the configured `self.devices.z / xy / nosepiece / pfs` labels. Test with a renamed device.
+- Owner AF 실행12, branch `exec12/T-036d-device-labels` from main's hash after T-036b merges, review AF 검토보조2.
