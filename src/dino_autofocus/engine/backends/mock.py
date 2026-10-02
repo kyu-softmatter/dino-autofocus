@@ -118,7 +118,7 @@ class MockBackend:
         return BackendInfo("mock", self._config.path if self._config else "mock://",
                            CAMERA, w.camera.sensor, self._roi(), w.exposure_ms,
                            o.pixel_um * w.binning, o.label, None, w.camera.bit_depth, objs,
-                           StageLimits(lim.x_um, lim.y_um, lim.z_um), notes)
+                           StageLimits(lim.x_um, lim.y_um, lim.z_um), notes, bench=False)
 
     def _roi(self) -> tuple[int, int, int, int]:
         h, wd = self.world.camera.sensor
