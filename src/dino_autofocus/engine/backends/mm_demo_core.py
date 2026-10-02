@@ -39,6 +39,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from ..backend import check_set_property
+
 if TYPE_CHECKING:
     from pymmcore_plus import CMMCorePlus
 
@@ -289,7 +291,7 @@ class DemoDevices:
         n = len(self.core.getStateLabels(DEMO_NOSEPIECE))
         if not 0 <= state < n:
             raise ValueError(f"nosepiece state {state} is not in 0..{n - 1}")
-        return self.set_and_read(DEMO_NOSEPIECE, "State", state)
+        return self._set_and_read(DEMO_NOSEPIECE, "State", state)
 
     # -- light, meaning-level, each step read back
 
@@ -313,7 +315,7 @@ class DemoDevices:
         return [*self.lamp_off(),
                 DemoReadback.of(DEMO_LED, f"{line}_Intensity (emulated)", permille,
                                 self._aura_permille[line]),
-                self.set_and_read(DEMO_LED, "Label", AURA_LINES[line]),
+                self._set_and_read(DEMO_LED, "Label", AURA_LINES[line]),
                 self._shutter(DEMO_LED_SHUTTER, True)]
 
     def aura_off(self) -> list[DemoReadback]:
@@ -332,7 +334,16 @@ class DemoDevices:
 
     # -- helpers
 
-    def set_and_read(self, device: str, prop: str, value: Any) -> DemoReadback:
+    def set_and_read(self, device: str, prop: str, value: Any, *,
+                     token: object = None) -> DemoReadback:
+        """Write one property and read it back, through the engine allow-list
+        (`check_set_property` with this core's camera): motion devices are refused and
+        light properties need the guard token."""
+        check_set_property(device, prop, token, camera=self.core.getCameraDevice())
+        return self._set_and_read(device, prop, value)
+
+    def _set_and_read(self, device: str, prop: str, value: Any) -> DemoReadback:
+        """Unchecked write and readback, for this module's own meaning-level methods."""
         self.core.setProperty(device, prop, value)
         self.core.waitForDevice(device)
         return DemoReadback.of(device, prop, value, self.core.getProperty(device, prop))

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import importlib
+import pkgutil
 import sys
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
 from dino_autofocus.agents import MockStore
@@ -114,8 +116,20 @@ def test_area_router_discovery(tmp_path, monkeypatch, engine, agent_store, seat,
         raise AssertionError("a module without a router must be refused")
 
 
-def test_no_area_routers_yet():
-    assert include_area_routers(FastAPI()) == []
+def test_every_area_module_is_mounted_under_its_name(engine, make_client):
+    """Whatever areas exist in server/api (none named here): each non-underscore module has a
+    module-level APIRouter, and create_app mounts every one of its routes at /api/<module>."""
+    import dino_autofocus.server.api as api_pkg
+
+    names = sorted(m.name for m in pkgutil.iter_modules(api_pkg.__path__)
+                   if not m.name.startswith("_") and not m.ispkg)
+    assert include_area_routers(FastAPI()) == names
+    paths = {getattr(r, "path", "") for r in make_client(engine).app.routes}
+    for name in names:
+        router = importlib.import_module(f"dino_autofocus.server.api.{name}").router
+        assert isinstance(router, APIRouter), name
+        for route in router.routes:
+            assert f"/api/{name}{route.path}" in paths, (name, route.path)
 
 
 def test_agent_store_on_app_state(engine, make_client, agent_store):
