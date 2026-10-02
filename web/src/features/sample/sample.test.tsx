@@ -236,14 +236,37 @@ describe("sample screen", () => {
     expect(screen.getByText(`D:\\AutoFocus\\samples\\${ID}`)).toBeTruthy();
   });
 
-  it("a 403 on a command turns the screen read-only with the server's reason", async () => {
+  it("a remote_view 403 on a command turns the screen read-only (the shell's flag)", async () => {
     const w = world();
-    w.commands = () => ({ status: 403, body: { detail: "commands are accepted only on the microscope PC" } });
+    w.commands = () => ({ status: 403, body: { detail: { code: "remote_view", message: "remote view" } } });
     setup(w);
     await ready();
     fireEvent.click(button("Sample is on the stage"));
     await waitFor(() => expect(button("Check with an image").disabled).toBe(true));
-    expect(screen.getAllByText("Read-only: commands are accepted only on the microscope PC").length).toBeGreaterThan(0);
+    expect(button("New sample").disabled).toBe(true);
+  });
+
+  it("a non-remote 403 on Open folder is that action's reason only, no read-only", async () => {
+    const w = world();
+    w.openFolder = () => ({ status: 403, body: { detail: { code: "role", message: "Needs the operator role" } } });
+    setup(w);
+    await ready();
+    fireEvent.click(button("Open folder"));
+    const region = () => screen.getByRole("region", { name: "Opened sample" });
+    await waitFor(() => expect(within(region()).getByText("Needs the operator role")).toBeTruthy());
+    expect(button("Sample is on the stage").disabled).toBe(false);
+    expect(button("New sample").disabled).toBe(false);
+    expect(screen.queryByText(/^Read-only/)).toBeNull();
+  });
+
+  it("a remote_view 403 on Open folder switches the app to read-only", async () => {
+    const w = world();
+    w.openFolder = () => ({ status: 403, body: { detail: { code: "remote_view", message: "remote view" } } });
+    setup(w);
+    await ready();
+    fireEvent.click(button("Open folder"));
+    await waitFor(() => expect(button("Sample is on the stage").disabled).toBe(true));
+    expect(screen.getAllByText("Read-only: remote view").length).toBeGreaterThan(0);
   });
 
   it("session open for this sample: other samples cannot be opened, with the router's reason", async () => {

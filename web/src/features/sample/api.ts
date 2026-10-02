@@ -11,10 +11,23 @@
 
 import { type Client, CommandRefused } from "../../app/client";
 
+/** a 403 body: a plain detail, or `{code, message}` (T-009b marks remote view with code "remote_view") */
+export function refusalOf(status: number, payload: { detail?: unknown }): { why: string; remote: boolean } {
+  const d = payload.detail;
+  if (typeof d === "string") return { why: d, remote: false };
+  if (d && typeof d === "object") {
+    const o = d as { code?: unknown; message?: unknown };
+    const why = typeof o.message === "string" ? o.message : `HTTP ${status}`;
+    return { why, remote: status === 403 && o.code === "remote_view" };
+  }
+  return { why: `HTTP ${status}`, remote: false };
+}
+
 /**
  * The area's one POST outside /api/commands ("Open folder"). Same signature as T-010 stage 3's
  * `useClient().post<T>(path, body?)`: swap to that once it merges. 204 -> null; any other failure
- * throws `CommandRefused`, and a 403 switches the app to read-only like a refused command.
+ * throws `CommandRefused` with the action's reason. Only a 403 marked `remote_view` switches the app
+ * to read-only (T-010 stage 4 rule); every other 403 is just this action's reason.
  */
 export async function post<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
   const r = await client.transport.fetch(path, {
@@ -25,8 +38,8 @@ export async function post<T>(client: Client, path: string, body?: unknown): Pro
   if (r.status === 204) return null;
   if (!r.ok) {
     const payload = (await r.json().catch(() => ({}))) as { detail?: unknown };
-    const why = typeof payload.detail === "string" ? payload.detail : `HTTP ${r.status}`;
-    if (r.status === 403) client.readOnly.refuse(why);
+    const { why, remote } = refusalOf(r.status, payload);
+    if (remote) client.readOnly.refuse(why);
     throw new CommandRefused(r.status, why);
   }
   return (await r.json().catch(() => null)) as T | null;
