@@ -477,6 +477,13 @@ class OpContext:
         self.runner.set_current_sample(sample_id, reserved=reserved)
 
     @property
+    def record_dir(self) -> Path | None:
+        """This operation's record folder (e.g. scan_4x writes its scan.json there), or None
+        when the record seat writes no folder (or during `Runner.plan`)."""
+        d = getattr(self._op.record, "dir", None)
+        return None if d is None else Path(d)
+
+    @property
     def backend_info(self) -> Any:
         """The `BackendInfo` read once at `start()` (stage limits, objectives, bench), so
         `plan()` can use it without touching hardware. None if that read failed."""
