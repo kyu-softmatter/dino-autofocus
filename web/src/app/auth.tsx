@@ -27,6 +27,8 @@ export interface ShellAuth {
   logout(): Promise<void>;
   lock(): Promise<void>;
   refresh(): Promise<void>;
+  /** T-105: changes after each unlock, so state read before the lock is re-read */
+  resumed?: number;
 }
 
 interface LoginModule {
@@ -42,18 +44,28 @@ export function pickLogin(modules: Record<string, LoginModule>): LoginModule | n
   return m && typeof m.LoginGate === "function" && typeof m.useAuth === "function" ? m : null;
 }
 
-const login = pickLogin(found);
-
-/** True once T-105's login screen is in the build. */
-export const loginAvailable = login !== null;
-
 function PassThroughGate({ children }: { abort?: ReactNode; children: ReactNode }) {
   return <>{children}</>;
 }
 
-export const LoginGate: LoginModule["LoginGate"] = login?.LoginGate ?? PassThroughGate;
-export const useAuth: () => ShellAuth | null = login?.useAuth ?? (() => null);
-export const ApprovalList: LoginModule["ApprovalList"] = login?.ApprovalList ?? (() => null);
+/** The three names the shell uses, from a login module or the pass-through stand-ins. */
+export function seamFrom(mod: LoginModule | null): Pick<LoginModule, "LoginGate" | "useAuth" | "ApprovalList"> {
+  return {
+    LoginGate: mod?.LoginGate ?? PassThroughGate,
+    useAuth: mod?.useAuth ?? (() => null),
+    ApprovalList: mod?.ApprovalList ?? (() => null),
+  };
+}
+
+const login = pickLogin(found);
+const seam = seamFrom(login);
+
+/** True once T-105's login screen is in the build. */
+export const loginAvailable = login !== null;
+
+export const LoginGate: LoginModule["LoginGate"] = seam.LoginGate;
+export const useAuth: () => ShellAuth | null = seam.useAuth;
+export const ApprovalList: LoginModule["ApprovalList"] = seam.ApprovalList;
 
 // -- activity (idle lock) ---------------------------------------------------------------
 

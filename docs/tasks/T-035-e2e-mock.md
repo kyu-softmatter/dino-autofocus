@@ -43,3 +43,13 @@
   (test_e2e_safety.py: abort_mid_trace, lights_off_preempts, watched_trace_stops). Set the default to 30 s (a test
   that needs more passes it explicitly, with a comment), and fail with the predicate's name and the last events seen.
   No new dependency (pyproject is held by T-012).
+
+## T-035c (AF 실행6, after T-035b; review AF 검토보조1) — one BLAS thread in every test process
+
+- numpy and scipy each commit about 500 MiB of OpenBLAS thread buffers at import on the 16-thread desktop (measured:
+  `import numpy` 506 MiB, + `scipy.special` 1007 MiB; with `OPENBLAS_NUM_THREADS=1`, 24 / 41 MiB). That is most of
+  the commit charge behind the 0xc000070a / 0x8007000e crashes.
+- Add a root `tests/conftest.py` (setup only, nothing imported from it) that does
+  `os.environ.setdefault(...)` for `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS` and `MKL_NUM_THREADS` = "1" before any
+  numpy import, so a run can still override it. Move T-035b's setting there. Check the torch/DINO tests still pass.
+- The running app is out of scope: whether the server process should cap BLAS threads is a separate decision.

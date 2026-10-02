@@ -1,8 +1,19 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createContext, useContext } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { fakeTransport, type Route } from "../test/fakes";
-import { AbortButton, ACTIVITY_MS, LoginGate, pickLogin, type ShellAuth, type ShellMe, useActivity } from "./auth";
+import { fakeTransport, type FakeOptions, type Route } from "../test/fakes";
+import {
+  AbortButton,
+  ACTIVITY_MS,
+  LoginGate,
+  loginAvailable,
+  pickLogin,
+  seamFrom,
+  type ShellAuth,
+  type ShellMe,
+  useActivity,
+} from "./auth";
 import { Client, ClientProvider } from "./client";
 import { StatusBarView, UserPart } from "./StatusBar";
 
@@ -27,27 +38,85 @@ function fakeAuth(me: Partial<ShellMe> = {}): ShellAuth & { calls: string[] } {
   };
 }
 
-function withClient(ui: React.ReactNode, routes: Record<string, Route> = {}) {
-  const t = fakeTransport(routes);
+function withClient(ui: React.ReactNode, routes: Record<string, Route> = {}, opts: FakeOptions = {}) {
+  const t = fakeTransport(routes, opts);
   const client = new Client(t.transport, "127.0.0.1");
   render(<ClientProvider client={client}>{ui}</ClientProvider>);
   return { ...t, client };
 }
 
+// A stand-in login module: its gate shows its children only after "logging in".
+function stubLoginModule() {
+  const me = { ...ME, name: "Stub User" };
+  const auth: ShellAuth = { me, api: {}, logout: async () => {}, lock: async () => {}, refresh: async () => {} };
+  const Ctx = createContext<ShellAuth | null>(null);
+  return {
+    LoginGate: ({ abort, children }: { abort?: React.ReactNode; children: React.ReactNode }) => (
+      <div data-testid="stub-gate">
+        {abort}
+        <Ctx.Provider value={auth}>{children}</Ctx.Provider>
+      </div>
+    ),
+    useAuth: () => useContext(Ctx),
+    ApprovalList: () => <p>stub approvals</p>,
+  };
+}
+
 describe("login seam", () => {
-  it("uses T-105's module only when it is in the build", () => {
+  it("picks a login module only when one is in the build", () => {
     expect(pickLogin({})).toBeNull();
-    const mod = { LoginGate: () => null, useAuth: () => null, ApprovalList: () => null };
+    const mod = stubLoginModule();
     expect(pickLogin({ "./login/index.ts": mod })).toBe(mod);
   });
 
-  it("lets the app through while there is no login screen yet", () => {
+  it("uses the login gate when present: its gate, its auth state, its abort slot", () => {
+    const seam = seamFrom(stubLoginModule());
+    function Probe() {
+      return <p>user: {seam.useAuth()?.me.name ?? "none"}</p>;
+    }
+    withClient(
+      <seam.LoginGate abort={<span>abort here</span>}>
+        <Probe />
+      </seam.LoginGate>,
+    );
+    expect(screen.getByTestId("stub-gate")).toBeTruthy();
+    expect(screen.getByText("abort here")).toBeTruthy();
+    expect(screen.getByText("user: Stub User")).toBeTruthy();
+  });
+
+  it("passes the app through with no auth state when there is no login module", () => {
+    const seam = seamFrom(null);
+    function Probe() {
+      return <p>user: {seam.useAuth()?.me.name ?? "none"}</p>;
+    }
+    withClient(
+      <seam.LoginGate abort={<span>abort here</span>}>
+        <Probe />
+      </seam.LoginGate>,
+    );
+    expect(screen.getByText("user: none")).toBeTruthy();
+    expect(screen.queryByText("abort here")).toBeNull();
+  });
+
+  it("lets a logged-in test user into the app, with or without T-105 in the build", async () => {
     withClient(
       <LoginGate abort={<span>abort</span>}>
         <p>the app</p>
       </LoginGate>,
     );
-    expect(screen.getByText("the app")).toBeTruthy();
+    expect(await screen.findByText("the app")).toBeTruthy();
+  });
+
+  it.runIf(loginAvailable)("keeps the app behind T-105's gate when /api/auth/me says logged out", async () => {
+    withClient(
+      <LoginGate abort={<span>abort</span>}>
+        <p>the app</p>
+      </LoginGate>,
+      {},
+      { me: null },
+    );
+    await waitFor(() => expect(screen.queryByText("Checking login…")).toBeNull());
+    expect(screen.queryByText("the app")).toBeNull();
   });
 
   it("shows no user part without a login", () => {
