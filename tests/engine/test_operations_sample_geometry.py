@@ -107,3 +107,11 @@ def test_hole_loop_tells_a_partial_arc_from_a_full_fit():
     assert not hole_loop({"arc_deg": 180.0})["closed"]
     assert hole_loop(None) == {"closed": False, "why": "no hole fit", "fitted_at": None,
                                "trace_stop": None, "arc_deg": None}
+
+
+def test_hole_loop_prefers_edge_traces_flag():
+    # the flag wins over the stop text and the arc in both directions
+    assert not hole_loop({"closed_loop": False, "arc_deg": 352.0,
+                          "trace_stop": "back where the edge was first seen: full loop"})["closed"]
+    assert hole_loop({"closed_loop": True, "arc_deg": 300.0, "trace_stop": "done"})["closed"]
+    assert hole_loop({"closed_loop": "yes", "arc_deg": 352.0})["closed"]  # not a bool: fallback
