@@ -142,3 +142,5 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
   ABP run with theta (e.g. run-20260923-042-small-s2). Put them outside both repos (soft-matter-agents stays
   read-only), e.g. `D:\AutoFocus\sim_samples\<run_id>\trajectory.txt`, and give the WSL source path for
   `DINO_AF_SIM_TRAJECTORY_ROOTS`.
+- User (T-026 stage 2, b2f3952): the Desktop "DINO Autofocus.exe" is the user's old tkinter build. Copy it aside before
+  running `build.ps1 -Force` (the script also keeps it as `.prev.exe`).

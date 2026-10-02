@@ -110,3 +110,27 @@
 - Also in stage 4 (from T-014): Shell.test.tsx asserts "Prompt box: not implemented yet", which fails once
   `app/assistant/index.tsx` exists. Assert on the Prompt region only (or render the placeholder through
   `assistantLoaderFrom({})`), and render shell tests inside a ClientProvider. T-014 merges after stage 4.
+
+## T-010-7 (AF 실행4, before T-105 merges; review AF 검토보조4) — App-level tests pass the login gate
+
+- With T-105's `app/login/` in the build, the seam picks up the real LoginGate: `src/app/auth.test.tsx` "lets the
+  app through while there is no login screen yet" no longer holds, and 7 `StatusBar.test.tsx` tests time out because
+  their fake transport has no `/api/auth/me` (the gate fails closed, which is right).
+- Add a shared default in `src/test/fakes.ts`: `/api/auth/me` answers a logged-in operator (`*@example.test`), opt-out
+  per test. Rewrite the auth test as "uses the login gate when present" (stub login module). Works with and without
+  T-105 on the branch.
+
+## T-010-8 (AF 실행4, after T-010-7; review AF 검토보조4) — lock messages on the event stream
+
+- T-009c adds `{"type": "lock", "locked": bool}` on `/ws/events` (sent on connect and on change; while locked, no
+  `event` messages). The shared EventStream drops non-`event` messages today. Add
+  `client.events.onLock(fn) -> unsubscribe` for `type: "lock"`, and reload `useEngineStatus` (`/api/state`) when
+  `useAuth().resumed` changes after unlock. T-105's gate already calls `client.events.onLock` when present.
+  Regenerate schema.ts after T-009c merges so `WsLock` is typed.
+
+## T-010-9 (AF 실행4, after T-009c merges; review AF 검토보조4) — notes from the T-010-7/8 merge (AF 검토)
+
+- The test fake's 401 code `not_logged_in` becomes the server's `login_required`.
+- While locked the socket stays open with no events, so status values can age: treat locked like disconnected for the
+  stale marker wherever the status bar is visible under the lock.
+- After T-009c merges, regenerate schema.ts and type `WsLock` from it (drop the hand-written type).

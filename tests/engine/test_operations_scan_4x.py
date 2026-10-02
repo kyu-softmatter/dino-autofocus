@@ -6,7 +6,7 @@ import queue
 
 import numpy as np
 import pytest
-from conftest import FakeBackend
+from engine_fakes import FakeBackend
 from scipy import ndimage
 
 from dino_autofocus.engine.events import Command

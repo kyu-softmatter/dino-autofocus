@@ -16,7 +16,7 @@ import math
 from pathlib import Path
 
 import pytest
-from conftest import OFF, OPERATOR
+from e2e_helpers import OFF, OPERATOR
 
 from dino_autofocus.auth import Action
 from dino_autofocus.engine.backend import UnguardedMotion

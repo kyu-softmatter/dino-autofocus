@@ -13,9 +13,12 @@ Event kinds (payload fields in brackets):
 * ``boundary_clear`` []: drops the boundary points recorded before it.
 * ``field_visit`` [x_um, y_um, objective, ...]: a field that was looked at.
 * ``flag_set`` [flag_id, name, note, x_um, y_um, objective]: create or replace a flag.
-* ``flag_remove`` [flag_id]
+* ``flag_remove`` [flag_id]: the flag stays, with ``retired: True`` (the map shows retired
+  flags on a toggle, ui-spec 7.4). Every flag entry has ``history``: one ``{kind, by, at}``
+  per event, in order; a later ``flag_set`` brings it back with ``retired: False``.
 * ``particle`` [particle_id, x_um, y_um, z_um, status]: status "candidate" (found by image
-  processing) or "confirmed" (a person checked it); the latest event per id wins.
+  processing), "confirmed" or "rejected" (a person checked it); the latest event per id
+  wins, and ``history`` keeps every step as ``{kind, by, at, status}``.
 * ``note`` [text]
 
 Unknown kinds are kept (``SampleState.other``) so newer writers do not break older readers.
@@ -98,8 +101,16 @@ def _stamp(e: SampleEvent) -> dict[str, Any]:
             "seq": e.seq}
 
 
+def _history(prev: dict[str, Any] | None, e: SampleEvent, **extra: Any) -> list[dict]:
+    return [*((prev or {}).get("history") or []),
+            {"kind": e.kind, "by": e.user_id, "at": e.t, **extra}]
+
+
 def fold(events: Iterable[SampleEvent], sample_id: str) -> SampleState:
-    """Current state of `sample_id` from events of any sessions, in any order."""
+    """Current state of `sample_id` from events of any sessions, in any order.
+
+    A `flag_remove` for a flag_id no `flag_set` made leaves a retired stub
+    (`{"flag_id", "retired": True, "history"}`) rather than being dropped."""
     st = SampleState(sample_id=sample_id)
     mine = sorted((e for e in events if e.sample_id == sample_id), key=lambda e: e.order)
     for e in mine:
@@ -117,11 +128,18 @@ def fold(events: Iterable[SampleEvent], sample_id: str) -> SampleState:
         elif e.kind == "field_visit":
             st.visits.append(rec)
         elif e.kind == "flag_set":
-            st.flags[str(e.payload["flag_id"])] = rec
+            fid = str(e.payload["flag_id"])
+            prev = st.flags.get(fid)
+            st.flags[fid] = {**rec, "retired": False, "history": _history(prev, e)}
         elif e.kind == "flag_remove":
-            st.flags.pop(str(e.payload["flag_id"]), None)
+            fid = str(e.payload["flag_id"])
+            prev = st.flags.get(fid) or {"flag_id": fid}
+            st.flags[fid] = {**prev, "retired": True, "history": _history(prev, e)}
         elif e.kind == "particle":
-            st.particles[str(e.payload["particle_id"])] = rec
+            pid = str(e.payload["particle_id"])
+            prev = st.particles.get(pid)
+            st.particles[pid] = {**rec, "history": _history(prev, e,
+                                                           status=e.payload.get("status"))}
         elif e.kind == "note":
             st.notes.append(rec)
         else:
