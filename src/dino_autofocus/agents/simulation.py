@@ -443,10 +443,11 @@ class NpzTrajectory:
 
 
 class GsdTrajectory:
-    """A HOOMD GSD file through the `gsd` package, when it is installed.
+    """A HOOMD GSD file through the `gsd` package (the server dependency group).
 
-    `gsd` is not a dependency yet (T-012 asks the manager first); without it, opening a GSD
-    trajectory raises TrajectoryUnavailable. Fields: "orientation", "velocity", "image",
+    Imported only when a GSD trajectory is opened; where `gsd` is not installed (an
+    environment without the server group), opening one raises TrajectoryUnavailable.
+    Fields: "orientation", "velocity", "image",
     "charge", "diameter", "mass" and any other `particles` attribute.
     """
 
