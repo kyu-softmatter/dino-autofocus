@@ -89,9 +89,10 @@ class ZRetract(Operation):
             ctx.emit(ev.kind, **ev.data)
 
         axis = FocusAxis(ctx.backend, None, allow_motion=True, sink=emit, op_id=ctx.op_id)
-        before = axis.require_pfs_quiet(disable=True)  # PFS off first; raises if it stays on
+        before = ctx.backend.pfs()  # as found, before anything is switched
+        axis.require_pfs_quiet(disable=True)  # PFS off first; raises if it stays on
         result = axis.retract()  # a readback mismatch raises GuardError
         after = ctx.backend.pfs()
         return {"op": NAME, **result,
-                "pfs": {"enabled_before": before.enabled, "enabled": after.enabled,
-                        "in_range": after.in_range}}
+                "pfs": {"enabled_before": before.enabled, "in_range_before": before.in_range,
+                        "enabled": after.enabled, "in_range": after.in_range}}

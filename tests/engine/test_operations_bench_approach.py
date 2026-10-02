@@ -47,3 +47,22 @@ def test_focus_100x_is_refused_on_the_bench(tmp_path):
     assert out["status"] == "preflight_failed"
     assert any("T-029d" in why for why in out["reasons"])
     assert not any(c[0] == "move_z" for c in b.calls)
+
+
+def test_scan_4x_on_the_bench_stops_before_climbing_and_says_why(tmp_path):
+    import json
+
+    from test_operations_scan_4x import FocusFake, make_sample
+    from test_operations_scan_4x import run as run_scan
+
+    from dino_autofocus.engine.guards import GuardError
+
+    b = bench(FocusFake())  # 4x in place, Z 2950: the first tile sweep starts below
+    s = make_sample(tmp_path)
+    with pytest.raises(GuardError, match="T-029d"):
+        run_scan(b, s)
+    z = [c[1] for c in b.calls if c[0] == "move_z"]
+    assert z and all(v <= 2800.0 for v in z)  # down to the sweep start, never up past 2800
+    summary = json.loads((s.scans_4x()[-1] / "summary.json").read_text())
+    assert summary["status"] == "error" and "T-029d" in summary["error"]
+    assert "Q13" in summary["error"] and b.lights == {"DiaLamp": "0", "Aura": "0"}
