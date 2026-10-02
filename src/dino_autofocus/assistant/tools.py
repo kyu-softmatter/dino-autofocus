@@ -797,10 +797,10 @@ class ProposalBook:
         if perm == PERM_STOP:
             return perm
         if self._allows is None:
-            raise PermissionError(f"no permission check connected: {perm} cannot be confirmed")
+            raise PermissionError(f"no permission check connected: a {perm} card cannot be decided")
         if role is None or not self._allows(role, perm, local=local):
             where = "on the microscope PC" if local else "from a remote browser"
-            raise PermissionError(f"role {role!r} may not confirm {perm} {where}")
+            raise PermissionError(f"role {role!r} may not decide a {perm} card {where}")
         return perm
 
     def _decision(self, p: Proposal, kind: str, by: str, session_id: str | None) -> dict:

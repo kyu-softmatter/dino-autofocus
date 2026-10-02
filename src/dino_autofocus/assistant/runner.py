@@ -493,23 +493,7 @@ class Assistant:
         and guards as for any command. A refusal (here: PermissionError; by the engine:
         ConfirmRefused) is recorded and leaves the card proposed. `submit` replaces the
         default engine hook for this one call (the route builds it from the request)."""
-        try:
-            perm = self.proposals.check_permission(proposal_id, role=role, local=local)
-        except PermissionError as e:
-            p = self.proposals.get(proposal_id)
-            self.records.write(
-                "confirm_refused",
-                conversation_id=p.conversation_id,
-                user_id=by,
-                session_id=session_id or p.session_id,
-                proposal_id=p.proposal_id,
-                command=p.command,
-                role=role,
-                local=local,
-                permission=required_permission(p.command),
-                reason=str(e),
-            )
-            raise
+        perm = self._permitted("confirm_refused", proposal_id, by, role, local, session_id)
         p = self.proposals.get(proposal_id)
         base = {
             "conversation_id": p.conversation_id,
@@ -539,9 +523,48 @@ class Assistant:
         )
         return p.to_dict()
 
+    def _permitted(
+        self,
+        refused_kind: str,
+        proposal_id: str,
+        by: str,
+        role: str | None,
+        local: bool,
+        session_id: str | None,
+    ) -> str:
+        """The card's permission (D16), checked for a confirm and a reject alike; a refusal
+        is recorded under `refused_kind` and re-raised (PermissionError)."""
+        try:
+            return self.proposals.check_permission(proposal_id, role=role, local=local)
+        except PermissionError as e:
+            p = self.proposals.get(proposal_id)
+            self.records.write(
+                refused_kind,
+                conversation_id=p.conversation_id,
+                user_id=by,
+                session_id=session_id or p.session_id,
+                proposal_id=p.proposal_id,
+                command=p.command,
+                role=role,
+                local=local,
+                permission=required_permission(p.command),
+                reason=str(e),
+            )
+            raise
+
     def reject(
-        self, proposal_id: str, *, by: str, note: str = "", submit: Submit | None = None
+        self,
+        proposal_id: str,
+        *,
+        by: str,
+        note: str = "",
+        role: str | None = None,
+        local: bool = False,
+        submit: Submit | None = None,
     ) -> dict:
+        """A person rejected the card. Clearing a card is a write: it needs the same
+        permission as confirming it (D16; T-013c), so a viewer cannot clear an operator's."""
+        perm = self._permitted("reject_refused", proposal_id, by, role, local, None)
         p = self.proposals.reject(proposal_id, by=by, note=note, submit=submit)
         self.records.write(
             "proposal_rejected",
@@ -550,6 +573,9 @@ class Assistant:
             session_id=p.session_id,
             proposal_id=p.proposal_id,
             command=p.command,
+            role=role,
+            local=local,
+            permission=perm,
             note=note,
             decided_t=p.decided_t,
         )
