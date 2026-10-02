@@ -34,6 +34,8 @@ New tasks get an assistant in their card. Unlisted tasks go to the least loaded 
 
 ## Manager to-do on events
 
+- T-039 merged → tell 실행11 to unblock runbook step 2a (T-038b). T-032 stage 2 merged → tell 실행11 to unblock 2c.
+
 - **Quota pause (director, after the 19:20 outage):** active 실행1, 3, 4, 6, 7, 10, 11, 12, 15, 17 + AF 검토,
   검토보조1, 2. Paused: 실행2, 5, 8, 9, 13, 14, 16 (after T-037 commit), 18, 19, 20, 검토보조3, 4, 업무분배보조.
   Resume all when T-009b and T-010 stage 4 merge, then tell the director. No broadcasts.
