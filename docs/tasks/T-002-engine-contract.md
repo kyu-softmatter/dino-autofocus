@@ -234,3 +234,12 @@ T-002 는 열 개가 넘는 과제의 선행이다. 한 번에 끝내지 말고 
   (retract first). Fixtures cover both cases.
 - Every table value is marked "unmeasured provisional". The motion record's basis field names the table
   row, never "caller".
+
+## T-002-4: guarded light-on helpers (from the T-015 pre-review, 검토보조1)
+
+- Owner AF 실행1. After T-002 stages 2 and 3 and T-015 part 1 have merged, in that order.
+- Add `OpScope.lamp_on()` and `OpScope.aura_line_on(line, percent)` in `guards.py`. They pass the op's control
+  token to the backend (T-015 signatures), so operations have one legal way to switch a light on (D15).
+  Lights are switched off by the existing exit path.
+- Tests on FakeBackend. Review: AF 검토보조1.
+- T-015 (실행12) may edit the token calls in `tests/engine/test_contract_records.py` and `test_contract.py`.
