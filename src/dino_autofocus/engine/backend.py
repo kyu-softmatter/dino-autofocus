@@ -254,7 +254,8 @@ LIGHT_PROPERTIES = frozenset(
 
 #: No token, on the backend's own camera device only (`BackendInfo.camera`): what the
 #: scripts set today. Prefer `set_exposure` / `set_roi` where they exist. The Kinetix
-#: readout-mode property name is not known yet (docs/microscope-pc-checklist.md).
+#: readout-mode property is not listed until confirmed on the PC: the candidate is
+#: `ReadoutRate` ("100MHz 12bit" in the 2026-09-30 run log; docs/microscope-pc-checklist.md).
 CAMERA_PROPERTIES = frozenset({"Exposure", "Binning", "PixelType",
                                "OnCameraCCDXSize", "OnCameraCCDYSize"})
 
