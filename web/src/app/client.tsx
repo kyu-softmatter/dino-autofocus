@@ -77,11 +77,18 @@ export type EventHandler = (ev: EventOut) => void;
  * One `/ws/events` connection shared by the whole app. Reconnects with backoff;
  * `onStatus` says whether it is open. After a reconnect, screens should re-read
  * state (events in between are lost), so listeners get `connected` again.
+ *
+ * Besides engine events the server sends `{"type": "lock", "locked": bool}` (T-009c)
+ * on connect and whenever the login locks or unlocks; while locked it sends no
+ * events. `onLock` listeners get those (the login gate re-reads /me on them).
  */
 export class EventStream {
   private socket: WebSocket | null = null;
   private handlers = new Set<EventHandler>();
+  private lockListeners = new Set<(locked: boolean) => void>();
   private statusListeners = new Set<(open: boolean) => void>();
+  /** the last lock state the server sent; null before any */
+  locked: boolean | null = null;
   private retry = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
@@ -109,8 +116,14 @@ export class EventStream {
       } catch {
         return;
       }
-      const m = parsed as Partial<WsEvent>;
-      if (m.type === "event" && m.event) this.handlers.forEach((h) => h(m.event as EventOut));
+      const m = parsed as Partial<WsEvent> | { type?: string; locked?: unknown };
+      if (m.type === "event" && "event" in m && m.event) {
+        this.handlers.forEach((h) => h(m.event as EventOut));
+      } else if (m.type === "lock" && "locked" in m && typeof m.locked === "boolean") {
+        const locked = m.locked;
+        this.locked = locked;
+        this.lockListeners.forEach((fn) => fn(locked));
+      }
     };
     ws.onclose = () => {
       this.socket = null;
@@ -130,6 +143,14 @@ export class EventStream {
   on(handler: EventHandler): () => void {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
+  }
+
+  /** Lock / unlock messages from the server (T-009c). Returns the unsubscribe. */
+  onLock(fn: (locked: boolean) => void): () => void {
+    this.lockListeners.add(fn);
+    return () => {
+      this.lockListeners.delete(fn);
+    };
   }
 
   onStatus(fn: (open: boolean) => void): () => void {

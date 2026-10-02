@@ -192,4 +192,26 @@ describe("EventStream", () => {
     vi.advanceTimersByTime(5000);
     expect(sockets).toHaveLength(2);
   });
+
+  it("delivers lock messages to onLock listeners, not to event handlers (T-009c)", () => {
+    const { transport, sockets } = fakeTransport({});
+    const es = new EventStream(transport);
+    const events = vi.fn();
+    const lock = vi.fn();
+    es.on(events);
+    const off = es.onLock(lock);
+    es.start();
+    sockets[0].open();
+    expect(es.locked).toBeNull();
+    sockets[0].send({ type: "lock", locked: true });
+    sockets[0].send({ type: "lock", locked: "yes" }); // not a boolean: ignored
+    sockets[0].send({ type: "lock", locked: false });
+    expect(lock.mock.calls.map((c) => c[0])).toEqual([true, false]);
+    expect(es.locked).toBe(false);
+    expect(events).not.toHaveBeenCalled();
+    off();
+    sockets[0].send({ type: "lock", locked: true });
+    expect(lock).toHaveBeenCalledTimes(2);
+    expect(es.locked).toBe(true);
+  });
 });
