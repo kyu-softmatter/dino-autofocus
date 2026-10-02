@@ -104,7 +104,12 @@ const LIFECYCLE = new Set([
   "approved", "rejected", "updated",
 ]);
 
-export function useEngineStatus(): EngineStatus {
+/**
+ * The engine state for the status bar. `resumed` is `useAuth().resumed` (T-105):
+ * it changes after an unlock, and since the server sends no events while locked,
+ * the state is re-read from GET /api/state then.
+ */
+export function useEngineStatus(resumed?: number): EngineStatus {
   const client = useClient();
   const connected = useEventsConnected();
   const [s, setS] = useState<Omit<EngineStatus, "connected">>({
@@ -151,6 +156,14 @@ export function useEngineStatus(): EngineStatus {
   useEffect(() => {
     if (connected) void reload();
   }, [connected, reload]);
+
+  // ...and after an unlock: no events came while the login was locked
+  const lastResumed = useRef(resumed);
+  useEffect(() => {
+    if (resumed === lastResumed.current) return;
+    lastResumed.current = resumed;
+    void reload();
+  }, [resumed, reload]);
 
   const onEvent = useCallback(
     (ev: EventOut) => {

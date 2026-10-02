@@ -27,6 +27,8 @@ export interface ShellAuth {
   logout(): Promise<void>;
   lock(): Promise<void>;
   refresh(): Promise<void>;
+  /** T-105: changes after each unlock, so state read before the lock is re-read */
+  resumed?: number;
 }
 
 interface LoginModule {
