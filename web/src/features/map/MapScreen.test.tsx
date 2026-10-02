@@ -180,7 +180,6 @@ describe("map screen", () => {
         body: {
           kind: "start",
           op: "edge_trace",
-          origin: "human",
           args: { sample_id: SAMPLE, speed_um_s: 100, hole_diameter_mm: 6.0, light: "bf" },
         },
       }),

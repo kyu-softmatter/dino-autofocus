@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { areaHref, useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
 import {
-  type CommandIn,
+  type CommandInput,
   CommandRefused,
   type EventOut,
   useClient,
@@ -98,17 +98,6 @@ function sampleFromRest(rest: string): string | null {
   return id && id.trim() !== "" ? id : null;
 }
 
-interface LooseCommand {
-  kind: "start" | "abort" | "confirm" | "update";
-  op?: string;
-  op_id?: string;
-  args?: Record<string, unknown>;
-}
-
-/** The one cast for `update` (edge-trace speed): remove after T-011 merges and gen:api reruns. */
-function toCommand(c: LooseCommand): CommandIn {
-  return { kind: c.kind as CommandIn["kind"], op: c.op ?? "", op_id: c.op_id ?? "", args: c.args ?? {}, origin: "human" };
-}
 
 const WIDTH = 640;
 const HEIGHT = 640;
@@ -367,7 +356,7 @@ export default function MapScreen() {
     async (control: Control, op: string, args: Record<string, unknown>) => {
       setRefusal((r) => ({ ...r, [control]: undefined }));
       try {
-        const op_id = await client.command(toCommand({ kind: "start", op, args }));
+        const op_id = await client.command({ kind: "start", op, args });
         if (control === "trace" || control === "scan") setActive((a) => ({ ...a, [control]: op_id }));
         track(op_id, { control, op });
       } catch (e) {
@@ -378,9 +367,9 @@ export default function MapScreen() {
   );
 
   const send = useCallback(
-    async (control: Control, cmd: LooseCommand) => {
+    async (control: Control, cmd: CommandInput) => {
       try {
-        await client.command(toCommand(cmd));
+        await client.command(cmd);
       } catch (e) {
         setRefusal((r) => ({ ...r, [control]: why(e) }));
       }
@@ -466,7 +455,7 @@ export default function MapScreen() {
       if (move.phase === "submitting" || ["planned", "confirm", "retracting", "moving"].includes(move.phase)) return;
       dispatch({ type: "click", x_um: p[0], y_um: p[1] });
       client
-        .command(toCommand({ kind: "start", op: "goto_xy", args: { sample_id: sampleId, x_um: p[0], y_um: p[1] } }))
+        .command({ kind: "start", op: "goto_xy", args: { sample_id: sampleId, x_um: p[0], y_um: p[1] } })
         .then((op_id) => {
           ops.current.set(op_id, { control: "goto", op: "goto_xy" });
           dispatch({ type: "submitted", op_id });
@@ -517,7 +506,7 @@ export default function MapScreen() {
             move={move}
             z={pos.z}
             onAnswer={(ok) => {
-              if (move.op_id) void client.command(toCommand({ kind: "confirm", op_id: move.op_id, args: { key: move.confirmKey, ok } })).catch(() => undefined);
+              if (move.op_id) void client.command({ kind: "confirm", op_id: move.op_id, args: { key: move.confirmKey, ok } }).catch(() => undefined);
               dispatch({ type: "answered" });
             }}
             onDismiss={() => dispatch({ type: "clear" })}
@@ -706,7 +695,7 @@ function HolePanel({ state, fit }: { state: MapState | null; fit: ReturnType<typ
           </p>
           <p>
             Centre ({h.centre_um[0].toFixed(1)}, {h.centre_um[1].toFixed(1)}) µm · ⌀ {h.diameter_mm.toFixed(3)} mm · rms{" "}
-            {h.fit_rms_um.toFixed(1)} µm · {h.n_points} points · {h.arc_deg.toFixed(0)}°
+            {fmt(h.fit_rms_um, 1)} µm · {fmt(h.n_points)} points · {fmt(h.arc_deg)}°
           </p>
           {diameterOff(h, state?.expected_diameter_mm ?? null) && (
             <p className="map-warn">Diameter differs from the expected {state?.expected_diameter_mm} mm by more than 20 %</p>

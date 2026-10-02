@@ -5,7 +5,7 @@
  * only adds the map routes, so switching to generated types is a one-file change.
  */
 
-import { type Client, CommandRefused } from "../../app/client";
+import type { Client } from "../../app/client";
 
 export interface Box {
   x0: number;
@@ -23,11 +23,14 @@ export interface BoundaryPoint {
 export interface HoleFit {
   centre_um: [number, number];
   diameter_mm: number;
-  fit_rms_um: number;
-  n_points: number;
-  arc_deg: number;
+  fit_rms_um: number | null;
+  n_points: number | null;
+  arc_deg: number | null;
   /** epoch seconds */
   fitted_at: number | null;
+  /** the engine's closed-loop judgement (T-027 hole_loop); the screen shows it, never computes it */
+  closed_loop?: boolean;
+  loop_why?: string;
 }
 
 export interface Visit {
@@ -95,7 +98,7 @@ export interface Flag {
   flag_id: string;
   name: string;
   note: string;
-  t: number;
+  t: number | null;
   objective: string | null;
   x_um: number;
   y_um: number;
@@ -115,7 +118,7 @@ export interface Candidate {
   score: number | null;
   result_id: string | null;
   decides: string | null;
-  t: number;
+  t: number | null;
   by: string | null;
 }
 
@@ -166,40 +169,6 @@ export const PATHS = {
   permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(enc).join(",")}`,
 };
 
-/**
- * POST to a map route (D16 writes). Stopgap with the signature of the shell's coming
- * useClient().post<T>(path, body?) (T-010 stage 3): null for 204. Only a 403 whose detail.code is
- * "remote_view" (T-009b) switches the app to read-only; any other 403 (e.g. a viewer refused by
- * D16) is that action's reason and changes no global state. Swap to client.post once it is on main.
- */
-async function post<T>(client: Client, path: string, body?: unknown): Promise<T | null> {
-  const r = await client.transport.fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (r.status === 204) return null;
-  let detail = `HTTP ${r.status}`;
-  let code: string | null = null;
-  let parsed: unknown = null;
-  try {
-    parsed = await r.json();
-    const d = (parsed as { detail?: unknown } | null)?.detail;
-    if (typeof d === "string") detail = d;
-    else if (d && typeof d === "object") {
-      const o = d as { code?: unknown; message?: unknown; reason?: unknown };
-      code = typeof o.code === "string" ? o.code : null;
-      const msg = o.message ?? o.reason;
-      if (typeof msg === "string") detail = msg;
-    }
-  } catch {
-    // no body
-  }
-  if (r.status === 403 && code === "remote_view") client.readOnly.refuse(detail);
-  if (!r.ok) throw new CommandRefused(r.status, detail);
-  return parsed as T;
-}
-
 const opIdOf = (r: { op_id?: string } | null): string => r?.op_id ?? "";
 
 export interface MapRoutes {
@@ -225,8 +194,8 @@ export function mapRoutes(client: Client): MapRoutes {
     flags: (id, all) => client.get<Flag[]>(PATHS.flags(id, all)),
     candidates: (id, all) => client.get<Candidate[]>(PATHS.candidates(id, all)),
     permissions: (ops) => client.get<Permissions>(PATHS.permissions(ops)),
-    addFlag: (id, body) => post<{ op_id?: string }>(client, PATHS.addFlag(id), body).then(opIdOf),
-    retireFlag: (id, fid) => post<{ op_id?: string }>(client, PATHS.retireFlag(id, fid), {}).then(opIdOf),
-    decideCandidate: (id, cid, d) => post<{ op_id?: string }>(client, PATHS.decide(id, cid, d), {}).then(opIdOf),
+    addFlag: (id, body) => client.post<{ op_id?: string }>(PATHS.addFlag(id), body).then(opIdOf),
+    retireFlag: (id, fid) => client.post<{ op_id?: string }>(PATHS.retireFlag(id, fid), {}).then(opIdOf),
+    decideCandidate: (id, cid, d) => client.post<{ op_id?: string }>(PATHS.decide(id, cid, d), {}).then(opIdOf),
   };
 }
