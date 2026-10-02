@@ -156,8 +156,9 @@ def test_pfs_is_switched_off_before_the_z_move(make, fake):
     assert done.kind == "finished", done.data
     order = [c[0] for c in fake.calls if c[0] in ("pfs_off", "move_z")]
     assert order == ["pfs_off", "move_z"]
-    assert done.data["summary"]["pfs"] == {"enabled_before": False, "enabled": False,
-                                           "in_range": "Out of Range"}
+    assert done.data["summary"]["pfs"] == {  # as found, then after the move
+        "enabled_before": True, "in_range_before": "In Range",
+        "enabled": False, "in_range": "Out of Range"}
     assert not fake.pfs_enabled
 
 
