@@ -82,7 +82,7 @@ DINO 점수는 그다음에 shadow mode (§13.1) 로, b 방식과 `ml` 선택 �
 | # | 질문 | 결정 |
 |---|---|---|
 | Q1 | 초점을 누가 맡나 | **그쪽 하드웨어 엔진이 맡는다.** 하드웨어 오케스트레이션의 일부 (microscope_agent) |
-| Q2 | 의존 방식 | **지금은 따로 개발하고, 합칠 것을 생각해 폴더 구조를 미리 고친다.** 개발이 끝나면 소스를 그쪽 해당 폴더로 옮긴다. 그래서 5절의 b (의존성) 는 쓰지 않고, a (옮겨 넣기) 를 폴더 단위로 한다. 대응표는 9절 (작성 중) |
+| Q2 | 의존 방식 | **지금은 따로 개발하고, 합칠 것을 생각해 폴더 구조를 미리 고친다.** 개발이 끝나면 소스를 그쪽 해당 폴더로 옮긴다. 그래서 5절의 b (의존성) 는 쓰지 않고, a (옮겨 넣기) 를 폴더 단위로 한다. 대응표와 단계는 9절 |
 | Q3 | 이 저장소의 값을 그쪽 출처로 인정할지 | **합칠 때 정한다.** 사람이 쓰거나 잰 값인지는 사용자가 직접 확인한다. 이 저장소는 값마다 카드로 묻는다 (대부분 이미 공유되어 있을 것). 라이브러리언에게 줄 정보는 `docs/librarian-handoff.md` 에 따로 모은다 |
 | Q4 | Z 한계 | **액침액이 필요한 대물렌즈 (40x WI, 60x Oil, 100x Oil) 만 한계를 두고, 나머지 (건식) 는 푼다.** soft-matter-agents 규칙을 따른다 (`objective_clearance_min` 이 렌즈 위치별 작동 거리에서 풀리는 방식). 이 저장소의 가드 변경은 별도 카드로 |
 | Q5 | 기권 문턱 | 아래 설명 뒤 다시 묻는다 |
@@ -100,3 +100,50 @@ Q5 설명: 판정기는 확신이 낮으면 `step_up` / `step_down` 대신 `unsu
 픽셀 크기, 방식별 through-focus 곡선, 계면 오프셋, PFS 오프셋 부호, 동초점 잔차 (4x→100x 약 −60 µm, 재측정 필요),
 40x WI 0.17 mm 칼라에서의 작동 거리, Q13 (접근 스텝), Q20 (Z 후퇴가 필요한 XY 이동), 재물대 한계, 무명령 Z 표류
 (485.16 → 483.62 µm). 결과는 이 저장소 `docs/runs/` 와 그쪽 라이브러리언에 각각 들어간다.
+
+## 9. 폴더 구조 (Q2, 초안 2026-10-02)
+
+그쪽 규칙에서 나오는 제약 (soft-matter-agents `baf6f1e`, `contracts/validate.py`):
+- check 13: 에이전트 `src/` 는 평평한 파일 또는 `src/devices/<file>` 만. `tests/` 는 평평한 `*.py` 만 (fixture 폴더 없음).
+- 그쪽 모듈은 패키지 import 가 아니라 **경로로 형제 파일을 불러온다** (`spec_from_file_location`, 예 `axis_a1_snr.py:44`).
+  테스트는 `unittest`, conftest 없음.
+- check 82: 함수 안 import 까지 본다. `scipy` 는 `sim` 기능에만 있어 검사는 통과하지만 현미경 PC 의 `mic` 환경에는 없다.
+  `focus/classical.py` 의 `separated_peaks` (`scipy.signal.find_peaks`) 는 그 환경에서 실행 중 실패한다.
+- 그쪽에는 UI·서버 폴더가 없다. 새 최상위 폴더는 architecture (ALLOWED_PATHS, pixi) 와 manager (AGENT_OF_PATH) 승인이 먼저다.
+
+대응표 (요약):
+
+| 이 저장소 | 그쪽 위치 | 처리 |
+|---|---|---|
+| `focus/classical.py`, `verdict.py`, `sma_event.py` | `microscope_agent/src/focus_classical.py`, `focus_verdict.py` | 옮김 (경로 로더, scipy 제거) |
+| `focus/dino.py`, `live.py`, `backbone.py` | 나중에 `focus_dino.py` (shadow mode, torch 는 `mic` 에) | 2단계 |
+| `guards.py` 의 Z 규칙 (상향 스윕, 읽기 확인, PFS 먼저 끔, 후퇴 0, 큰 XY 전 후퇴) | `focus_step_rules.py` (순수 함수, 한계는 envelope 에서 인자로) | 순수 부분만 |
+| `focus_100x.py` 의 단계 생성 | `focus_search.py` (단계마다 `from`) | 나눔 |
+| `mosaic.py`, `sample.py`·`scan_4x.py`·`sample_map.py` 의 순수 부분, `edge_trace.py` 검출부 | `map_mosaic.py`, `map_geometry.py`, `map_tiles.py`, `map_edge.py` | 나눔 |
+| `runner`, `backend`, `events`, `records`, `gates`, 나머지 가드와 숫자 표, `objective_change`, `z_retract`, `light_set` | orchestrator, operator, envelope, `runs/<run_id>/` | 이 저장소에만 남음 (단독 실행용) |
+| `mm_real.py`, `mm_demo*.py` | `devices/micromanager.py` 에 흡수 | 합칠 때 버림 |
+| `server/`, `auth/`, `assistant/`, `agents/`, `web/`, `tools/launcher/` | 새 최상위 `console/` (`sma_console` 패키지, `console/web`, `console/launcher`) | 옮김 |
+| `synth/`, 학습·평가 스크립트, `models/`, `configs/ti2_*.yaml` | 옮기지 않음 (모델 제작용으로 이 저장소에 남음) | 남음 |
+
+이 저장소 안의 중간 배치 (그쪽을 그대로 닮게):
+
+```
+microscope_agent/src/        focus_*.py map_*.py   (평평, __init__.py 없음, stdlib + numpy 만)
+microscope_agent/src/devices/
+microscope_agent/tests/      test_focus_*.py ...   (평평, unittest, 경로 로더)
+console/sma_console/         app ws static hw_port api/ schemas/ auth/ assistant/ store/
+console/web/  console/launcher/  console/tests/
+src/dino_autofocus/          단독 실행용 나머지 (engine, backends, operations, records, synth, live, backbone)
+```
+
+배포는 하나로 유지한다 (`uv sync`, editable 설치, pytest 그대로). `dino_autofocus.focus` 는 평평한 파일을 다시 내보내는
+얇은 껍데기로 남겨 기존 import 를 살린다. `tests/test_sma_shape.py` 가 옮길 두 폴더에 check 13·16·82 를 미리 적용한다.
+
+단계 (각 단계 끝에 테스트 통과):
+- S0 (P1 완료) 의존성 나누기. S3 (P3 완료) 판정 → run_log 이벤트.
+- S1 초점 핵심을 `microscope_agent/src/` 로, scipy 제거, 모양 검사 테스트.
+- S2 순수 핵심 파일을 하나씩 (`focus_step_rules`, `focus_search`, `map_*`).
+- S4 `console/` 로 서버·웹·런처 옮기기 (import 약 100 곳, gen:api, 런처 경로).
+- S5 `hw_port.py`: 화면이 엔진을 직접 부르지 않고 포트 하나로 (그 뒤 console 은 `dino_autofocus` 를 import 하지 않는다).
+- S6 합치는 주: 그쪽 승인 순서 (사람: 좌석 → architecture: seats.json, pixi, ALLOWED_PATHS 명세 → manager: validate.py →
+  manager-microscope: 과제 카드, plan.schema, envelope 스키마) 를 마친 뒤 복사. 승인 사슬이 길어 **2주차에 시작**한다.
