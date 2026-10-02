@@ -39,7 +39,9 @@ def test_cookieless_loopback_page_gets_nothing_but_login_and_stops(engine, make_
     for kind in ("abort", "lights_off"):
         r = c.post("/api/commands", json={"kind": kind}, headers=DEV_ORIGIN)
         assert r.status_code == 200, kind
-    assert c.post("/api/auth/login", json={}, headers=DEV_ORIGIN).status_code == 404  # T-105
+    # open path: whatever T-105's handler answers (404 before it exists), never a login refusal
+    login = c.post("/api/auth/login", json={}, headers=DEV_ORIGIN)
+    assert login.status_code not in (401, 403, 423)
     assert c.get("/api/health").status_code == 200
     assert [(x.kind, x.user_id) for x in engine.commands] == [("abort", None),
                                                                ("lights_off", None)]
