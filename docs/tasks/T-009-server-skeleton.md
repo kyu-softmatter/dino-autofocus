@@ -167,3 +167,13 @@
   logged in, unlocked; submit_question = allows(role, SUBMIT_QUESTION, local).
 - D14: loopback /ws/events connections reported through `engine.set_local_viewers(count)`.
 - Sample seat wiring waits for T-027 (a single wiring function as the seam).
+
+## T-009c (AF 실행7, after T-009b merges; review AF 검토보조1)
+
+- (a) WebSocket handshake runs the same `origin_refusal` as HTTP (a cross-site page can open a WebSocket to
+  127.0.0.1). Test a foreign Origin refused on `/ws/events` and `/ws/frames`.
+- (b) Waits for the director (D14/X3): whether a locked loopback login keeps a viewer socket that counts for D14.
+  Options under decision: a count-only socket (lock state only) or the full read-only streams for the same login.
+  Do not implement until the decision is recorded here.
+- (c) Restricting loopback origins outside dev (`--dev-origin` or an allow-list): backlog, low priority; the
+  HttpOnly SameSite=Strict cookie already blocks a foreign localhost page.
