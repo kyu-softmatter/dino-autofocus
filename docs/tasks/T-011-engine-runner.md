@@ -213,3 +213,20 @@ T-002-1 병합 뒤 이 과제가 `engine/events.py` 수정도 맡는다 (소유 
   op turned on and leaves a light set by `light_set` alone. `error`, `abort`, `lights_off`, `shutdown`, D14 auto-abort and
   closing the experiment session turn everything off (PLAN rule 5, aa32fcf). Record which rule applied. Test: `light_set` then
   `status` keeps the light on; `light_set` then `abort` turns it off.
+
+## T-011b follow-up (after the caf33c7 merge)
+
+- DeviceControlSeat catches only PermissionError, so any other exception from DeviceControl.check leaks out of
+  submit. Catch every exception there and refuse (fail closed) with the reason recorded.
+- Bench check: refuse an op that calls approach() without a clearance callback when backend.info().bench is True
+  (T-033 field).
+- Note for mm-real: the exit-path light payload makes about 9 read_property calls; measure the time on mm-demo and keep
+  it under one second, or batch the reads.
+- Review: AF 검토보조1. Needed before the T-036 lock can be lifted.
+- Also in T-011b (from T-029): cache the BackendInfo read at start() and expose it as
+  `snapshot()["backend_info"]` (including `stage_limits` and `bench`), so `plan()` can compute T-029's escape
+  without touching hardware.
+
+## T-011c (from T-031, small)
+
+- OpContext gets a public `record_dir` (ops read `ctx._op.record.dir` today). Owner AF 실행15, review AF 검토보조1.

@@ -131,7 +131,7 @@ OBJECTIVES: tuple[Objective, ...] = (
                ("label", "parfocal_um")),
     _objective(1, "10x", "2-Plan Apo LmbdD 10x", 10, 0.45, 1.0, 4000.0),
     _objective(2, "20x", "3-Plan Apo LmbdD 20x", 20.0785, 0.8, 1.0, 800.0),
-    _objective(3, "40x-Water", "4-Apo LmbdS 40xC WI", 40, 1.25, 1.333, 160.0),
+    _objective(3, "40x-WI", "4-Apo LmbdS 40xC WI", 40, 1.25, 1.333, 160.0),
     _objective(4, "60x-Oil", "5-Plan Apo LmbdD 60x Oil", 60, 1.42, 1.518, 150.0),
     _objective(5, "100x-Oil", "6-Plan Apo LmbdD0.13 100x Oil", 100, 1.45, 1.518, 130.0,
                ("label", "parfocal_um")),

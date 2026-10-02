@@ -102,3 +102,11 @@
 - Add `useClient().post(path, body)` with the same error handling as `command`: 403 → read-only rule,
   401/423 → refresh auth. Areas use it for their own routes (console submit, D16 map writes, sessions
   open/close/continue, sample "Open folder", auth). Engine commands still go through `command` (POST /api/commands).
+
+## Stage 4: read-only only for remote refusals (must merge before any screen router)
+
+- The client sets the global read-only state only for a 403 marked `remote_view` (T-009b). Any other 403 is returned
+  to the caller as the action's reason and changes no global state. Applies to `command` and `post`. Tests for both.
+- Also in stage 4 (from T-014): Shell.test.tsx asserts "Prompt box: not implemented yet", which fails once
+  `app/assistant/index.tsx` exists. Assert on the Prompt region only (or render the placeholder through
+  `assistantLoaderFrom({})`), and render shell tests inside a ClientProvider. T-014 merges after stage 4.
