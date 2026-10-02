@@ -118,5 +118,5 @@ Branch `exec1/T-027b-approach-ceiling` from main's hash. Owned paths as above pl
     candidates with `history`; anything that means "active flags" filters `retired`.
 - Owned paths for this change: `records/events.py` (fold only; tell AF 실행2, the records owner) plus the T-027
   paths. Tests: remove then list keeps a retired flag; confirm then reject keeps both in history with by/at.
-- After merge (b602da5, AF 검토): `flag_remove` on an unknown `flag_id` makes a retired stub (documented here and in
-  the fold docstring). Consumers use `active_flags()` / `open_candidates()` for what is in play (T-032 stage 2, T-102).
+- After merge (b602da5, AF 검토): `flag_remove` on an unknown `flag_id` makes a retired stub (before: a no-op).
+  The fold docstring does not say so yet: add one line whenever `records/events.py` is next touched. Consumers use `active_flags()` / `open_candidates()` for what is in play (T-032 stage 2, T-102).
