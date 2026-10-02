@@ -20,16 +20,28 @@ const LABEL: Record<Verdict, string> = {
 };
 
 /**
- * A model verdict, tagged "model". Anything outside the five words is shown as
- * "Unsure" (and marked invalid) rather than passed through.
+ * Where a verdict came from, in the grade vocabulary (measured / computed / model):
+ * "computed" is a classical result from code (e.g. the 100x focus sweep), "model"
+ * is a model's output (DINO head, Claude). The shell owns these words.
  */
-export function FocusVerdict({ verdict }: { verdict: unknown }) {
+export const VERDICT_SOURCES = ["computed", "model"] as const;
+export type VerdictSource = (typeof VERDICT_SOURCES)[number];
+
+/**
+ * A verdict, tagged with its source. `source` is required so no screen can show a
+ * model's verdict untagged. Anything outside the five words is shown as "Unsure"
+ * (and marked invalid) rather than passed through.
+ */
+export function FocusVerdict({ verdict, source }: { verdict: unknown; source: VerdictSource }) {
   const ok = isVerdict(verdict);
   const v: Verdict = ok ? verdict : "unsure";
+  // an unexpected source string (from untyped data) is shown as the weaker grade
+  const src: VerdictSource = source === "computed" ? "computed" : "model";
   return (
-    <span className={`verdict verdict-${v}`} data-verdict={v} data-invalid={ok ? undefined : "true"}
+    <span className={`verdict verdict-${v}`} data-verdict={v} data-source={src}
+          data-invalid={ok ? undefined : "true"}
           title={ok ? undefined : `not a verdict word: ${String(verdict)}`}>
-      {LABEL[v]} <span className="grade">model</span>
+      {LABEL[v]} <span className="grade">{src}</span>
     </span>
   );
 }
