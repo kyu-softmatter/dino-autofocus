@@ -27,6 +27,7 @@ import threading
 from collections.abc import AsyncIterator, Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.openapi.utils import get_openapi
@@ -34,6 +35,7 @@ from pydantic.json_schema import models_json_schema
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..agents import AgentStore, MockStore
+from ..engine.operations import sample_ops  # registers the sample operations (T-027)
 from . import static, ws
 from .api import (
     MAP_WRITE_OPS,
@@ -43,6 +45,7 @@ from .api import (
     AuthSeat,
     Engine,
     Refusal,
+    SessionSeat,
     command_refusal,
     command_why,
     include_area_routers,
@@ -136,6 +139,14 @@ def _http_refusal(request: Request) -> Refusal | None:
     return command_refusal(request)  # any other write: loopback, logged in, unlocked
 
 
+def install_sample_seat(engine: EngineAPI, records: Any, samples_root: Path | None,
+                        sessions: SessionSeat) -> None:
+    """The one seam between the server and the sample operations (T-027)."""
+    seat = sample_ops.SampleSeat(records, Path(samples_root or sample_ops.SAMPLES_ROOT),
+                                 sessions.session_for)
+    sample_ops.install_sample_seat(engine, seat)
+
+
 def _package_version() -> str:
     try:
         return version("dino-autofocus")
@@ -148,6 +159,8 @@ def create_app(
     *,
     agent_store: AgentStore | None = None,
     auth: AuthSeat | None = None,
+    records: Any = None,
+    samples_root: Path | None = None,
     remote_view: bool = False,
     remote_abort: bool = True,
     allowed_hosts: Sequence[str] = (),
@@ -156,6 +169,9 @@ def create_app(
 ) -> FastAPI:
     """`agent_store` defaults to a `MockStore` (dev); `auth` to an `AuthSeat` with no accounts
     in a temporary folder (nobody can log in; the launcher passes `AuthSeat.from_config()`).
+    `records` (a T-019 RecordsStore) installs the engine's sample seat (T-027): the sample
+    operations write through the server's one open ExperimentSession (`app.state.sessions`,
+    set by the sessions router). Without it the sample operations refuse.
     `allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
     launcher passes this PC's host names and addresses."""
     stopper = EngineStopper(engine)
@@ -169,6 +185,9 @@ def create_app(
     app.state.engine = engine
     app.state.agent_store = agent_store if agent_store is not None else MockStore()
     app.state.auth = auth if auth is not None else AuthSeat.throwaway()
+    app.state.sessions = SessionSeat()
+    if records is not None:
+        install_sample_seat(engine, records, samples_root, app.state.sessions)
     app.state.remote_view = remote_view
     app.state.remote_abort = remote_abort
     app.state.stop_engine = stopper

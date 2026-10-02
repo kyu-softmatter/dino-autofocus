@@ -7,6 +7,7 @@ tag `<area>`; this file is not edited per area. Modules whose names start with `
 
 Dependencies for handlers (`Annotated`, so `def handler(eng: Engine, me: Login): ...`):
 - `Engine`: the engine. `AgentStoreDep`: the agent store (F1). `Auth`: the `AuthSeat`.
+- `Sessions`: the `SessionSeat` holding the open ExperimentSession (T-019, T-106).
 - `Login`: who is asking (`LoginState`: login token or None, `LoginInfo` or None, `local`).
 - `IsLocal`: whether the request comes from the microscope PC itself (loopback socket).
 - `LocalOnly`: refuse unless the request may write from here (loopback, a live unlocked
@@ -159,6 +160,32 @@ class AuthSeat:
         return self.grant_for(info) is not None
 
 
+class SessionSeat:
+    """The server's open ExperimentSession (T-019), one object for every writer so they share
+    its seq counter. The sessions router (T-106) calls `set` on open / continue and `clear`
+    on close (and tells the engine through `set_experiment_session`); the engine's sample
+    seat reads it through `session_for`."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.current: Any = None
+
+    def set(self, session: Any) -> None:
+        with self._lock:
+            self.current = session
+
+    def clear(self) -> None:
+        with self._lock:
+            self.current = None
+
+    def session_for(self, session_id: str | None) -> Any:
+        with self._lock:
+            cur = self.current
+        if cur is None or session_id is None or cur.info.session_id != session_id:
+            return None
+        return cur
+
+
 @dataclass(frozen=True)
 class LoginState:
     token: str | None
@@ -275,6 +302,10 @@ def get_auth(request: Request) -> AuthSeat:
     return request.app.state.auth
 
 
+def get_sessions(request: Request) -> SessionSeat:
+    return request.app.state.sessions
+
+
 def local_only(request: Request) -> None:
     if why := command_refusal(request):
         raise why.http()
@@ -283,6 +314,7 @@ def local_only(request: Request) -> None:
 Engine = Annotated[EngineAPI, Depends(get_engine)]
 AgentStoreDep = Annotated[AgentStore, Depends(get_agent_store)]
 Auth = Annotated[AuthSeat, Depends(get_auth)]
+Sessions = Annotated[SessionSeat, Depends(get_sessions)]
 Login = Annotated[LoginState, Depends(login_state)]
 IsLocal = Annotated[bool, Depends(is_local)]
 LocalOnly = Depends(local_only)  # router- or route-level: dependencies=[LocalOnly]
