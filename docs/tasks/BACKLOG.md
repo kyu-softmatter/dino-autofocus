@@ -11,6 +11,8 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 ### In flight at the freeze (finishes on its own; check `git branch --no-merged main`)
 
 - Merged since the freeze (31565db): T-009g, schema regen 3, T-015e, T-012-6 (gsd; run `uv sync`).
+- Merged (738d507): T-013c, T-105 login, T-106 sessions, T-010-12. Last batch (9) in AF 검토's run: T-032 stage 2,
+  T-009i/j, T-010-9.
 - Server: T-009i real runner at start-up (mock default, separate mock records root, records + committer wired) and
   T-009j replay start-up + op records into the open session (stack head a1753de, records-root fix in review).
 - Web: T-010-9 (401 code, locked = stale, WsLock types, `--dev-origin`; merge main after regen 3), T-010-12
