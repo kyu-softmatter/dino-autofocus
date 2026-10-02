@@ -95,7 +95,7 @@ UI text is in English. Remote viewers and viewers can read everything and change
 | G6 | `reflected` comes from the mock librarian's `librarian/reflected.jsonl`. The real librarian's ledger format is decided at integration | Show `reflected` as true, false or unknown (null when no ledger exists) | integration (PLAN 10절) |
 | G7 | Which `hardware_profile.json` to hash at open (F2.1 file path) | `profile_path` from T-011's `snapshot()["hardware"]` block | T-011 (answered) |
 | G8 | The logged-in user id and name | Use T-105's auth dependency. Until it merges, tests use a fake user | T-105 (answered) |
-| G9 | Where the server reads the current sample | The `sample` block of T-011's `snapshot()` (set by `sample_open` / `sample_new`, T-027) | T-011 / T-027 |
+| G9 | Where the server reads the current sample | `snapshot()["sample"] = {sample_id, reserved, session_id}` (set by `sample_open` / `sample_new`, T-027). Sample state shown on screens comes from `engine/sample.py`'s named view over the generic `records.events.fold()`, read through the server; `records/` gets no sample-specific fields | T-011 / T-027 (answered) |
 
 ## 6. Stage B tests (outline)
 
