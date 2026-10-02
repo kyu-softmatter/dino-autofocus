@@ -3,8 +3,10 @@
 > **경고 (2026-10-01): 실제 장비에서는 아직 아무것도 움직이지 않는다.** 실제 장비 백엔드(mm-real)는
 > main 에 있지만, 벤치에서 Z 접근 때 간격을 확인하는 장치(T-027 가드, T-011 벤치 검사)가 아직 main 에 없다.
 > 둘 다 병합될 때까지 현미경 PC 에서는 **읽기 전용**으로만 쓴다. 상태 보기, 카메라 프레임, 광원 켜기/끄기(D15)
-> 까지만 하고, 재물대·Z·대물렌즈를 움직이는 작업은 돌리지 않는다. 코드도 그 사이 동작 명령을 거부하게 잠근다.
-> 풀리면 총괄 세션이 이 경고를 지운다.
+> 까지만 하고, 재물대·Z·대물렌즈를 움직이는 작업은 돌리지 않는다. 새 앱의 실제 장비 백엔드는 코드로도 잠겨 있다
+> (T-036, main 2c61b7b: `BENCH_MOTION = "LOCKED"`). **기존 `scripts/*` (scan_4x, focus_100x, change_objective 등) 는
+> 이 잠금 밖이다.** 9월 30일처럼 그 스크립트를 쓰는 것은 사용자의 판단이고, 쓸 때도 아래 시작 프리셋 확인을 먼저 한다.
+> 잠금은 T-027 과 T-011b 가 병합되고 매니저와 총괄이 확인한 뒤 풀고, 그때 총괄 세션이 이 경고를 지운다.
 
 작성: 총괄 세션. 개발 데스크톱에서는 답할 수 없고, 현미경 PC 에서 읽거나 한 번 돌려 봐야 답이 나오는
 항목을 한곳에 모았다. 답이 나오면 이 파일에 적고 총괄 세션에 알린다. 그때까지 코드는 아래의
@@ -73,11 +75,18 @@
 
 | 질문 | 지금 상태 | 확인 방법 |
 |---|---|---|
+| **설정 파일의 시작 프리셋이 움직이는 장치를 건드리지 않는가** (T-036b) | 설정을 불러오면 Micro-Manager 가 `System` 그룹의 `Startup` 프리셋을 자동으로 적용한다. 그 안에 ZDrive, XYStage, Nosepiece, PFS 값이 있으면 **열기만 해도 장비가 움직인다.** 9월 30일 기록에는 `LappMainBranch1 State 1` (광경로) 만 적혀 있고 전체는 확인 전이다. 새 앱(T-036b)은 열기 전에 검사해 거부하지만, 기존 `scripts/*` 는 같은 파일을 검사 없이 연다 | 아래 명령으로 시작 프리셋 줄만 뽑아 본다. 움직이는 장치 이름이 하나라도 있으면 그 설정으로 아무것도 열지 말고 총괄 세션에 알린다 |
 | 벤치 설정 파일 경로와 Micro-Manager 설치 폴더 | 기존 스크립트(`scripts/mm_grab.py`)는 `C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg` 를 쓴다. 설치 폴더는 pymmcore-plus 가 찾는다 | 파일이 있는지, `uv run python -c "from pymmcore_plus import find_micromanager; print(find_micromanager())"` |
 | Core 의 AutoFocus 장치가 PFS 인가 | 확인 전 | 설정을 불러온 뒤 Core 의 AutoFocus 역할 읽기 |
 | `enableContinuousFocus(False)` 뒤에 꺼짐으로 읽히는가 | 확인 전 | 끄고 `isContinuousFocusEnabled()` 읽기 |
 | XY 이동 대기 시간 30 s 가 가장 긴 이동에 충분한가 | `DEFAULT_XY_TIMEOUT_S = 30` 임시값 | 가장 먼 두 점 사이 이동 시간 재기 |
 | 재물대 이동 한계 (X, Y) | 실제 장비 백엔드는 지금 "모름" 을 돌려준다. 그래서 **실제 장비에서는 F5 Y 이탈이 거부된다** | 재물대 한계 값 읽기 또는 측정 (Q12 와 함께) |
+
+시작 프리셋 확인 명령 (현미경 PC 의 PowerShell, 읽기만 한다):
+
+```powershell
+Select-String -Path "C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg" -Pattern "^ConfigGroup,System,Startup"
+```
 
 ### 설치 상태 (T-020)
 
