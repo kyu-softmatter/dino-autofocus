@@ -52,11 +52,13 @@ Who: the user, before any motion. Nothing moves in this step.
    ```
 
 What you should see:
-- `open()` returns without `UnsafeConfig`. `UnsafeConfig` means a preset or a post-init line would set
-  ZDrive, XYStage, Nosepiece or PFS, or the config's Core role labels differ from the backend's
-  `DeviceNames`. If you see it, stop and tell the director's session. Do not edit the check to get past.
-- The checklist's `check_load_settings` line skips the role-label check. The `open()` above runs it, so
-  only the `open()` result counts as "passed".
+- The checklist's `check_load_settings` line prints `OK`. It passes `BENCH_DEVICES`, so it also refuses a
+  Core role mismatch (T-036d). This is the pre-check: it reads the file without loading Micro-Manager.
+- `open()` returns without `UnsafeConfig`. This is the binding check: only a clean `open()` counts as
+  "passed". `UnsafeConfig` means one of two things:
+  - a preset or a post-init line would set ZDrive, XYStage, Nosepiece or PFS;
+  - the config's Core role labels differ from the backend's `DeviceNames`.
+  If you see it, stop and tell the director's session. Do not edit the check to get past.
 - `notes["bench_motion"]` reads `LOCKED` before the unlock commit and `UNLOCKED` after it.
 - `notes["stage_limits"]` reads "not read: user check needed".
 
@@ -73,26 +75,54 @@ Code: `mm_real.check_load_settings`, run in `open()` before anything is loaded.
 
 Who: the user, watching the stand, with the Abort button and the hardware stop within reach.
 
-Only after the unlock commit, and only with the 4x (`1-Plan Apo LmbdD20 4x`, nosepiece State 0) in place.
+Only after the unlock commit. The Z retract (2a or 2b) is safe on any lens. The XY moves (2c) need the 4x
+(`1-Plan Apo LmbdD20 4x`, nosepiece State 0) in place.
 
 Before you start, read where the stand is. The hardware screen "지금 상태 (Step 0)" or a `status` read
 shows the lens, Z and PFS, and the status bar shows the position.
 - PFS must read off. Software never enables it.
 
-**By hand at the stand (the user):**
+### 2a. The first engine motion: `z_retract` (blocked until T-039 merges)
+
+The first move the app makes on the stand is `z_retract`. It moves Z to `z_safe` (0 um, *provisional*),
+away from the sample: the safest direction. It tests the lock lift, the readback and the records before
+any XY move.
+
+1. Start `z_retract` (no arguments) from the app. Rule 12 applies: a local operator with the control
+   grant and an open experiment session.
+2. The status bar and the hardware screen show ZDrive 0.0 (+- 0.25, *provisional*).
+3. In the log:
+   - a `motion` event with `sent: true`;
+   - a `finished` event whose summary has the commanded Z, the read Z and `verified: true`.
+4. If Z already reads 0, the op finishes with no move and records the readback.
+
+A read Z off by more than the tolerance fails the op, naming the commanded and read values. Stop there
+and tell the director's session.
+
+If `z_retract` is refused, check the refusal before anything else:
+- "bench motion locked" means the unlock commit is not on main;
+- no control grant or no open session is rule 12.
+
+Enforced by: T-039 (the op, through `FocusAxis.retract()`), T-036 (the lock), T-011 (rule 12).
+
+### 2b. The fallback, by hand at the stand (the user)
+
+Use this until T-039 merges, or if `z_retract` is refused for a reason you cannot fix:
 1. Retract Z to 0 with the Ti2 controller. The hardware screen must then show ZDrive 0.0 (+- 0.25).
 2. If the 4x is not in place, turn the nosepiece to the 4x by hand. The hardware screen must then show
    nosepiece State 0 and `1-Plan Apo LmbdD20 4x`. The 2026-09-30 session ended on the **100x Oil** with
    ZDrive at 498 um; if the stand is still like that, clean the oil off the 100x after turning.
 
-The app's objective change cannot do this on the stand yet (see "blocked" below), so these two are not
-app moves.
+The turn to 4x is always by hand for now: the app's objective change cannot do it on the stand yet (see
+"blocked" below).
+
+### 2c. Small XY moves
 
 **Through the app (engine XY moves with `goto_xy`), with Z at 0. All values are stage um:**
 
 | # | Move | Expected readback | Rule that applies |
 |---|---|---|---|
-| a | (Z is at 0 from the hand retract) | ZDrive 0.0 +- 0.25 | `goto_xy` retracts Z first for a large move; here it is already retracted |
+| a | (Z is at 0 from 2a or 2b) | ZDrive 0.0 +- 0.25 | `goto_xy` retracts Z first for a large move; here it is already retracted |
 | b | XY +100 in X from where it is | X +100 +- 5, Y unchanged | inside the XY box; short move |
 | c | XY -100 in X (back) | the start XY +- 5 | |
 | d | XY +100 in Y, then -100 in Y | the start XY +- 5 | |
@@ -108,10 +138,10 @@ the backend cannot catch a move past the travel.
 
 **Blocked until T-032 stage 2 merges.** `goto_xy` comes with T-032 stage 2 (sample map). Per the spec it
 retracts Z first when a move is large. Until it merges, no registered operation moves XY on request; do
-the app moves above only after that.
+the XY moves above only after that, and only after 2a has passed once on the stand.
 
 Why the existing operations cannot stand in:
-- `objective_change`, the one registered operation that retracts Z, always climbs back to 2800 afterwards.
+- `objective_change` retracts Z but always climbs back to 2800 afterwards.
   On `mm-real` the runner refuses that climb in preflight until a bench clearance check exists (T-027b,
   T-011b).
 - `scan_4x` is refused for the same reason.
