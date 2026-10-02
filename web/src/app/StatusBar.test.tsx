@@ -9,7 +9,12 @@ import { ShutdownNoticeView } from "./StatusBar";
 
 const SNAPSHOT = {
   positions: { x_um: 8026.0, y_um: 571.6, z_um: 3048.7, errors: {} },
-  lights: { state: { DiaLamp: "0", Aura: "0" }, verified: true, records: [] },
+  lights: {
+    dialamp: { state: "off", intensity: 608 },
+    aura: { state: "off", lines: { GREEN: null } },
+    verified: true,
+    records: [],
+  },
   running: [],
   last_shutdown_lights: { t: 1759300000, all_off: true },
 };
@@ -33,19 +38,14 @@ describe("status readers", () => {
     expect(lightIsOn(undefined)).toBeNull();
   });
 
-  it("reads both the runner and the ui-spec light shapes", () => {
-    expect(readLights({ state: { DiaLamp: "1" }, verified: false })).toMatchObject({
-      lights: [{ name: "DiaLamp", on: true }],
-      verified: false,
-    });
-    expect(readLights({ dialamp: "off", aura: { state: "1" } })?.lights.map((l) => [l.name, l.on])).toEqual([
-      ["DiaLamp", false],
-      ["Aura", true],
-    ]);
+  it("reads a light as unknown unless its state is on or off, and skips a missing lamp", () => {
+    const v = readLights({ dialamp: { state: "unknown" }, verified: false });
+    expect(v).toMatchObject({ lights: [{ name: "DiaLamp", on: null }], verified: false });
+    expect(v?.lights).toHaveLength(1);
     expect(readLights(null)).toBeNull();
   });
 
-  it("reads the agreed T-011 shape {dialamp: {state, intensity}, aura: {state, lines}}", () => {
+  it("reads the one light shape {dialamp: {state, intensity}, aura: {state, lines}}", () => {
     const v = readLights({
       dialamp: { state: "0", intensity: 608 },
       aura: { state: "1", lines: { GREEN: 1 } },
@@ -87,7 +87,11 @@ describe("StatusBar", () => {
     act(() => {
       sockets[0].open();
       sockets[0].event("position", { x_um: 1, y_um: 2, z_um: 2989.42 });
-      sockets[0].event("light_changed", { state: { DiaLamp: "1", Aura: "0" }, verified: true });
+      sockets[0].event("light_changed", {
+        dialamp: { state: "on", intensity: 608 },
+        aura: { state: "off", lines: {} },
+        verified: true,
+      });
     });
     expect(screen.getByTestId("sb-position").textContent).toContain("Z 2989.42 µm");
     expect(screen.getByTestId("sb-lights").textContent).toContain("DiaLamp ON");

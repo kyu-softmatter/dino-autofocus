@@ -288,3 +288,58 @@ def analyse_sweep(z_um: Sequence[float], scores: Sequence[float],
     smax, ends = float(ks.max()), max(float(ks[o][0]), float(ks[o][-1]))
     out.prominence = (smax - ends) / max(abs(smax), 1e-12)
     return out
+
+
+# -- helpers for the scan_4x and focus_100x operations (T-031)
+
+BLOCKS = 6  # scripts/scan_4x.py: 6 x 6 blocks per tile, one focus z per block
+OIL_WARNING = "check immersion oil"
+#: A local maximum counts as a separate peak when it stands this fraction of the curve's
+#: (max - min) above the dip between it and any higher one. On 2026-09-30 (focus100x
+#: -202226) too little oil gave a false rise near the top of the span beside the real peak.
+DOUBLE_PEAK_PROMINENCE = 0.2
+
+
+def block_scores(img: np.ndarray, n: int = BLOCKS) -> list[float]:
+    """``vollath4`` of each block of an ``n`` x ``n`` grid, row-major (``scripts/scan_4x.py``).
+    Pixels beyond a whole number of blocks on the right and bottom are not used."""
+    if img.ndim != 2 or n < 1 or img.shape[0] < 3 * n or img.shape[1] < 3 * n:
+        raise ValueError(f"need a 2-D frame of at least {3 * n} px a side for {n} x {n} blocks,"
+                         f" got {img.shape}")
+    h, w = img.shape[0] // n, img.shape[1] // n
+    return [vollath4(img[i * h:(i + 1) * h, j * w:(j + 1) * w])
+            for i in range(n) for j in range(n)]
+
+
+def parabola_peak(z: Sequence[float], s: Sequence[float]) -> float | None:
+    """``parabola_vertex``, but None when the maximum sits at either end of the span
+    (``scripts/scan_4x.py parabola_peak``): such a curve has no peak inside it."""
+    return None if peak_edge(z, s) != "interior" else parabola_vertex(z, s)
+
+
+def separated_peaks(z: Sequence[float], s: Sequence[float],
+                    prominence: float = DOUBLE_PEAK_PROMINENCE) -> list[float]:
+    """z of each separate local maximum, highest score first.
+
+    A maximum counts when it rises at least ``prominence`` x (max - min) of the curve above
+    the deepest dip that separates it from a higher maximum (topographic prominence). The
+    ends of the span count too, so a rise at the top end beside a real peak is a second
+    peak. A single peak, a monotonic curve or a flat curve gives one entry or none.
+    """
+    from scipy.signal import find_peaks
+
+    zz, ss = _sorted_curve(z, s)
+    span = float(ss.max() - ss.min())
+    if len(ss) < 3 or span <= 0 or not np.isfinite(span):
+        return []
+    padded = np.concatenate([[ss.min() - span], ss, [ss.min() - span]])
+    idx, _ = find_peaks(padded, prominence=prominence * span)
+    peaks = idx - 1
+    order = np.argsort(-ss[peaks], kind="stable")
+    return [float(zz[peaks[k]]) for k in order]
+
+
+def double_peak(z: Sequence[float], s: Sequence[float],
+                prominence: float = DOUBLE_PEAK_PROMINENCE) -> bool:
+    """Two or more separate maxima on the curve: warn with ``OIL_WARNING`` (classical)."""
+    return len(separated_peaks(z, s, prominence)) >= 2

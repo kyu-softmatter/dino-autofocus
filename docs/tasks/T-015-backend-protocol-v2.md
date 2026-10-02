@@ -88,3 +88,15 @@ without a token; `lamp_off`, `aura_off`, `all_off` take none.
 - `is_bench`: `kind in SIMULATED_KINDS` sits outside the try, so an unhashable kind raises TypeError instead of
   returning True. Move the comparison into the try (any error → True, fail safe) and add that test case.
 - Runs in parallel with the two is_bench follow-ups (they call `is_bench`, not its internals).
+
+## T-015d (AF 실행12; review AF 검토보조2) — test helpers out of conftest
+
+- Since T-035 added `tests/e2e/conftest.py`, two modules are named `conftest`, and `from conftest import FakeBackend`
+  resolves by load order: `pytest tests/engine tests/e2e` fails collection with 12 errors (AF 검토, d544ea9). The full
+  run passes by luck.
+- Move `FakeBackend` and the contract helpers into a uniquely named helper (e.g. `tests/engine/engine_fakes.py`;
+  e2e helpers likewise into `tests/e2e/e2e_helpers.py`). conftest.py keeps fixtures only, plus a re-export for one
+  transition so in-flight branches still pass. Update every `from conftest import` / `import conftest` in tests/;
+  this task may edit those import lines in other tasks' test files, imports only.
+- Done when `uv run pytest`, `pytest tests/engine tests/e2e`, `pytest tests/e2e tests/engine` and each directory
+  alone all collect and pass, and `git grep -nE "(from|import) conftest" -- tests` is empty apart from the re-export.

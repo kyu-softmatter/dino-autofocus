@@ -16,11 +16,12 @@ Steps (F5), each with a `progress` event `step=1..7`; steps 2-6 carry
 
 1. record XY, Z, objective; switch the lights off (readback)
 2. PFS off -> Z retract to 0 um -> PFS must read Out of Range
-3. step out in +Y by `guards.ESCAPE_DY_UM` (only with Z retracted; `step_out_target`)
+3. step out in +Y by `guards.ESCAPE_DY_UM` (only with Z retracted; `step_out_target`);
+   sample event `objective_stepped_out`
 4. rotate, read the label back; write the sample event `objective_changed`
    `{from_key, to_key, label}` to the open experiment session
 5. the operator loads oil / water and presses "Loading done" (`manual_step`)
-6. XY back to step 1's position (Z still retracted)
+6. XY back to step 1's position (Z still retracted); sample event `objective_stepped_back`
 7. Z from 0 um: one move to 2800 um, then steps of at most the lens's `approach_step_um`, with
    the readback and this operation's clearance check after every step (`FocusAxis.approach`)
 
@@ -62,12 +63,11 @@ from ..guards import (
     step_out_target,
 )
 from ..runner import Operation, register_operation
+from ..sample import OBJECTIVE_CHANGED, STEPPED_BACK, STEPPED_OUT
 
 NAME = "objective_change"
 N_STEPS = 7
 LOAD_KEY = "load_immersion"
-#: sample event after a verified rotation; engine/sample.py gets the constant in T-027b
-OBJECTIVE_CHANGED = "objective_changed"
 #: nosepiece position -> lens key, from the `configs/ti2_*.yaml` headers ("nosepiece position N").
 #: Only for `plan()`, which has no hardware; preflight checks it against the backend's labels.
 NOSEPIECE_KEYS = {0: "4x", 1: "10x", 2: "20x", 3: "40x-WI", 4: "60x-Oil", 5: "100x-Oil"}
@@ -386,6 +386,10 @@ class ObjectiveChange(Operation):
                                   objective_before=label0, step_out=basis)
                 xy = self._xy_axis(return_xy, (x_t, y_t))
                 read = xy.goto(x_t, y_t)
+                # sample record: the stage is away (read_sample().awaiting_return)
+                summary["stepped_out"] = self._sample_event(
+                    STEPPED_OUT, return_xy=return_xy, step_out_xy=[x_t, y_t],
+                    objective=registry_key(label0))
                 self._progress(3, "stepped out", axis="xy", commanded=[x_t, y_t],
                                readback=list(read), pfs_in_range=b.pfs().in_range,
                                label_read=b.nosepiece(), summary=summary, basis=basis)
@@ -434,6 +438,9 @@ class ObjectiveChange(Operation):
         self._progress(6, "returned", axis="xy", commanded=return_xy, readback=list(read),
                        pfs_in_range=b.pfs().in_range, label_read=b.nosepiece(), summary=summary)
         ctx.set_end_state(state="returned")
+        if escape or self.mode == "resume":  # closes the step-out in the sample record
+            summary["stepped_back"] = self._sample_event(
+                STEPPED_BACK, return_xy=return_xy, xy_um=list(read))
         ctx.check()
         # 7. stepwise approach
         label = b.nosepiece()
