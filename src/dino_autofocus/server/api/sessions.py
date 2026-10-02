@@ -6,9 +6,10 @@ CSRF origin check; this module adds only the sessions area's own rules (one open
 sample per session, the session's owner, closed sessions), as plain refusals that are never
 `remote_view`.
 
-The records store is the T-019 `RecordsStore` the server was created with. Commits go to one
-`AutoCommitter` per app (`app.state.committer` when the app provides one, T-009e), so a handler
-never waits on git; the code version is read once per app (G4). The open session object lives
+The records store is `app.state.records`, the T-019 `RecordsStore` the server was created with.
+Commits go to the app's one `AutoCommitter`, `app.state.committer` (T-009e: the launcher passes
+it, the lifespan flushes and stops it), so a handler never waits on git; without one, a
+session commits in the request thread. The code version is read once per app (G4). The open session object lives
 in `app.state.sessions` (`SessionSeat`), so the engine's sample operations write through the
 same object and share its seq counter; the engine hears about every change through
 `set_experiment_session`.
@@ -105,30 +106,16 @@ _app_lock = threading.Lock()
 
 
 def _store(request: Request) -> Any:
-    """The T-019 store `create_app(records=...)` installed (on the engine's sample seat)."""
-    app = request.app
-    store = getattr(app.state, "records", None)
-    if store is None:
-        seat = getattr(app.state.engine, "sample_seat", None)
-        store = getattr(seat, "store", None)
+    """`app.state.records`, the T-019 store `create_app(records=...)` was given."""
+    store = getattr(request.app.state, "records", None)
     if store is None:
         raise Refusal(503, "no_records", "no records store is configured on this server").http()
     return store
 
 
-def _committer(request: Request, store: Any) -> AutoCommitter:
-    """The server's one commit worker. `create_app` puts it on `app.state.committer` (T-009e)
-    and flushes and stops it at shutdown; only without it does the router make its own, so
-    there is never a second commit thread on the same records repository (index.lock)."""
-    shared = getattr(request.app.state, "committer", None)
-    if shared is not None:
-        return shared
-    with _app_lock:
-        c = getattr(request.app.state, "records_committer", None)
-        if c is None or c.store is not store:
-            c = AutoCommitter(store)
-            request.app.state.records_committer = c
-        return c
+def _committer(request: Request) -> AutoCommitter | None:
+    """`app.state.committer` (T-009e), or None: then sessions commit in the request thread."""
+    return getattr(request.app.state, "committer", None)
 
 
 def _code(request: Request) -> Any:
@@ -235,7 +222,7 @@ def _open(request: Request, eng: Any, me: Any, seat: Any, store: Any, sample_id:
     try:
         s = ExperimentSession.open(store, me.info.user_id, sample_id, user_name=me.info.name,
                                    hardware_profile=_profile_path(eng), continues=continues,
-                                   code=_code(request), committer=_committer(request, store))
+                                   code=_code(request), committer=_committer(request))
     except ValueError as exc:
         raise Refusal(422, "bad_sample", str(exc)).http() from None
     seat.set(s)
@@ -303,7 +290,7 @@ def close_session(request: Request, session_id: str, eng: Engine, me: Login, sea
         raise Refusal(403, "not_owner",
                       f"Only {s.info.user_id} or an admin can close this session").http()
     if s.committer is None:
-        s.committer = _committer(request, store)
+        s.committer = _committer(request)
     try:
         s.close(note=body.note if body else "")
     except SessionClosedError:

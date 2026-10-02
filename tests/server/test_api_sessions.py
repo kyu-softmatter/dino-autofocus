@@ -223,9 +223,8 @@ def test_the_router_never_waits_on_git(client, tmp_path):
     gate = threading.Event()
     store = GatedStore(RecordsConfig(records_root=tmp_path / "git-records",
                                      data_root=tmp_path / "git-data"), gate)
-    c = client(records=store)
     committer = AutoCommitter(store)
-    c.app.state.records_committer = committer
+    c = client(records=store, committer=committer)  # create_app's committer (T-009e)
     try:
         r = c.post("/api/sessions")  # returns although every commit is blocked
         assert r.status_code == 201
@@ -240,15 +239,34 @@ def test_the_router_never_waits_on_git(client, tmp_path):
         committer.stop()
 
 
-def test_the_app_committer_is_used_when_there_is_one(client, store):
-    c = client()
+def test_sessions_commit_through_the_app_committer(client, store):
     shared = AutoCommitter(store)
-    c.app.state.committer = shared  # what create_app sets (T-009e)
+    c = client(committer=shared)
     try:
         sid = c.post("/api/sessions").json()["session_id"]
         assert c.app.state.sessions.session_for(sid).committer is shared
-        assert getattr(c.app.state, "records_committer", None) is None  # no second thread
         assert c.post(f"/api/sessions/{sid}/close").status_code == 200
         assert shared.flush(30) and not shared.failures
     finally:
         shared.stop()
+
+
+def test_without_an_app_committer_sessions_commit_inline(client):
+    c = client()  # create_app(committer=None)
+    sid = c.post("/api/sessions").json()["session_id"]
+    assert c.app.state.sessions.session_for(sid).committer is None
+    assert not hasattr(c.app.state, "records_committer")
+
+
+def test_a_session_closed_by_a_restart_can_be_continued(client, store):
+    from dino_autofocus.records import ExperimentSession
+
+    left = ExperimentSession.open(store, OPERATOR, SAMPLE, code=STUB_CODE)  # crash: never closed
+    eng = SessionEngine(sample=None)
+    with client(eng) as c:  # the lifespan closes it at start-up (T-009e)
+        d = c.get(f"/api/sessions/{left.session_id}").json()
+        assert d["status"] == "closed" and d["close_note"] == "interrupted: server restart"
+        assert c.get("/api/sessions/current").json() is None
+        r = c.post(f"/api/sessions/{left.session_id}/continue")
+        assert r.status_code == 201, r.text
+        assert r.json()["continues"] == left.session_id and r.json()["sample_id"] == SAMPLE
