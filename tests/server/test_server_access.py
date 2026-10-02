@@ -7,6 +7,8 @@ import json
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
+from dino_autofocus.server.schemas import SERVER_STAMPED
+
 
 def test_remote_viewer_may_abort_only(engine, make_client):
     c = make_client(engine, remote=True, remote_view=True)
@@ -15,7 +17,8 @@ def test_remote_viewer_may_abort_only(engine, make_client):
     for kind in ("start", "confirm", "lights_off"):
         r = c.post("/api/commands", json={"kind": kind, "op": "status"})
         assert r.status_code == 403
-        assert "abort only" in r.json()["detail"]
+        assert r.json()["detail"]["code"] == "remote_view"
+        assert "abort only" in r.json()["detail"]["message"]
     assert [x.kind for x in engine.commands] == ["abort"]
 
 
@@ -70,7 +73,8 @@ def test_map_writes_only_through_map_router(op, engine, make_client):
     c = make_client(engine)
     r = c.post("/api/commands", json={"kind": "start", "op": op})
     assert r.status_code == 403
-    assert "/api/map" in r.json()["detail"]
+    assert r.json()["detail"]["code"] == "map_route"
+    assert "/api/map" in r.json()["detail"]["message"]
     with c.websocket_connect("/ws/events") as ws:
         ws.send_text(json.dumps({"type": "command", "command": {"kind": "start", "op": op}}))
         assert json.loads(ws.receive_text())["status"] == 403
@@ -89,13 +93,23 @@ def test_login_routes_open_to_remote_viewers(engine, make_client):
     assert foreign.status_code == 403
 
 
-@pytest.mark.parametrize("field,value", [("remote", False), ("control_grant", "stolen"),
-                                         ("user_id", "admin@example.test"),
-                                         ("confirmed_by", "admin@example.test"),
-                                         ("origin", "assistant"), ("session_id", "s9")])
-def test_body_cannot_stamp_commands(field, value, engine, make_client):
+# a plausible forged value per stamped field; the test fails if SERVER_STAMPED gains a field
+# without one here
+FORGED = {"origin": "assistant", "user_id": "admin@example.test", "session_id": "s9",
+          "proposal_id": "p1", "conversation_id": "c1", "confirmed_by": "admin@example.test",
+          "remote": False, "control_grant": "stolen", "t": 0.0}
+
+
+def test_forged_values_cover_every_stamped_field():
+    assert set(FORGED) == set(SERVER_STAMPED)
+
+
+@pytest.mark.parametrize("field", SERVER_STAMPED)
+def test_body_cannot_stamp_commands(field, engine, make_client):
     """A remote viewer cannot clear `remote` (D13), and nobody can hand in a control grant,
-    an identity, a confirmation or a session: those are the server's (T-011, T-018)."""
+    an identity, a confirmation, a session or the assistant's provenance: those are the
+    server's (T-011, T-013, T-018)."""
+    value = FORGED[field]
     c = make_client(engine, remote=True, remote_view=True)
     r = c.post("/api/commands", json={"kind": "abort", "op_id": "a", field: value})
     assert r.status_code == 422

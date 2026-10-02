@@ -26,6 +26,7 @@ from typing import Any
 
 import numpy as np
 
+from .api import AuthSeat
 from .app import create_app
 from .schemas import Command, Event
 
@@ -47,7 +48,10 @@ class PlaceholderEngine:
         self._lock = threading.Lock()
         self._ticker: threading.Thread | None = None
         self._frame: tuple[np.ndarray, dict[str, Any]] | None = None
-        self._lights = {"aura": "off", "dia_lamp": "off"}
+        # the runner's one light shape (engine/runner.py `_light_payload`)
+        self._lights = {"dialamp": {"state": "off", "intensity": None},
+                        "aura": {"state": "off", "lines": {}}, "verified": True, "records": []}
+        self.local_viewers: int | None = None
         self._positions = {"x_um": 0.0, "y_um": 0.0, "z_um": 3000.0}
         self._shape = shape
         # a fresh noise field per frame costs more than the 10 Hz budget; cycle two
@@ -81,6 +85,15 @@ class PlaceholderEngine:
             self._emit("light_changed", **self._lights)
         return cmd.op_id
 
+    def check(self, ops: list[str] | None = None, context: dict | None = None) -> dict:
+        """Stops are always allowed; nothing else exists here."""
+        return {op: ({"allowed": True, "reason": None} if op in ("abort", "lights_off") else
+                     {"allowed": False, "reason": "placeholder engine: no operations"})
+                for op in (ops or [])}
+
+    def set_local_viewers(self, count: int) -> None:
+        self.local_viewers = count
+
     def subscribe(self, sink: Callable[[Event], None]) -> Callable[[], None]:
         with self._lock:
             self._sinks.append(sink)
@@ -101,7 +114,7 @@ class PlaceholderEngine:
 
     def snapshot(self) -> dict[str, Any]:
         return {"engine": "placeholder", "positions": dict(self._positions),
-                "lights": dict(self._lights), "running": None}
+                "lights": dict(self._lights), "owner": None, "running": [], "operations": []}
 
     def latest_frame(self) -> tuple[np.ndarray, dict[str, Any]] | None:
         return self._frame
@@ -196,6 +209,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--backend", choices=BACKENDS, default="placeholder",
                    help="only the placeholder engine exists until the runner (T-011) and the "
                         "mock backend land")
+    p.add_argument("--config-dir", type=Path, default=None,
+                   help="accounts and audit log folder (default: the local config folder, "
+                        "see auth/config.py)")
     p.add_argument("--web-dist", type=Path, default=None,
                    help="built web app to serve (default: <repo>/web/dist)")
     p.add_argument("--dump-openapi", metavar="PATH",
@@ -205,16 +221,18 @@ def main(argv: list[str] | None = None) -> int:
     remote_view = args.remote_view or os.environ.get(REMOTE_VIEW_ENV, "") == "1"
     engine, name = make_engine(args.backend)
     hosts = [*args.allow_host, *(this_pc_hosts() if remote_view else ())]
-    app = create_app(engine, remote_view=remote_view, remote_abort=not args.no_remote_abort,
-                     allowed_hosts=hosts, engine_name=name, web_dist=args.web_dist)
-
-    if args.dump_openapi:
+    if args.dump_openapi:  # no accounts needed to describe the API
+        app = create_app(engine, engine_name=name, web_dist=args.web_dist)
         text = json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n"
         if args.dump_openapi == "-":
             sys.stdout.write(text)
         else:
             Path(args.dump_openapi).write_text(text, encoding="utf-8")
         return 0
+
+    app = create_app(engine, auth=AuthSeat.from_config(args.config_dir),
+                     remote_view=remote_view, remote_abort=not args.no_remote_abort,
+                     allowed_hosts=hosts, engine_name=name, web_dist=args.web_dist)
 
     import uvicorn
 

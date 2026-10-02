@@ -1,42 +1,45 @@
 """What the server assumes about the engine: command/event shapes and the runner interface.
 
-Commands, events and their kind lists come from the engine (T-002, `engine/events.py`).
-`EngineAPI` and `FrameSource` are the server's own copy until the runner (T-011,
-`engine/runner.py`) defines them; then this module re-exports those instead.
+Commands, events and their kind lists come from the engine (T-002, `engine/events.py`), the
+runner's interface from `engine/runner.py` (T-011). The server needs a little more of the
+runner than `runner.EngineAPI` names, so `EngineAPI` here extends it with those methods
+(all of them `Runner` has).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 from ...engine.events import COMMAND_KINDS, EVENT_KINDS, ORIGINS, Command, Event
+from ...engine.runner import EngineAPI as RunnerAPI
 
 __all__ = [
     "COMMAND_KINDS", "EVENT_KINDS", "ORIGINS", "Command", "EngineAPI", "Event", "FrameSource",
 ]
 
 
-class EngineAPI(Protocol):
+class EngineAPI(RunnerAPI, Protocol):
     """The engine as the server sees it. The server decides nothing: it hands commands over
     and passes events on. Sinks may be called from any thread."""
 
-    def submit(self, cmd: Command) -> str: ...  # op_id; abort, confirm, lights_off too
+    def check(self, ops: list[str] | None = None, context: dict | None = None) -> dict:
+        """`{op: {allowed, reason}}` from the permission table and the engine state."""
+        ...
 
-    def subscribe(self, sink: Callable[[Event], None]) -> Callable[[], None]: ...  # unsubscribe
+    def set_local_viewers(self, count: int) -> None:
+        """How many loopback browser connections are open (D14)."""
+        ...
 
-    def snapshot(self) -> dict[str, Any]: ...  # positions, lights, running op; JSON-native
-
-    def shutdown(self, reason: str) -> None:
-        """Lights off with readback first, then abort, finish records, record `reason`
-        (T-011). Blocks until done."""
+    def shutdown(self, reason: str) -> Any:
+        """Lights off with readback first, then abort, finish records, record `reason`.
+        Blocks until done."""
         ...
 
 
 @runtime_checkable
 class FrameSource(Protocol):
     """Optional: an engine that can hand over its newest camera frame. The frame bridge reads
-    it when a `frame_ready` event arrives. Not part of the T-011 interface yet (raised with
-    the manager). `meta` is JSON-native (t, x_um, y_um, z_um, exposure_ms, bit_depth, ...)."""
+    it when a `frame_ready` event arrives; `Runner.latest_frame` is one (T-011). `meta` is
+    JSON-native (t, x_um, y_um, z_um, exposure_ms, bit_depth, frame_id, ...)."""
 
     def latest_frame(self) -> tuple[Any, dict[str, Any]] | None: ...  # (uint16 ndarray, meta)

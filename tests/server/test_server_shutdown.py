@@ -49,7 +49,8 @@ def test_failed_shutdown_still_exits_and_can_be_retried(engine, make_client):
     engine.fail_shutdown = True
     r = c.post("/api/shutdown", json={"reason": "launcher closing"})
     assert r.status_code == 500
-    assert "readback timed out" in r.json()["detail"]
+    assert r.json()["detail"]["code"] == "shutdown_failed"
+    assert "readback timed out" in r.json()["detail"]["message"]
     assert exits == [True]
     c.app.state.stop_engine.quietly("process exit")  # what the atexit hook does
     assert engine.shutdowns == ["process exit"]
@@ -112,4 +113,5 @@ def test_placeholder_shutdown_reports_lights_off():
     finally:
         unsubscribe()
     lights = [e for e in seen if e.kind == "light_changed"]
-    assert lights and lights[-1].data == {"aura": "off", "dia_lamp": "off"}
+    assert lights and lights[-1].data["dialamp"]["state"] == "off"
+    assert lights[-1].data["aura"]["state"] == "off"

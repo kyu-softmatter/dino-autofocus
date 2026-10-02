@@ -79,8 +79,18 @@ class Health(BaseModel):
     remote_abort: bool  # D13: a remote viewer may send abort, and nothing else
 
 
+class RefusalDetail(BaseModel):
+    """Why the server said no. `code` is also in the `X-DinoAF-Refusal` header. Codes:
+    login_required (401), locked (423), remote_view (403; the web client turns read-only
+    on this one only), foreign_origin, map_route, role (403), refused (400, the engine said
+    no), shutting_down (503), shutdown_failed (500)."""
+
+    code: str
+    message: str
+
+
 class ApiError(BaseModel):
-    detail: str
+    detail: RefusalDetail
 
 
 class ShutdownIn(BaseModel):
@@ -120,13 +130,15 @@ class WsAccepted(BaseModel):
 
 
 class WsError(BaseModel):
-    """`/ws/events`, server -> client: a refused or malformed message. `status` follows HTTP
-    (400 refused by the engine, 403 not allowed from here, 422 bad message,
-    503 shutting down)."""
+    """`/ws/*`, server -> client: a refused or malformed message. `status` and `code` follow
+    the REST refusals (401 login_required, 423 locked, 403 remote_view and others, 400
+    refused by the engine, 422 bad message, 503 shutting_down). A 401/423 on connect is
+    followed by a close."""
 
     type: Literal["error"] = "error"
     status: int
     detail: str
+    code: str | None = None
 
 
 class WsFrame(BaseModel):

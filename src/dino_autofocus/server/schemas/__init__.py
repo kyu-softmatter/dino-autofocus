@@ -10,6 +10,7 @@ from .common import (
     EventKind,
     EventOut,
     Health,
+    RefusalDetail,
     ShutdownAccepted,
     ShutdownIn,
     WsAccepted,
@@ -27,11 +28,24 @@ from .contract import (
     Event,
     FrameSource,
 )
+from .state import (
+    AuraState,
+    HardwareState,
+    LampState,
+    Lights,
+    OpSummary,
+    PermissionOut,
+    Positions,
+    SampleRef,
+    SessionRef,
+    Snapshot,
+)
 
 __all__ = [
     "COMMAND_KINDS", "EVENT_KINDS", "ORIGINS", "SERVER_STAMPED", "WS_MODELS", "ApiError",
-    "Command", "CommandAccepted", "CommandIn", "CommandKind", "EngineAPI", "Event", "EventKind",
-    "EventOut", "FrameSource", "Health", "ShutdownAccepted", "ShutdownIn",
-    "WsAccepted", "WsCommand", "WsError",
+    "AuraState", "Command", "CommandAccepted", "CommandIn", "CommandKind", "EngineAPI", "Event",
+    "EventKind", "EventOut", "FrameSource", "HardwareState", "Health", "LampState", "Lights",
+    "OpSummary", "PermissionOut", "Positions", "RefusalDetail", "SampleRef", "SessionRef",
+    "ShutdownAccepted", "ShutdownIn", "Snapshot", "WsAccepted", "WsCommand", "WsError",
     "WsEvent", "WsFrame",
 ]
