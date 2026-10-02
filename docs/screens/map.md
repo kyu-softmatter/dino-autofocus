@@ -8,6 +8,10 @@ Gap numbers (G1-G9) refer to section 7.
 
 ## 1. Rules this screen follows
 
+- Pre-click disabled reasons for every op on this screen come from the shared
+  `GET /api/permissions?ops=...` (T-009b, answered by T-011's `check()`). Neither the screen nor
+  `map.py` computes role, control, session or remote rules; feature gates stay at
+  `/api/hardware/gates`. The only area rule `map.py` adds is the scan box (`allowed_box_um`).
 - The screen and the router decide nothing about safety. The box check, the retract decision, the
   stale-fit check and all refusals come from the engine (`preflight_failed`, `confirm_required`). The
   hover hint "outside the scanned area" is display only (ui-spec 7.4, click-move step 1).
@@ -120,7 +124,7 @@ pass the same check when a human confirms (G3, now in T-013).
 | Scan box | `allowed_box_um` of the picked result (or of the latest, from `MapState`) |
 | Visited fields | `MapState.visits`, verdict colour (ui-spec 5.3) |
 | Boundary and hole | `MapState.boundary`, `hole`; fit time and "this session / previous session" against `session_started_at` (ui-spec 5.1) |
-| Candidates | `/candidates`: hollow circle = classical, filled = person confirmed, grey × = rejected (hidden by default) |
+| Candidates | `/candidates`: hollow circle = computed (`classical_candidate`, labelled "computed" on screen), filled = person confirmed, grey × = rejected (hidden by default) |
 | Flags | `/flags`; retired hidden by default |
 | Current field | `position` + objective field of view |
 | Click target | display only: stage µm under the cursor, distance from `position`, inside/outside `allowed_box_um` |
