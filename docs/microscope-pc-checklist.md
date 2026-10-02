@@ -90,10 +90,10 @@
 Select-String -Path "C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg" -Pattern "^ConfigGroup,System,(Startup|Shutdown)"
 ```
 
-T-036b 가 main 에 병합된 뒤에는 새 앱의 검사를 그대로 돌릴 수 있다 (Micro-Manager 를 불러오지 않는다). 불러올 때 설정되는 것을 모두 보여 주고, 문제가 없으면 마지막에 `OK` 를 찍는다. 움직이는 장치가 있으면 `UnsafeConfig` 로 그 이름을 보여 준다:
+새 앱이 장비를 열 때 하는 검사를 그대로 돌린다 (T-036b, T-036d: 설정 파일의 역할 줄과 앱이 쓰는 장치 이름이 다른 경우도 거부) (Micro-Manager 를 불러오지 않는다). 불러올 때 설정되는 것을 모두 보여 주고, 문제가 없으면 마지막에 `OK` 를 찍는다. 움직이는 장치가 있으면 `UnsafeConfig` 로 그 이름을 보여 준다:
 
 ```powershell
-uv run python -c "from pathlib import Path; from dino_autofocus.engine.backends.mm_real import load_time_settings, check_load_settings; p = Path(r'C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg'); s = load_time_settings(p.read_text(encoding='utf-8')); [print(x.text()) for x in s]; check_load_settings(s, p.name); print('OK')"
+uv run python -c "from pathlib import Path; from dino_autofocus.engine.backends.mm_real import load_time_settings, check_load_settings, BENCH_DEVICES; p = Path(r'C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg'); s = load_time_settings(p.read_text(encoding='utf-8')); [print(x.text()) for x in s]; check_load_settings(s, p.name, BENCH_DEVICES); print('OK')"
 ```
 
 ### 설치 상태 (T-020)
