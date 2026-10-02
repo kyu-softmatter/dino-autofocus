@@ -151,7 +151,8 @@ src/dino_autofocus/          단독 실행용 나머지 (engine, backends, opera
 
 단계 (각 단계 끝에 테스트 통과):
 - S0 (P1 완료) 의존성 나누기. S3 (P3 완료) 판정 → run_log 이벤트.
-- S1 초점 핵심을 `microscope_agent/src/` 로, scipy 제거, 모양 검사 테스트.
+- S1 (완료) 초점 핵심을 `microscope_agent/src/` 로 (`focus_classical`, `focus_verdict`, `focus_run_log`), scipy 제거,
+  `tests/test_sma_shape.py`. 옛 이름 `dino_autofocus.focus.{classical,verdict,sma_event}` 은 같은 모듈 객체로 남는다.
 - S2 순수 핵심 파일을 하나씩 (`focus_step_rules`, `focus_search`, `map_*`).
 - S4 `console/` 로 서버·웹·런처 옮기기 (import 약 100 곳, gen:api, 런처 경로).
 - S5 `hw_port.py`: 화면이 엔진을 직접 부르지 않고 포트 하나로 (그 뒤 console 은 `dino_autofocus` 를 import 하지 않는다).

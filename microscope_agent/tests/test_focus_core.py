@@ -1,0 +1,74 @@
+"""The flat focus files in the soft-matter-agents style: loaded by path, stdlib + numpy only.
+
+Runs with `python -m unittest` from this folder (as soft-matter-agents runs its tests) and
+under pytest. The data are built inline; no fixture files (that repo's check 13)."""
+
+import importlib.util
+import json
+import sys
+import unittest
+from pathlib import Path
+
+import numpy as np
+
+SRC = Path(__file__).resolve().parents[1] / "src"
+
+
+def _load(name, path):
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+classical = _load("_mic_focus_classical", SRC / "focus_classical.py")
+verdict = _load("_mic_focus_verdict", SRC / "focus_verdict.py")
+run_log = _load("_mic_focus_run_log", SRC / "focus_run_log.py")
+
+
+def _frame(sigma_px: float) -> np.ndarray:
+    """A spot blurred by `sigma_px` on a flat background, same total light, as uint16."""
+    yy, xx = np.mgrid[0:64, 0:64]
+    spot = np.exp(-((yy - 32.0) ** 2 + (xx - 32.0) ** 2) / (2 * sigma_px ** 2))
+    return (200 + 3000 * spot * (2.0 / sigma_px) ** 2).astype(np.uint16)
+
+
+class FocusCore(unittest.TestCase):
+    def test_sweep_through_focus_is_in_focus_at_a_real_frame(self):
+        z = [100.0, 102.0, 104.0, 106.0, 108.0]
+        frames = [_frame(s) for s in (6.0, 3.5, 2.0, 3.5, 6.0)]
+        stats = [classical.frame_stats(f, "vollath4") for f in frames]
+        v = verdict.from_sweep(z, stats)
+        self.assertEqual(v.verdict, verdict.Verdict.IN_FOCUS)
+        self.assertIn(v.z_um, z)  # an encoder z of a frame, never an interpolated one
+
+    def test_dark_sweep_has_no_sample(self):
+        dark = [np.full((64, 64), 100, np.uint16) for _ in range(4)]
+        stats = [classical.frame_stats(f, "vollath4") for f in dark]
+        v = verdict.from_sweep([0.0, 1.0, 2.0, 3.0], stats)
+        self.assertEqual(v.verdict, verdict.Verdict.NO_SAMPLE_HERE)
+
+    def test_double_peak_without_scipy(self):
+        z = np.arange(0.0, 20.0)
+        s = np.exp(-((z - 5) ** 2) / 4) + 0.8 * np.exp(-((z - 14) ** 2) / 4)
+        self.assertTrue(classical.double_peak(z, s))
+
+    def test_run_log_event_is_json_and_has_no_e6(self):
+        z = [100.0, 102.0, 104.0, 106.0, 108.0]
+        stats = [classical.frame_stats(_frame(s), "vollath4") for s in (6.0, 3.5, 2.0, 3.5, 6.0)]
+        ev = run_log.to_run_log_event(verdict.from_sweep(z, stats), 1.5)
+        text = json.dumps(ev, allow_nan=False)
+        self.assertNotIn("E6", text)
+        self.assertEqual(ev["event"], "focus_verdict")
+        self.assertEqual(ev["z"]["grade"], "E1")
+
+    def test_one_module_object_per_file(self):
+        self.assertIs(run_log.FocusVerdict, verdict.FocusVerdict)
+        self.assertIs(verdict.FrameStats, classical.FrameStats)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -15,10 +15,30 @@ The SMA grade mapping is unmeasured provisional until the user rules on it at me
 
 from __future__ import annotations
 
+import importlib.util
 import math
+import os
+import sys
 from typing import Any
 
-from .verdict import Evidence, FocusVerdict
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load(name: str, filename: str):
+    """A sibling file by path, the soft-matter-agents idiom (no package, no relative import).
+    A name already loaded is reused, so every importer shares one module object."""
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, os.path.join(_HERE, filename))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+_verdict = _load("_mic_focus_verdict", "focus_verdict.py")
+Evidence = _verdict.Evidence
+FocusVerdict = _verdict.FocusVerdict
 
 EVENT = "focus_verdict"
 TIME_BASES = ("software", "device", "trigger")  # the schema's enum

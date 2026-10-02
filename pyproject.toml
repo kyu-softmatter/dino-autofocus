@@ -73,6 +73,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dino_autofocus"]
 
+# the flat soft-matter-agents-shaped files (docs/integration-sma.md section 9); read by
+# dino_autofocus/_flat.py from here in a wheel, from the repository otherwise (an editable
+# install also gets this copy in site-packages; _flat.py never reads it there)
+[tool.hatch.build.targets.wheel.force-include]
+"microscope_agent/src" = "dino_autofocus/_microscope_agent_src"
+
 [tool.ruff]
 line-length = 100
 # vendored from psf-autofocus; kept in its upstream style so the two stay diffable
