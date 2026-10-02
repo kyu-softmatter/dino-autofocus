@@ -25,7 +25,6 @@ from dino_autofocus.engine.backend import (
 from dino_autofocus.engine.backends.replay import CAMERA, VIRTUAL_SPACING_UM, ReplayBackend
 from dino_autofocus.engine.backends.stacks import ZStack
 from dino_autofocus.engine.guards import FocusAxis
-from dino_autofocus.focus.classical import vollath4
 
 T = GUARD_TOKEN  # tests stand in for engine.guards
 SMOKE = Path(__file__).resolve().parents[2] / "data" / "smoke"
@@ -40,7 +39,7 @@ def stack(z0=2900.0, n=21, step=5.0, base=100, shape=(32, 32), **meta) -> ZStack
 
 
 def focus_stack(best=2950.0) -> ZStack:
-    """Speckle whose contrast falls with |z - best|: vollath4 peaks at `best`."""
+    """Speckle whose contrast falls with |z - best|: its standard deviation peaks at `best`."""
     rng = np.random.default_rng(0)
     z = np.arange(2900.0, 3001.0, 5.0)
     speckle = rng.random((48, 48))
@@ -160,7 +159,7 @@ def test_a_guarded_sweep_on_replay_finds_the_recorded_focus():
     b = ReplayBackend(focus_stack(), z_um=2905.0)
     b.open()
     axis = FocusAxis(b, b.nosepiece(), allow_motion=True, sleep=lambda s: None)
-    res = axis.sweep(axis.plan(2950, 40, 5), b.snap, score=lambda f: vollath4(f.image))
+    res = axis.sweep(axis.plan(2950, 40, 5), b.snap, score=lambda f: float(f.image.std()))
     assert res.peak_interior and res.peak_z_um == 2950.0
     with pytest.raises(GuardError):  # the guards still own the window
         axis.move_to(3300.0, allow_ascent_um=500)
