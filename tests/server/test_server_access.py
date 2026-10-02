@@ -90,10 +90,11 @@ def test_login_routes_open_to_remote_viewers(engine, make_client):
     from this server's own page is not refused there at all (no 401 / 403, no refusal mark).
     What the route then answers is T-105's (404 before its router, 422 for an empty body), so
     it is not asserted. Any other write under /api/auth stays local only, and foreign pages
-    are still refused."""
+    are still refused. Logout goes last: after it, T-105's lock / unlock / activity would
+    rightly answer 401 for the missing login."""
     c = make_client(engine, remote=True, remote_view=True)
     own = {"origin": f"http://{c.base_url.netloc.decode()}"}
-    for name in ("login", "logout", "lock", "unlock", "activity", "signup"):
+    for name in ("login", "lock", "unlock", "activity", "signup", "logout"):
         r = c.post(f"/api/auth/{name}", json={}, headers=own)
         assert r.status_code not in (401, 403) and refusal_code(r) is None, (name, r.status_code)
     for path in ("/api/auth/users", "/api/auth/login/extra"):
