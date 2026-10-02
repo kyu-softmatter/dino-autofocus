@@ -23,6 +23,7 @@ import {
 } from "../../app/client";
 import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
+import { readLights } from "../../app/status";
 import {
   CHECKING_PERMISSIONS,
   type CurrentSample,
@@ -179,9 +180,12 @@ export default function SampleScreen() {
         case "map_changed":
           refresh();
           return;
-        case "light_changed":
-          setLight(typeof ev.data?.dialamp === "string" ? ev.data.dialamp : null);
+        case "light_changed": {
+          // the one light shape, through the shell's reader (T-010-6)
+          const lamp = readLights(ev.data)?.lights.find((l) => l.name === "DiaLamp");
+          setLight(lamp === undefined ? null : lamp.on === null ? "unknown" : lamp.on ? "on" : "off");
           return;
+        }
         case "started":
         case "progress":
           if (control === "image") setImageStatus(String(ev.data?.status ?? "Checking…"));

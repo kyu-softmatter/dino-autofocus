@@ -381,6 +381,21 @@ describe("sample screen", () => {
     t.client.events.stop();
   });
 
+  it("shows brightfield from a light_changed event in the one light shape", async () => {
+    const t = setup();
+    await ready();
+    const lights = (state: string) => ({
+      dialamp: { state, intensity: 12 },
+      aura: { state: "off", lines: {} },
+      verified: true,
+      records: [],
+    });
+    act(() => t.socket().event("light_changed", lights("on")));
+    expect(await screen.findByText("Brightfield: on")).toBeTruthy();
+    act(() => t.socket().event("light_changed", lights("off")));
+    expect(await screen.findByText("Brightfield: off")).toBeTruthy();
+  });
+
   it("shows the engine's hole fit status text as is", async () => {
     const w = world();
     w.samples.get(ID)!.detail.hole = {
