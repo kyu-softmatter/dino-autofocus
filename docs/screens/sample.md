@@ -30,8 +30,8 @@ The field list lives in **one place on each side**, so a change is one edit per 
 - engine: one tuple `GEOMETRY_FIELDS` in `engine/sample.py` (T-027, AF 실행1);
 - server: `GET /api/sample/geometry-fields` serves that tuple as `GeometryField[]`; the response models
   carry values as `{key: GeometryValue}`, so no field name is hard-coded in `sample.py`;
-- web: the form renders from the `geometry-fields` response; the only per-field code is the label map in
-  `features/sample/fields.ts`, and a key missing from it falls back to the served `label`.
+- web: the form renders from the `geometry-fields` response, labels included; no field name appears in the
+  screen code. Until gen:api, the provisional list sits only in the fake client in `features/sample/api.ts`.
 
 `GeometryField` = `{key, label, kind ("number" | "pair" | "choice"), unit, choices[] | null, default | null,
 safety: bool}`. Fields with `safety: true` get the safety mark (ui-spec 7.3).
@@ -58,7 +58,8 @@ Response bodies are pydantic models; the TypeScript types are generated from Ope
 |---|---|
 | `GET /api/sample/list` | `SampleSummary[]`: `sample_id` (`YYYYMMDD_HHMM_n`), `created`, `fitted_at \| null`, `objectives_used[]`, `last_session {session_id, opened_at} \| null`, `awaiting_return: bool`, `reserved: bool`. Newest first (last three from the sample view, G8). A reserved sample (made by `sample_new`, no session yet) is listed with its id, folder and `created` from the folder; `fitted_at` and `last_session` are null, `objectives_used` is empty |
 | `GET /api/sample/geometry-fields` | `GeometryField[]` (section 2) |
-| `GET /api/sample/{sample_id}` | `SampleDetail`: the summary + `dir` (path string), `hole {centre_um, diameter_mm, fit_rms_um, n_points, arc_deg, fitted_at} \| null`, `calibration {um_per_px, objective} \| null`, `counts {scans, maps, flags}`, `can_open_folder: bool` (true only when this request is local; section 4) |
+| `GET /api/sample/{sample_id}` | `SampleDetail`: the summary + `dir` (path string), `hole {centre_um, diameter_mm, fit_rms_um, n_points, arc_deg, fitted_at} \| null`, `calibration {um_per_px, objective} \| null`, `counts {scans, maps, flags}` |
+| `GET /api/sample/access?sample_id=` | `SampleAccess`: the reasons a control is off **before** a click (ui-spec 7.0), worked out by the server from the request, T-018 login/control and engine `snapshot()["sample"]`: `read_only_reason` (remote, role or control, the first that applies), `can_open_folder` (local request only), `open_reason` (a session is open for another sample: `sample_open` / `sample_new` would be refused), `session_reason` (no open session of this sample: geometry and loading ops would be refused). The engine still refuses on its own; this only lets the screen show the reason early |
 | `GET /api/sample/{sample_id}/geometry` | `Geometry`: `{values: {key: GeometryValue}}` for every field in section 2 |
 | `GET /api/sample/{sample_id}/loading` | `LoadingState`: `session_id \| null`, `geometry {done, by, t}`, `person {done, by, t}`, `image {done, ok, by, t, why \| null, result_ref \| null}`, `confirmed: bool` (from the sample view, G6) |
 
