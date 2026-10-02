@@ -57,14 +57,14 @@ def check_agent(agent: str) -> Agent:
 @dataclass(frozen=True)
 class FileInfo:
     name: str
-    size: int
+    size: int | None  # None: the folder lists it but the file system cannot stat it
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> FileInfo:
-        return cls(name=d["name"], size=d["size"])
+        return cls(name=d["name"], size=d.get("size"))
 
 
 @dataclass(frozen=True)
@@ -120,6 +120,10 @@ class QuestionSummary:
     latest_version: int
     versions: list[int]
     source: str  # "soft-matter-agents", "mock", "mock-submitted"
+    # read from the goal (else the plan) of the latest version, else the first; None if absent
+    purpose: str | None = None
+    intent: str | None = None
+    observable_name: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -136,6 +140,9 @@ class QuestionSummary:
             latest_version=d["latest_version"],
             versions=list(d["versions"]),
             source=d["source"],
+            purpose=d.get("purpose"),
+            intent=d.get("intent"),
+            observable_name=d.get("observable_name"),
         )
 
 
@@ -211,6 +218,7 @@ class RunSummary:
     finished_at: str | None
     backend: str | None
     source: str
+    approval_kind: str | None = None  # the log's (else the config's) approval.kind
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -227,6 +235,7 @@ class RunSummary:
             finished_at=d.get("finished_at"),
             backend=d.get("backend"),
             source=d["source"],
+            approval_kind=d.get("approval_kind"),
         )
 
 
@@ -326,7 +335,13 @@ def _opt(c: Card | None) -> dict[str, Any] | None:
 
 @runtime_checkable
 class AgentStore(Protocol):
-    """What the console reads. Lists are newest first."""
+    """What the console reads. Lists are newest first.
+
+    `writable` says whether `submit_question` can succeed, so a caller need not test the
+    class: MockStore True, SmaFiles False.
+    """
+
+    writable: bool
 
     def list_questions(self, agent: Agent) -> list[QuestionSummary]: ...
 

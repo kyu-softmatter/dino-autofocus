@@ -1,0 +1,565 @@
+"""mm-real backend: the Backend protocol (T-002 + T-015) on the bench Ti2 / Kinetix / Aura.
+
+Ported from `scripts/mm_grab.py` (`open_core`, `set_and_read`, `aura_on/off`, `positions`,
+`PiezoReader.read`) and `scripts/change_objective.py` (`state`). pymmcore-plus is imported
+only when the backend opens; the piezo DLL only when the piezo is read.
+
+- **Config**: `config_path()` = the argument, else `DINO_AF_MM_CONFIG`, else `"mm_config"`
+  in the settings folder's settings.json (`auth.config.config_dir`), else `BENCH_CONFIG`.
+  Loading applies the file's System/Startup preset (`LappMainBranch1 State 1`); AutoShutter
+  goes off straight after, as mm_grab does, else every snap would switch the light on. Both
+  facts are in `config_record()`.
+- **Bench-flagged**: `info().bench` is True, so the guards and the runner require a
+  clearance callback for `FocusAxis.approach()` on this backend.
+- **Device names** come from one `DeviceNames` (bench by default). `DEMO_DEVICES` points the
+  same code at Micro-Manager's demo config, which is how the tests run it on a desktop: no
+  Aura, no PFS, the lamp is "White Light Shutter".
+- Motion and light-on take the guard token; off never does; `set_property` goes through
+  `check_set_property` with the camera label. Z is ZDrive um as the stand reports it: the
+  bench coordinates *are* the stand's, no offset.
+- **Piezo: read only.** `piezo_read(port)` opens the NanoBench session, reads the three
+  measured positions and closes. No position command, no security-level change: piezo moves
+  are out of scope (operations-spec 9.2, M5).
+- Failed reads are fields (`Positions.errors`, `PropertyInfo.read_ok`, `PiezoReading.error`).
+
+Nothing here has run on the stand: what only the microscope PC can confirm is listed in
+`USER_CHECKS` (and `info().notes["user_check"]`).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+import re
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from ..backend import (
+    AURA_LINES,
+    PROVISIONAL,
+    BackendInfo,
+    ConfigRecord,
+    DeviceInfo,
+    Frame,
+    MotionToken,
+    NosepieceLabel,
+    ObjectiveInfo,
+    PfsState,
+    PiezoReading,
+    Positions,
+    PropertyInfo,
+    PropertyNotAllowed,
+    Readback,
+    StageLimits,
+    StreamActive,
+    check_set_property,
+    require_token,
+)
+
+if TYPE_CHECKING:
+    from pymmcore_plus import CMMCorePlus
+
+__all__ = ["BENCH_CONFIG", "BENCH_DEVICES", "DEMO_DEVICES", "USER_CHECKS", "DeviceNames",
+           "MmRealBackend", "MmUnavailable", "config_path"]
+
+BENCH_CONFIG = Path(r"C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg")
+CONFIG_ENV = "DINO_AF_MM_CONFIG"
+SETTINGS_KEY = "mm_config"
+MEASURED_AURA_LINES = ("GREEN",)  # 2026-09-30 bench run
+#: lens facts by nosepiece State, docs/runs/2026-09-30_substrate-scan.yaml; others unknown
+BENCH_PIXEL_UM = {0: 1.625, 5: 0.065}
+BENCH_FREE_WD_UM = {0: 20000.0, 5: 130.0}
+DEFAULT_XY_TIMEOUT_S = 30.0  # unmeasured provisional: a full-travel XY move on the Ti2
+
+#: what only the microscope PC can confirm (review request "user check needed"; checklist)
+USER_CHECKS = (
+    "config path and Micro-Manager install (adapter search path) on the microscope PC",
+    "Core AutoFocus device is the PFS, so enable/isContinuousFocus* address it",
+    "PFS off by enableContinuousFocus(False) reads back as disabled",
+    "Aura State 0 switches every line off (checklist Q10)",
+    "XYStage readback after a move vs the command (checklist Q11)",
+    "XY wait: DEFAULT_XY_TIMEOUT_S covers the longest move",
+    "Kinetix readout property name (candidate ReadoutRate) before it joins the allow-list",
+    "opening the NanoBench session for a read changes nothing (checklist Q19)",
+    "stage travel limits (StageLimits are None until read)",
+)
+
+
+class MmUnavailable(RuntimeError):
+    """pymmcore-plus, the Micro-Manager install or the config is missing, or loading failed."""
+
+
+@dataclass(frozen=True)
+class DeviceNames:
+    """Micro-Manager labels of the devices the protocol talks to. None = not on this config."""
+
+    z: str = "ZDrive"
+    xy: str = "XYStage"
+    nosepiece: str = "Nosepiece"
+    pfs: str | None = "PFS"
+    dialamp: str = "DiaLamp"
+    aura: str | None = "Aura"
+    intermediate_mag: str | None = "IntermediateMagnification"
+
+
+BENCH_DEVICES = DeviceNames()
+#: Micro-Manager's MMConfig_demo.cfg, for desktop tests of this code only
+DEMO_DEVICES = DeviceNames(z="Z", xy="XY", nosepiece="Objective", pfs=None,
+                           dialamp="White Light Shutter", aura=None, intermediate_mag=None)
+
+
+def config_path(override: str | os.PathLike[str] | None = None) -> Path:
+    if override is not None:
+        return Path(override)
+    env = os.environ.get(CONFIG_ENV, "").strip()
+    if env:
+        return Path(env)
+    from ...auth.config import SETTINGS_FILE, config_dir
+
+    try:
+        settings = json.loads((config_dir() / SETTINGS_FILE).read_text(encoding="utf-8"))
+        if settings.get(SETTINGS_KEY):
+            return Path(settings[SETTINGS_KEY])
+    except (OSError, ValueError):
+        pass
+    return BENCH_CONFIG
+
+
+def _sha256(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _magnification(label: str) -> float:
+    m = re.search(r"(\d+(?:\.\d+)?)\s*[xX]\b", label)
+    return float(m.group(1)) if m else 0.0
+
+
+class MmRealBackend:
+    kind = "mm-real"
+
+    def __init__(self, config: str | os.PathLike[str] | None = None, *,
+                 devices: DeviceNames = BENCH_DEVICES, mm_dir: str | None = None,
+                 exposure_ms: float = 10.0, roi: int = 0):
+        self.config = config_path(config)
+        self.devices, self.mm_dir = devices, mm_dir
+        self._exposure_ms, self._roi = exposure_ms, roi
+        self.core: CMMCorePlus | None = None
+        self._config: ConfigRecord | None = None
+        self._sensor: tuple[int, int] = (0, 0)
+        self._streaming = False
+
+    # -- life
+    def open(self) -> BackendInfo:
+        if self.core is not None:
+            return self.info()
+        try:
+            from pymmcore_plus import CMMCorePlus, find_micromanager
+        except ImportError as e:
+            raise MmUnavailable(f"pymmcore-plus is not importable: {e}") from e
+        mm_dir = self.mm_dir or find_micromanager()
+        if not mm_dir:
+            raise MmUnavailable("no Micro-Manager install found")
+        if not self.config.is_file():
+            raise MmUnavailable(f"config {self.config} does not exist")
+        before = _sha256(self.config)
+        core = CMMCorePlus()  # its own core: nothing else sees half-loaded devices
+        try:
+            core.setDeviceAdapterSearchPaths([str(mm_dir)])
+            core.loadSystemConfiguration(str(self.config))
+            core.setAutoShutter(False)  # as loaded, every snap would switch the light on
+            core.waitForSystem()
+        except Exception as e:
+            core.unloadAllDevices()
+            raise MmUnavailable(f"loading {self.config} failed: {e}") from e
+        after = _sha256(self.config)
+        self.core = core
+        startup = "System/Startup" if "System" in core.getAvailableConfigGroups() and \
+            "Startup" in core.getAvailableConfigs("System") else None
+        self._config = ConfigRecord(
+            str(self.config), after,
+            None if before is None or after is None else before != after,
+            Readback.of("Core", "AutoShutter", 0, int(core.getAutoShutter())), startup,
+            time.time(), {"mm_dir": str(mm_dir)})
+        core.setExposure(self._exposure_ms)
+        core.clearROI()
+        self._sensor = (int(core.getImageWidth()), int(core.getImageHeight()))
+        self.set_roi(self._roi)
+        return self.info()
+
+    def close(self) -> None:
+        """Stream off, then unload. Lights are the guards' (`exclusive` switches them off
+        before close); a second call does nothing."""
+        if self.core is None:
+            return
+        self.stop_stream()
+        core, self.core = self.core, None
+        core.unloadAllDevices()
+
+    def __enter__(self) -> MmRealBackend:
+        self.open()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def _c(self) -> CMMCorePlus:
+        if self.core is None:
+            raise RuntimeError("mm-real backend is not open")
+        return self.core
+
+    def _has(self, device: str | None) -> bool:
+        return device is not None and device in self._c().getLoadedDevices()
+
+    def _prop(self, device: str | None, *names: str) -> str | None:
+        """First of `names` the device has; None if neither (a record must not stop a run)."""
+        if not self._has(device):
+            return None
+        for name in names:
+            if self._c().hasProperty(device, name):
+                return str(self._c().getProperty(device, name))
+        return None
+
+    def info(self) -> BackendInfo:
+        core, d = self._c(), self.devices
+        notes = {"user_check": "; ".join(USER_CHECKS),
+                 "stage_limits": "not read: user check needed",
+                 "xy_timeout_s": f"{DEFAULT_XY_TIMEOUT_S:g}, {PROVISIONAL}",
+                 **{f"aura.{ln}": PROVISIONAL for ln in AURA_LINES
+                    if ln not in MEASURED_AURA_LINES}}
+        if d != BENCH_DEVICES:
+            notes["devices"] = f"not the bench names: {d}"
+        return BackendInfo(
+            self.kind, str(self.config), core.getCameraDevice(), self._sensor,
+            tuple(int(v) for v in core.getROI()), float(core.getExposure()),
+            float(core.getPixelSizeUm()), self.nosepiece(),
+            self._prop(d.intermediate_mag, "Label", "State"), int(core.getImageBitDepth()),
+            [ObjectiveInfo(i, lab, _magnification(lab), BENCH_PIXEL_UM.get(i),
+                           BENCH_FREE_WD_UM.get(i)) for i, lab in self._labels()],
+            StageLimits(), notes, bench=True)
+
+    # -- camera
+    def _frame(self, img) -> Frame:
+        p = self.positions()
+        return Frame(img, time.time(), float(self._c().getExposure()), p.x_um, p.y_um, p.z_um)
+
+    def snap(self) -> Frame:
+        if self._streaming:
+            raise StreamActive("stop the stream before snap()")
+        img = self._c().snap()
+        if img.ndim != 2:
+            raise RuntimeError(f"camera gave a {img.shape} image, not 2-D mono")
+        return self._frame(img)
+
+    def set_exposure(self, ms: float) -> float:
+        self._c().setExposure(float(ms))
+        return float(self._c().getExposure())
+
+    def set_roi(self, size: int) -> tuple[int, int, int, int]:
+        """Centred square ROI; 0 (or >= the sensor) = full sensor."""
+        core = self._c()
+        core.clearROI()
+        w, h = self._sensor
+        if 0 < size < min(w, h):
+            core.setROI((w - size) // 2, (h - size) // 2, size, size)
+        return tuple(int(v) for v in core.getROI())
+
+    # -- stream (engine-owned, T-011)
+    def start_stream(self, interval_ms: float | None = None) -> None:
+        if self._streaming:
+            return
+        self._c().startContinuousSequenceAcquisition(float(interval_ms or 0.0))
+        self._streaming = True
+
+    def next_frame(self, timeout_s: float = 1.0) -> Frame | None:
+        if not self._streaming:
+            return None
+        core = self._c()
+        deadline = time.monotonic() + timeout_s
+        while core.getRemainingImageCount() == 0:
+            if time.monotonic() > deadline:
+                return None
+            time.sleep(0.002)
+        img = core.getLastImage()  # the newest; older ones are dropped
+        core.clearCircularBuffer()
+        return self._frame(img)
+
+    def stop_stream(self) -> None:
+        if self._streaming and self.core is not None:
+            self.core.stopSequenceAcquisition()
+        self._streaming = False
+
+    def streaming(self) -> bool:
+        return self._streaming
+
+    # -- reads
+    def positions(self) -> Positions:
+        core, p = self._c(), Positions()
+        try:
+            x, y = core.getXYPosition(self.devices.xy)
+            p.x_um, p.y_um = float(x), float(y)
+        except Exception as e:  # a missing stage must not stop the camera
+            p.errors["xy"] = f"{type(e).__name__}: {e}"
+        try:
+            p.z_um = float(core.getPosition(self.devices.z))
+        except Exception as e:
+            p.errors["z"] = f"{type(e).__name__}: {e}"
+        return p
+
+    def read_property(self, device: str, prop: str) -> str:
+        return str(self._c().getProperty(device, prop))
+
+    def _nosepiece_state(self) -> int:
+        return int(self._c().getProperty(self.devices.nosepiece, "State"))
+
+    def _labels(self) -> list[tuple[int, str]]:
+        return list(enumerate(self._c().getStateLabels(self.devices.nosepiece)))
+
+    def nosepiece(self) -> str:
+        return str(self._c().getProperty(self.devices.nosepiece, "Label"))
+
+    def pfs(self) -> PfsState:
+        """change_objective.state: Core continuous focus enabled / locked, `PFS in Range`."""
+        core = self._c()
+        if not self._has(self.devices.pfs):
+            return PfsState(None, None, None)
+        out: list[Any] = []
+        for fn in (core.isContinuousFocusEnabled, core.isContinuousFocusLocked):
+            try:
+                out.append(bool(fn()))
+            except Exception:  # unreadable stays None; the guards treat None as not quiet
+                out.append(None)
+        return PfsState(*out, self._prop(self.devices.pfs, "PFS in Range"))
+
+    def light_state(self) -> dict[str, str]:
+        out = {"DiaLamp": self._prop(self.devices.dialamp, "State") or "unreadable"}
+        if self.devices.aura is not None:
+            out["Aura"] = self._prop(self.devices.aura, "State") or "unreadable"
+        return out
+
+    # -- discovery: reads only
+    def describe_devices(self, include_properties: bool = True) -> list[DeviceInfo]:
+        core = self._c()
+        out = []
+        for label in core.getLoadedDevices():
+            props = {n: self._property_info(label, n) for n in core.getDevicePropertyNames(label)}
+            dtype = core.getDeviceType(label)
+            out.append(DeviceInfo(label, getattr(dtype, "name", str(dtype)),
+                                  str(core.getDeviceLibrary(label)),
+                                  str(core.getDeviceDescription(label)),
+                                  all(p.read_ok for p in props.values()),
+                                  properties=props if include_properties else {}))
+        return out
+
+    def _property_info(self, label: str, name: str) -> PropertyInfo:
+        core = self._c()
+        try:
+            limits = ((float(core.getPropertyLowerLimit(label, name)),
+                       float(core.getPropertyUpperLimit(label, name)))
+                      if core.hasPropertyLimits(label, name) else None)
+            return PropertyInfo(str(core.getProperty(label, name)),
+                                bool(core.isPropertyReadOnly(label, name)),
+                                [str(v) for v in core.getAllowedPropertyValues(label, name)],
+                                limits)
+        except Exception as e:  # a failed read is a field
+            return PropertyInfo(None, read_ok=False, error=f"{type(e).__name__}: {e}")
+
+    def nosepiece_labels(self) -> list[NosepieceLabel]:
+        here, px = self._nosepiece_state(), float(self._c().getPixelSizeUm())
+        return [NosepieceLabel(i, lab, BENCH_PIXEL_UM.get(i, px if i == here else None))
+                for i, lab in self._labels()]
+
+    def piezo_read(self, port: str) -> PiezoReading:
+        if not port:
+            return PiezoReading("", False)
+        try:
+            with _PiezoReadOnly(port) as pz:
+                xyz = pz.read()
+        except Exception as e:  # DLL missing, port held by the NanoBench program, ...
+            return PiezoReading(port, False, error=f"{type(e).__name__}: {e}")
+        return PiezoReading(port, True, xyz.get("x"), xyz.get("y"), xyz.get("z"))
+
+    def config_record(self) -> ConfigRecord:
+        self._c()
+        assert self._config is not None  # open() sets it
+        return self._config
+
+    # -- writes
+    def _set_and_read(self, device: str, prop: str, value: Any,
+                      notes: dict[str, str] | None = None) -> Readback:
+        core = self._c()
+        core.setProperty(device, prop, value)
+        core.waitForDevice(device)
+        return Readback.of(device, prop, value, core.getProperty(device, prop), notes)
+
+    def set_property(self, device: str, prop: str, value: Any, *,
+                     token: MotionToken | None = None) -> Readback:
+        check_set_property(device, prop, token, camera=self._c().getCameraDevice())
+        if not self._has(device):
+            raise PropertyNotAllowed(f"{device!r} is not loaded from {self.config.name}")
+        line = prop.removesuffix("_Intensity")
+        notes = {"aura_line": PROVISIONAL} if device == self.devices.aura and \
+            line in AURA_LINES and line not in MEASURED_AURA_LINES else None
+        return self._set_and_read(device, prop, value, notes)
+
+    def lamp_on(self, *, token: MotionToken) -> list[Readback]:
+        """Transmitted lamp: Aura off first, then DiaLamp State 1."""
+        require_token(token)
+        return [*self.aura_off(), self._set_and_read(self.devices.dialamp, "State", 1)]
+
+    def lamp_off(self) -> list[Readback]:
+        return [self._set_and_read(self.devices.dialamp, "State", 0)]
+
+    def aura_line_on(self, line: str, percent: float, *, token: MotionToken) -> list[Readback]:
+        """mm_grab.aura_on: DiaLamp off, then <LINE>_Intensity (per-mille, 1 % -> 10), the
+        line, and the master State last."""
+        require_token(token)
+        aura = self.devices.aura
+        if aura is None or not self._has(aura):
+            raise PropertyNotAllowed(f"no Aura device on {self.config.name}")
+        ln = line.upper()
+        if ln not in AURA_LINES:
+            raise ValueError(f"Aura line {line!r} not in {AURA_LINES}")
+        if not 0.0 <= float(percent) <= 100.0:
+            raise ValueError(f"Aura percent {percent} is not in 0-100")
+        notes = None if ln in MEASURED_AURA_LINES else {"aura_line": PROVISIONAL}
+        return [*self.lamp_off(),
+                self._set_and_read(aura, f"{ln}_Intensity", int(round(float(percent) * 10)),
+                                   notes),
+                self._set_and_read(aura, ln, 1, notes),
+                self._set_and_read(aura, "State", 1)]
+
+    def aura_off(self) -> list[Readback]:
+        aura = self.devices.aura
+        if aura is None or not self._has(aura):
+            return []
+        return [self._set_and_read(aura, "State", 0)]
+
+    def all_off(self) -> list[Readback]:
+        return [*self.aura_off(), *self.lamp_off()]
+
+    # -- motion: engine.guards only
+    def move_z(self, z_um: float, *, token: MotionToken) -> float:
+        require_token(token)
+        z = float(z_um)
+        if not math.isfinite(z):
+            raise ValueError(f"z {z_um} is not a finite number")
+        core = self._c()
+        core.setPosition(self.devices.z, z)
+        core.waitForDevice(self.devices.z)
+        return float(core.getPosition(self.devices.z))
+
+    def move_xy(self, x_um: float, y_um: float, *, token: MotionToken,
+                timeout_s: float | None = None) -> tuple[float, float]:
+        """Move and wait up to `timeout_s` (default `DEFAULT_XY_TIMEOUT_S`), not the core's
+        fixed wait. On timeout the stage is stopped and TimeoutError raised."""
+        require_token(token)
+        x, y = float(x_um), float(y_um)
+        if not (math.isfinite(x) and math.isfinite(y)):
+            raise ValueError(f"XY ({x_um}, {y_um}) is not finite")
+        core, dev = self._c(), self.devices.xy
+        core.setXYPosition(dev, x, y)
+        wait = DEFAULT_XY_TIMEOUT_S if timeout_s is None else float(timeout_s)
+        deadline = time.monotonic() + wait
+        while core.deviceBusy(dev):
+            if time.monotonic() > deadline:
+                core.stop(dev)
+                raise TimeoutError(f"XY move to ({x}, {y}) not done in {wait:.1f} s")
+            time.sleep(0.01)
+        rx, ry = core.getXYPosition(dev)
+        return float(rx), float(ry)
+
+    def move_xy_rel(self, dx_um: float, dy_um: float, *, token: MotionToken,
+                    timeout_s: float | None = None) -> tuple[float, float]:
+        require_token(token)
+        x, y = self._c().getXYPosition(self.devices.xy)  # from the read
+        return self.move_xy(float(x) + float(dx_um), float(y) + float(dy_um), token=token,
+                            timeout_s=timeout_s)
+
+    def set_nosepiece(self, state: int, *, token: MotionToken) -> Readback:
+        require_token(token)
+        n = len(self._labels())
+        if not 0 <= int(state) < n:
+            raise ValueError(f"nosepiece state {state} is not in 0..{n - 1}")
+        return self._set_and_read(self.devices.nosepiece, "State", int(state))
+
+    def pfs_off(self, *, token: MotionToken) -> Readback:
+        """Continuous focus off on the Core's autofocus device (the PFS: user check needed)."""
+        require_token(token)
+        core = self._c()
+        if not self._has(self.devices.pfs):
+            return Readback.of("PFS", "FocusMaintenance", "Off", "Off",
+                               notes={"pfs": f"no PFS on {self.config.name}"})
+        core.enableContinuousFocus(False)
+        core.waitForDevice(self.devices.pfs)
+        return Readback.of(self.devices.pfs, "ContinuousFocus", "Off",
+                           "On" if core.isContinuousFocusEnabled() else "Off")
+
+
+class _PiezoReadOnly:
+    """The NanoBench 6000 link of `scripts/mm_grab.py::PiezoReader`, reads only.
+
+    `read()` sends `stage.position.measured.get <channel>` for channels 1/2/3 (x/y/z, the
+    controller's labelling) and converts picometres to um. There is no write method and no
+    security-level call.
+    """
+
+    LIBRARY = Path(r"C:\Program Files (x86)\NanoBench 6000\data\controller_interface64.dll")
+    CHANNELS = {"x": 1, "y": 2, "z": 3}
+
+    def __init__(self, address: str):
+        import ctypes
+
+        if not self.LIBRARY.is_file():
+            raise OSError(f"no NanoBench library at {self.LIBRARY}")
+        self._ct = ctypes
+        lib = ctypes.cdll.LoadLibrary(str(self.LIBRARY))
+        lib.Init.restype = ctypes.c_void_p
+        lib.Uninit.argtypes = [ctypes.c_void_p]
+        lib.OpenSession.restype = ctypes.c_int
+        lib.OpenSession.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        lib.CloseSession.argtypes = [ctypes.c_void_p]
+        lib.DoCommand.restype = ctypes.c_int
+        lib.DoCommand.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        for name in ("GetAllResultNames", "GetAllResults"):
+            getattr(lib, name).restype = ctypes.c_int
+            getattr(lib, name).argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        self._lib, self._h = lib, lib.Init(None)
+        if not lib.OpenSession(self._h, address.encode()):
+            lib.Uninit(self._h)
+            raise OSError(f"piezo controller did not open on {address} "
+                          "(is the NanoBench program holding the port?)")
+
+    def __enter__(self) -> _PiezoReadOnly:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        try:
+            self._lib.CloseSession(self._h)
+        finally:
+            self._lib.Uninit(self._h)
+
+    def _string(self, getter) -> str:
+        probe = self._ct.create_string_buffer(2)
+        size = getter(self._h, probe, 1) + 1
+        buf = self._ct.create_string_buffer(max(size, 2))
+        getter(self._h, buf, size)
+        return buf.value.decode("utf-8", errors="replace")
+
+    def read(self) -> dict[str, float]:
+        out = {}
+        for axis, ch in self.CHANNELS.items():
+            if self._lib.DoCommand(self._h, f"stage.position.measured.get {ch}".encode()) <= 0:
+                continue
+            names = self._string(self._lib.GetAllResultNames).splitlines()
+            values = dict(zip(names, self._string(self._lib.GetAllResults).splitlines(),
+                              strict=False))
+            if "value" in values:
+                out[axis] = round(float(values["value"]) * 1e-6, 4)
+        return out

@@ -16,7 +16,7 @@ powershell -ExecutionPolicy Bypass -File tools\launcher\build.ps1
 |---|---|---|
 | `-Port N` | `8765` | port the server is started on and probed at |
 | `-Out path` | `Desktop\DINO Autofocus.exe` | where the exe is written (a missing folder is created) |
-| `-Force` | off | replace an existing exe at `-Out`. Without it the build stops and prints the old file's size and date: check that it is not a build you want to keep first |
+| `-Force` | off | replace an existing exe at `-Out`. Without it the build stops and prints the old file's size and date: check that it is not a build you want to keep first. With it the old exe is first copied to `<name>.prev.exe` next to it (`<name>.prev.<stamp>.exe` if a `.prev.exe` is already there; nothing is overwritten) and the path is printed |
 
 - The repo path compiled into the exe is the clone `build.ps1` runs from. Build from the
   clone you use day to day, not from a session worktree. Moving the clone means rebuilding.
