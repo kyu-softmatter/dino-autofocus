@@ -205,6 +205,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--allow-host", action="append", default=[], metavar="NAME",
                    help="extra Host header name to accept (repeatable); under --remote-view "
                         "this PC's host name and addresses are added automatically")
+    p.add_argument("--dev-origin", action="append", default=[], metavar="URL",
+                   help="a page origin besides this server's own that may write, e.g. the "
+                        "Vite dev server http://localhost:5173 (repeatable; default none)")
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--backend", choices=BACKENDS, default="placeholder",
                    help="only the placeholder engine exists until the runner (T-011) and the "
@@ -232,7 +235,8 @@ def main(argv: list[str] | None = None) -> int:
 
     app = create_app(engine, auth=AuthSeat.from_config(args.config_dir),
                      remote_view=remote_view, remote_abort=not args.no_remote_abort,
-                     allowed_hosts=hosts, engine_name=name, web_dist=args.web_dist)
+                     allowed_hosts=hosts, dev_origins=args.dev_origin, engine_name=name,
+                     web_dist=args.web_dist)
 
     import uvicorn
 

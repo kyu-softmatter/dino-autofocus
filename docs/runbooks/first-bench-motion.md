@@ -82,32 +82,40 @@ Before you start, read where the stand is. The hardware screen "지금 상태 (S
 shows the lens, Z and PFS, and the status bar shows the position.
 - PFS must read off. Software never enables it.
 
-### 2a. The first engine motion: `z_retract` (blocked until T-039 merges)
+### 2a. The first engine motion: `z_retract`
 
-The first move the app makes on the stand is `z_retract`. It moves Z to `z_safe` (0 um, *provisional*),
-away from the sample: the safest direction. It tests the lock lift, the readback and the records before
-any XY move.
+The first move the app makes on the stand is `z_retract` (T-039, on main). It moves Z to `z_safe`
+(0 um, *provisional*), away from the sample: the safest direction. It tests the lock lift, the readback
+and the records before any XY move.
+
+It is on main, but the motion lock (T-036) still refuses it on `mm-real` until the unlock commit
+merges. Its preflight shows that as the `bench_motion` check, and `mm-real`'s own move refuses as well.
 
 1. Start `z_retract` (no arguments) from the app. Rule 12 applies: a local operator with the control
-   grant and an open experiment session.
-2. The status bar and the hardware screen show ZDrive 0.0 (+- 0.25, *provisional*).
-3. In the log:
-   - a `motion` event with `sent: true`;
-   - a `finished` event whose summary has the commanded Z, the read Z and `verified: true`.
-4. If Z already reads 0, the op finishes with no move and records the readback.
+   grant and an open experiment session. It is also allowed while a sample awaits return.
+2. It switches PFS off first (never on), then retracts. Driving ZDrive against an engaged PFS fights
+   the focus lock; PFS was on in the 2026-09-30 session. Preflight refuses if the PFS state cannot be
+   read.
+3. The status bar and the hardware screen show ZDrive 0.0 (+- 0.25, *provisional*), and PFS off.
+4. In the log:
+   - a `motion` event with `how: "retract"` and `sent: true`;
+   - a `finished` event whose summary has `commanded_um`, `readback_um`, `verified: true`, `moved`,
+     `from_um`, and `pfs` (enabled before, enabled after, in range).
+5. If Z already reads 0, the op finishes with no move (`moved: false`) and records the readback.
 
-A read Z off by more than the tolerance fails the op, naming the commanded and read values. Stop there
-and tell the director's session.
+A read Z off by more than the tolerance fails the op, naming the commanded and read values. So does a
+PFS that stays enabled. Stop there and tell the director's session.
 
 If `z_retract` is refused, check the refusal before anything else:
-- "bench motion locked" means the unlock commit is not on main;
+- `bench_motion` ("bench motion is locked") means the unlock commit is not on main;
+- `pfs` means the PFS state is unreadable;
 - no control grant or no open session is rule 12.
 
-Enforced by: T-039 (the op, through `FocusAxis.retract()`), T-036 (the lock), T-011 (rule 12).
+Enforced by: T-039 (the op: PFS off, then `FocusAxis.retract()`), T-036 (the lock), T-011 (rule 12).
 
 ### 2b. The fallback, by hand at the stand (the user)
 
-Use this until T-039 merges, or if `z_retract` is refused for a reason you cannot fix:
+Use this if `z_retract` is refused for a reason you cannot fix, or the screen does not respond:
 1. Retract Z to 0 with the Ti2 controller. The hardware screen must then show ZDrive 0.0 (+- 0.25).
 2. If the 4x is not in place, turn the nosepiece to the 4x by hand. The hardware screen must then show
    nosepiece State 0 and `1-Plan Apo LmbdD20 4x`. The 2026-09-30 session ended on the **100x Oil** with
@@ -145,18 +153,30 @@ that, and only after 2a has passed once on the stand.
 
 Do not use the other operations instead:
 - **`objective_change`: do not run it on the stand**, including a turn to a dry lens without `escape`.
-  Refused by the code (T-029d) until `BENCH_APPROACH` is flipped. While it reads `"UNMEASURED"`, the
-  guards refuse on the stand any approach above 2800 µm and any approach on a lens other than the 4x.
-  The flip is a separate reviewed commit, after the bench measurements (Q13, Q20, stage limits) and the
-  director's confirmation. Two points:
+  Refused by the code (T-029d, the "Bench approach lock" below) until `BENCH_APPROACH` is flipped.
   - Its "clearance" callback is software bounds (Z window and cap, lens readback, abort), not a contact
     or oil sensor. The runner's bench check does not refuse it, because it has that callback.
-  - Until T-029d is on main, nothing in the code stops it: treat this as a user rule.
+  - A turn to the 4x that climbs back only to 2800 µm on the 4x is not above 2800. Do that turn by hand
+    (2b).
+- `scan_4x` is refused on `mm-real`:
+  - by the runner, because it approaches with no clearance callback (T-011b `approach_clearance`);
+  - by T-029d, because its 4x sweeps climb above 2800.
+  Any step that sweeps or scans stays blocked until the flip.
 
-  A turn to the 4x that climbs back to 2800 µm on the 4x is neither above 2800 nor on another lens. Do
-  that turn by hand (2b).
-- `scan_4x` is refused on `mm-real` by the runner: it approaches with no clearance callback (T-011b
-  `approach_clearance`).
+**Bench approach lock (T-029d).** T-029d is in its final review; until it is on main, nothing in the code
+stops `objective_change` or `focus_100x`, so treat these as user rules.
+
+While `BENCH_APPROACH` reads `"UNMEASURED"`, the guards refuse on the stand:
+- any upward Z move (`approach`, `move_to` and sweeps) above 2800 µm;
+- any upward Z move on a lens other than the 4x.
+
+Downward moves and `z_retract` stay allowed. That covers:
+- `objective_change`, both to the 100x and the climb back after a turn;
+- `focus_100x`;
+- `scan_4x`'s sweeps.
+
+The flip is a separate reviewed commit, after the bench measurements (Q13, Q20, stage limits) and the
+director's confirmation.
 - `scripts/*`: never (see the top of this runbook).
 
 Enforced by:
@@ -166,8 +186,8 @@ Enforced by:
 - T-011b: the bench clearance check in the runner's preflight (refuses `scan_4x`, not
   `objective_change`);
 - `guards.XYAxis`: box, long-move rule, readback;
-- T-029d: `BENCH_APPROACH` refuses approaches on the stand while `"UNMEASURED"`. Until it merges, the
-  "no `objective_change` on the stand" rule is this runbook only.
+- T-029d: `BENCH_APPROACH`, refusing upward Z above 2800 µm or on a non-4x lens on the stand while
+  `"UNMEASURED"`. Until it merges, the "no `objective_change` on the stand" rule is this runbook only.
 
 ## Step 3. No 100x Oil approach yet
 
@@ -179,11 +199,9 @@ Do not raise Z under the 100x Oil (0 -> 2800 -> sample window) until two questio
 - **Q20**: how long an XY move may be on the 100x before Z must retract (the oil film), and `z_safe`. Today
   `Z_SAFE_UM` is 0 for every lens and the 100x long-move row is 156 um (*provisional*).
 
-Refused by the code (T-029d) until `BENCH_APPROACH` is flipped. While it reads `"UNMEASURED"`, the guards
-refuse on the stand any approach on a lens other than the 4x. That covers:
-- `objective_change` to the 100x;
-- `focus_100x`;
-- the non-4x paths of `scan_4x`.
+Refused by the code (T-029d, "Bench approach lock" in step 2) until `BENCH_APPROACH` is flipped. Under the
+100x every upward Z move is on a lens other than the 4x, so `objective_change` to the 100x and
+`focus_100x` are refused.
 
 The flip comes only after Q13, Q20 and the stage limits are measured, as a reviewed commit the director
 confirms. The clearance callbacks are software bounds (Z window and cap, lens readback, abort), not a

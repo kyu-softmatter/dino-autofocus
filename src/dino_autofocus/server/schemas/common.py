@@ -141,6 +141,15 @@ class WsError(BaseModel):
     code: str | None = None
 
 
+class WsLock(BaseModel):
+    """`/ws/events`, server -> client: the login's lock state, sent once on connect and on
+    every change. While `locked`, no `event` messages are sent (command replies still are,
+    since stops are allowed); after unlock the client reloads `/api/state` (T-009c, D14)."""
+
+    type: Literal["lock"] = "lock"
+    locked: bool
+
+
 class WsFrame(BaseModel):
     """`/ws/frames`, server -> client. Always sent as a text message immediately followed by
     one binary message holding the JPEG (`jpeg_bytes` long). Pixel values were mapped
@@ -160,4 +169,5 @@ class WsFrame(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
-WS_MODELS: tuple[type[BaseModel], ...] = (WsEvent, WsCommand, WsAccepted, WsError, WsFrame)
+WS_MODELS: tuple[type[BaseModel], ...] = (WsEvent, WsCommand, WsAccepted, WsError, WsLock,
+                                          WsFrame)

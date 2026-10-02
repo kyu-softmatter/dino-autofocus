@@ -42,6 +42,11 @@ uv run pytest tests/test_backbone.py -q
 `DinoExtractor` 는 클론의 HEAD 가 `7764ea0` 이 아니면 실행을 거부한다.
 `tests/test_backbone.py` 는 전처리만 시험하고 모델을 읽지 않으므로, 클론과 가중치는 1.2절로 확인한다.
 
+**DINOv2 가중치는 처음 쓸 때 인터넷에서 받는다** (1.1절). 현미경 PC 가 오프라인이면 1.1절 표의
+파일을 미리 `~/.cache/torch/hub/checkpoints` (Windows: `%USERPROFILE%\.cache\torch\hub\checkpoints`,
+`TORCH_HOME` 이 있으면 그 아래 `hub\checkpoints`) 에 복사해 둔다 (1.2절). 1.2절 4번의 한 줄 확인으로
+파일이 그 자리에 있는지 본다.
+
 근거: `docs/setup-new-pc.md` 2–3절, `src/dino_autofocus/backbone.py`.
 
 ### 1.1 가중치는 어디서 오는가
@@ -92,6 +97,21 @@ uv run pytest tests/test_backbone.py -q
    ```
 
    하나라도 다르면 쓰지 않고 다시 복사한다.
+
+4. 가중치만 한 줄로 확인한다. 네트워크, 클론, GPU 없이 되고, 아무것도 받지 않고 폴더만 읽는다:
+
+   ```
+   uv run python -c "import torch, pathlib; d = pathlib.Path(torch.hub.get_dir(), 'checkpoints'); print(d); [print(n, (d / n).stat().st_size if (d / n).exists() else 'MISSING') for n in ('dinov2_vits14_pretrain.pth', 'dinov2_vitb14_pretrain.pth')]"
+   ```
+
+   폴더 경로 뒤에 두 파일과 크기가 나온다. 크기가 1.1절 표와 같으면 제자리에 있고, `MISSING` 이면
+   그 파일이 없다. `dinov2_vitb14_pretrain.pth` 는 `bench_latency.py` 에만 필요하다.
+   개발 데스크톱에서 2026-10-02 에 돌렸을 때 `C:\Users\Kyu Hwan\.cache\torch\hub\checkpoints` 와
+   표의 크기 두 개(88283115, 346378731)가 나왔다.
+
+   파일 이름은 코드가 정한다. 클론의 `dinov2/hub/utils.py` 의 `_make_dinov2_model_name` 이
+   `dinov2_<arch 앞 4자><patch>` 를 만들고, `dinov2/hub/backbones.py` 가 그 뒤에 `_pretrain.pth` 를
+   붙인다. 이 저장소의 기본 모델은 `src/dino_autofocus/backbone.py` 의 `dinov2_vits14` 다.
 
 **DINOv2 클론** (커밋 `7764ea0`)
 

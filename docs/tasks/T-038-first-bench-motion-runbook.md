@@ -38,3 +38,9 @@ the cards that enforce each rule (T-027b, T-029c, T-036b/d), and say "unmeasured
   (실행10), marked "blocked until T-032 stage 2 merges".
 - The runbook says plainly: never use `scripts/*` to move the stand; they bypass the guards and the T-036 lock.
 - Step 1 relies on mm-real `open()`; the checklist command skips the role-mismatch check (passed to the director).
+
+## T-038c (AF 실행11, after T-039b merges; review AF 검토보조1) — wording nits from the T-038b review
+
+- "the climb back after a turn" → "the climb back after a turn to any lens but the 4x".
+- Remove the note that `pfs.enabled_before` always records False once T-039b's fix is on main.
+- Fold in the 2c unblock if T-032 stage 2 has merged by then.
