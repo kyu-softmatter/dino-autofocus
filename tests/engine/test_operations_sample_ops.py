@@ -194,3 +194,24 @@ def test_boundary_points_refuse_model_numbers_and_need_a_session(store, root):
     assert out["status"] == "refused" and "model output" in out["why"]
     with pytest.raises(ValueError, match="unknown sample op"):
         run_sample_op("sample_delete", ctx_for(store, root))
+
+
+
+def test_objective_changes_project_into_objectives_used_and_sample_json(store, root):
+    from dino_autofocus.engine.sample import OBJECTIVE_CHANGED, write_derived_views
+
+    json_path = Sample(LEGACY, root).sample_json
+    legacy = json.loads(json_path.read_text())
+    json_path.write_text(json.dumps({**legacy, "objectives_used": ["4x"]}))
+    s = ExperimentSession.open(store, USER, LEGACY)
+    s.sample_event(OBJECTIVE_CHANGED, from_key="4x", to_key="100x-Oil",
+                   label="6-Plan Apo LmbdD0.13 100x Oil")
+    s.sample_event(OBJECTIVE_CHANGED, from_key="100x-Oil", to_key="4x",
+                   label="1-Plan Apo LmbdD20 4x")
+    s.sample_event(OBJECTIVE_CHANGED, from_key="4x", to_key="60x-Oil",
+                   label="5-Plan Apo LmbdD 60x Oil")
+    view = read_sample(store, LEGACY, root)
+    assert view.objectives_used == ["4x", "100x-Oil", "60x-Oil"]  # ordered, unique
+    assert view.summary()["objectives_used"] == ["4x", "100x-Oil", "60x-Oil"]
+    write_derived_views(view, root)
+    assert json.loads(json_path.read_text())["objectives_used"] == ["4x", "100x-Oil", "60x-Oil"]
