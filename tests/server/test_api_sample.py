@@ -27,8 +27,10 @@ NEW = "20261001_0930_1"
 @pytest.fixture(autouse=True)
 def no_explorer(monkeypatch):
     """Belt and braces: if any path reached the real opener, it would fail loudly."""
+
     def refuse(*_a, **_k):
         raise AssertionError("a test tried to open Explorer")
+
     monkeypatch.setattr(os, "startfile", refuse, raising=False)
 
 
@@ -39,7 +41,9 @@ def runner():
 
 @pytest.fixture
 def records(tmp_path):
-    return FolderStore(RecordsConfig(records_root=tmp_path / "records", data_root=tmp_path / "data"))
+    return FolderStore(
+        RecordsConfig(records_root=tmp_path / "records", data_root=tmp_path / "data")
+    )
 
 
 @pytest.fixture
@@ -60,6 +64,7 @@ def client_for(make_client, runner, records, root, opened):
         c = make_client(runner, records=records, samples_root=root, **kw)
         c.app.state.open_folder = opened.append  # the recorder: tests never open a window
         return c
+
     return make
 
 
@@ -68,7 +73,9 @@ def client(client_for):
     return client_for()
 
 
-def open_session(client, records, tmp_path, sample_id: str, user: str = "otto") -> ExperimentSession:
+def open_session(
+    client, records, tmp_path, sample_id: str, user: str = "otto"
+) -> ExperimentSession:
     """Open an experiment session as the sessions router would, without touching git."""
     (tmp_path / "no-repo").mkdir(exist_ok=True)
     s = ExperimentSession.open(records, user, sample_id, code_repo=tmp_path / "no-repo")
@@ -123,12 +130,18 @@ def test_detail_hole_status_is_the_engines_text(client, root):
 def test_geometry_sources_default_not_set_and_entered(client, records, tmp_path):
     s = open_session(client, records, tmp_path, NEW)
     g = client.get(f"/api/sample/{NEW}/geometry").json()["values"]
-    assert g["coverslip_thickness_um"] == {"value": 170.0, "source": {"kind": "default", "by": None, "t": None}}
+    assert g["coverslip_thickness_um"] == {
+        "value": 170.0,
+        "source": {"kind": "default", "by": None, "t": None},
+    }
     assert g["sample_thickness_um"]["source"]["kind"] == "not_set"
     s.sample_event(es.GEOMETRY_SET, values={"sample_thickness_um": 120.0, "orientation": "upright"})
     g = client.get(f"/api/sample/{NEW}/geometry").json()["values"]
     assert g["sample_thickness_um"]["value"] == 120.0
-    assert g["orientation"]["source"]["kind"] == "entered" and g["orientation"]["source"]["by"] == "otto"
+    assert (
+        g["orientation"]["source"]["kind"] == "entered"
+        and g["orientation"]["source"]["by"] == "otto"
+    )
 
 
 def test_loading_state_counts_only_in_this_samples_session(client, records, tmp_path):
@@ -143,17 +156,32 @@ def test_loading_state_counts_only_in_this_samples_session(client, records, tmp_
     assert got["session_id"] == s.session_id
     assert got["geometry"]["done"] and got["person"]["done"] and not got["image"]["done"]
     assert got["confirmed"] is False  # never from two steps
-    s.sample_event(es.LOADING_STEP, step="image", ok=True, why="", result_ref="loading_check/frame_0001.npy")
+    s.sample_event(
+        es.LOADING_STEP, step="image", ok=True, why="", result_ref="loading_check/frame_0001.npy"
+    )
     got = client.get(f"/api/sample/{NEW}/loading").json()
-    assert got["image"] == {"done": True, "ok": True, "by": "otto", "t": got["image"]["t"], "why": "",
-                            "result_ref": "loading_check/frame_0001.npy"}
+    assert got["image"] == {
+        "done": True,
+        "ok": True,
+        "by": "otto",
+        "t": got["image"]["t"],
+        "why": "",
+        "result_ref": "loading_check/frame_0001.npy",
+    }
     assert got["confirmed"] is True
     # another sample's view does not borrow this session's steps
     assert client.get(f"/api/sample/{LEGACY}/loading").json()["session_id"] is None
 
 
-@pytest.mark.parametrize("path", ["/api/sample/20991231_0000_9", "/api/sample/20991231_0000_9/geometry",
-                                  "/api/sample/20991231_0000_9/loading", "/api/sample/bad%20id"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/sample/20991231_0000_9",
+        "/api/sample/20991231_0000_9/geometry",
+        "/api/sample/20991231_0000_9/loading",
+        "/api/sample/bad%20id",
+    ],
+)
 def test_unknown_sample_is_404_with_the_refusal_mark(client, path):
     refusal(client.get(path), 404, "unknown_sample")
 
@@ -178,15 +206,21 @@ def test_no_sample_store_is_503(make_client, runner, tmp_path):
 
 def test_access_local_no_session(client):
     assert client.get(f"/api/sample/access?sample_id={LEGACY}").json() == {
-        "can_open_folder": True, "open_reason": None}
-    assert client.get("/api/sample/access").json() == {"can_open_folder": False, "open_reason": None}
+        "can_open_folder": True,
+        "open_reason": None,
+    }
+    assert client.get("/api/sample/access").json() == {
+        "can_open_folder": False,
+        "open_reason": None,
+    }
 
 
 def test_access_session_open_for_another_sample(client, records, tmp_path):
     open_session(client, records, tmp_path, NEW)
     got = client.get(f"/api/sample/access?sample_id={LEGACY}").json()
-    assert got["open_reason"] == (f"an experiment session is open for sample {NEW}; close it first "
-                                  "(one sample per session)")
+    assert got["open_reason"] == (
+        f"an experiment session is open for sample {NEW}; close it first (one sample per session)"
+    )
     assert client.get(f"/api/sample/access?sample_id={NEW}").json()["open_reason"] is None
 
 
@@ -201,7 +235,7 @@ def test_access_does_not_decide_role_control_or_session(client_for):
     assert set(got) == {"can_open_folder", "open_reason"}
 
 
-# -- the two session refusals the screen shows (engine side, T-027) ---------------------------------
+# -- the two session refusals the screen shows (engine side, T-027) ----------------------------
 
 
 def _env(client, records, root):
@@ -209,21 +243,31 @@ def _env(client, records, root):
     return sample_ops.SampleContext(records, root, cur, "otto")
 
 
-def test_sample_open_of_another_sample_is_refused_while_a_session_is_open(client, records, root, tmp_path):
+def test_sample_open_of_another_sample_is_refused_while_a_session_is_open(
+    client, records, root, tmp_path
+):
     open_session(client, records, tmp_path, NEW)
-    got = sample_ops.run_sample_op("sample_open", _env(client, records, root), {"sample_id": LEGACY})
+    got = sample_ops.run_sample_op(
+        "sample_open", _env(client, records, root), {"sample_id": LEGACY}
+    )
     assert got["status"] == "refused" and f"open for sample {NEW}" in got["why"]
     # the router gives the screen the same fact before the click
     assert client.get(f"/api/sample/access?sample_id={LEGACY}").json()["open_reason"]
 
 
 def test_geometry_set_without_that_samples_session_is_refused(client, records, root, tmp_path):
-    got = sample_ops.run_sample_op("sample_geometry_set", _env(client, records, root),
-                                   {"sample_id": LEGACY, "values": {"sample_thickness_um": 120.0}})
+    got = sample_ops.run_sample_op(
+        "sample_geometry_set",
+        _env(client, records, root),
+        {"sample_id": LEGACY, "values": {"sample_thickness_um": 120.0}},
+    )
     assert got == {"status": "refused", "why": "needs an open experiment session for this sample"}
     open_session(client, records, tmp_path, NEW)
-    got = sample_ops.run_sample_op("sample_geometry_set", _env(client, records, root),
-                                   {"sample_id": LEGACY, "values": {"sample_thickness_um": 120.0}})
+    got = sample_ops.run_sample_op(
+        "sample_geometry_set",
+        _env(client, records, root),
+        {"sample_id": LEGACY, "values": {"sample_thickness_um": 120.0}},
+    )
     assert got["status"] == "refused" and f"is for sample {NEW}" in got["why"]
 
 
@@ -255,12 +299,21 @@ def test_open_folder_unknown_or_bad_sample(client, opened):
 def test_open_folder_failure_is_reported(client):
     def broken(_path):
         raise OSError("no shell")
+
     client.app.state.open_folder = broken
-    assert "no shell" in refusal(client.post(f"/api/sample/{LEGACY}/open-folder"), 500, "open_failed")
+    assert "no shell" in refusal(
+        client.post(f"/api/sample/{LEGACY}/open-folder"), 500, "open_failed"
+    )
 
 
 def test_routes_are_mounted_under_the_area(client):
     paths = {p for p in client.app.openapi()["paths"] if p.startswith("/api/sample")}
-    assert paths == {"/api/sample/list", "/api/sample/geometry-fields", "/api/sample/access",
-                     "/api/sample/{sample_id}", "/api/sample/{sample_id}/geometry",
-                     "/api/sample/{sample_id}/loading", "/api/sample/{sample_id}/open-folder"}
+    assert paths == {
+        "/api/sample/list",
+        "/api/sample/geometry-fields",
+        "/api/sample/access",
+        "/api/sample/{sample_id}",
+        "/api/sample/{sample_id}/geometry",
+        "/api/sample/{sample_id}/loading",
+        "/api/sample/{sample_id}/open-folder",
+    }
