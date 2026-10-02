@@ -190,3 +190,17 @@ def test_objective_labels(demo):
     assert now.state == 5 and now.bench_label == "6-Plan Apo LmbdD0.13 100x Oil"
     with pytest.raises(ValueError):
         demo.set_objective(6)
+
+
+def test_public_set_and_read_goes_through_the_allow_list(demo):
+    from dino_autofocus.engine.backend import GUARD_TOKEN, PropertyNotAllowed, UnguardedMotion
+
+    with pytest.raises(UnguardedMotion):
+        demo.set_and_read("Z", "Position", 10, token=GUARD_TOKEN)  # motion: never
+    with pytest.raises(UnguardedMotion):
+        demo.set_and_read("White Light Shutter", "State", 1)  # light: token required
+    with pytest.raises(PropertyNotAllowed):
+        demo.set_and_read("Dichroic", "State", 1, token=GUARD_TOKEN)
+    assert demo.light_state()["DiaLamp"] == "0"
+    assert demo.set_and_read("Camera", "Binning", 2).verified
+    assert demo.set_and_read("White Light Shutter", "State", 0, token=GUARD_TOKEN).verified

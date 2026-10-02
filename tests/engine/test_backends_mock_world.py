@@ -22,6 +22,12 @@ from dino_autofocus.engine.backends.mock_world import (
     StageLimitError,
     objective_at,
 )
+from dino_autofocus.engine.guards import (
+    OBJECTIVE_LIMITS,
+    STRICTEST,
+    limits_for,
+    registry_key,
+)
 from dino_autofocus.focus.classical import peak_brightness as peak
 from dino_autofocus.focus.classical import vollath4
 
@@ -73,6 +79,22 @@ def test_objectives_match_the_ti2_configs():
     assert objective_at(0).dof_um == pytest.approx(15.1, abs=0.1)  # n lambda / NA^2
     with pytest.raises(ValueError):
         objective_at(6)
+
+
+def test_every_mock_lens_key_has_its_own_guards_row():
+    """Each mock key is a guards row, so no mock lens falls back to the strictest limits."""
+    for o in OBJECTIVES:
+        row, row_name = limits_for(o.key)
+        assert row_name == o.key and row is OBJECTIVE_LIMITS[o.key], (o.key, row_name)
+        assert "strictest" not in row_name and row != STRICTEST
+    assert {o.key for o in OBJECTIVES} == set(OBJECTIVE_LIMITS)
+
+
+@pytest.mark.parametrize("o", [pytest.param(o, id=o.key) for o in OBJECTIVES])
+def test_every_mock_lens_label_reads_back_to_its_key(o):
+    """What the mock nosepiece reports maps to the same guards row as the key."""
+    assert registry_key(o.label) == o.key
+    assert limits_for(o.label)[1] == o.key
 
 
 def test_parfocal_offset_100x_is_60_um_below_4x(world):

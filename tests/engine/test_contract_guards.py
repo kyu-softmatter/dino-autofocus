@@ -3,14 +3,21 @@
 import pytest
 
 from dino_autofocus.engine.guards import (
+    FREE_WD_UM,
+    OBJECTIVE_LIMITS,
+    RETURN_Z_UM,
+    SAMPLE_Z_WINDOW_UM,
+    UNKNOWN_OBJECTIVE,
     FocusAxis,
     GuardError,
     SweepPlan,
     XYAxis,
     XYBox,
     best_z_um,
+    limits_for,
     registry_key,
     rotate_nosepiece,
+    step_out_target,
 )
 from dino_autofocus.engine.records import model_value
 
@@ -94,14 +101,14 @@ def test_a_peak_on_the_top_plane_is_not_climbed(fake):
 
 def test_approach_keeps_the_bench_procedure(fake):
     fake.z = 0.0
-    a = axis(fake, OIL)
+    a = axis(fake)  # 4x: its free WD covers the window above 2800
     with pytest.raises(GuardError, match="below the sample window"):
         a.sweep(a.plan(2900, 10, 5), fake.snap, score=lambda f: 0.0)
     assert a.approach(2840) == 2840
     moves = [c[1] for c in fake.calls if c[0] == "move_z"]
     assert moves == [2800, 2810, 2820, 2830, 2840]  # one move to 2800, then 10 um steps
     assert a.motions[-1]["basis"]["approach_step_um"] == (
-        "OBJECTIVE_LIMITS[100x-Oil].approach_step_um, unmeasured provisional")
+        "OBJECTIVE_LIMITS[4x].approach_step_um, unmeasured provisional")
     with pytest.raises(GuardError, match="larger than"):
         a.approach(2900, step_um=700)
 
@@ -115,7 +122,7 @@ def test_the_clearance_check_runs_at_every_step(fake):
         return z < 2825
 
     with pytest.raises(GuardError, match="clearance check stopped the approach at 2830"):
-        axis(fake, OIL).approach(2900, clearance=clearance)
+        axis(fake).approach(2900, clearance=clearance)
     assert seen == [2800, 2810, 2820, 2830] and fake.z == 2830
 
 
@@ -217,3 +224,153 @@ def test_relative_xy_moves_go_through_the_absolute_guard(fake):
     with pytest.raises(GuardError, match="needs Z retracted"):
         xy.goto_rel(200.0, 0.0)
     assert not any(c[0] == "move_xy_rel" for c in fake.calls)
+
+
+@pytest.mark.parametrize("flagged", ["bench=True", "no bench field, unknown kind"])
+def test_approach_on_a_bench_needs_a_clearance_check(fake, flagged):
+    from types import SimpleNamespace
+
+    real_info = fake.info
+
+    def bench_info():
+        info = real_info()
+        if flagged == "bench=True":
+            info.bench = True  # a bench-flagged FakeBackend (T-033)
+            return info
+        return SimpleNamespace(kind="something-new")  # a backend from before T-033
+    fake.info = bench_info
+    fake.z = 0.0
+    a = axis(fake)
+    with pytest.raises(GuardError, match="needs a clearance check"):
+        a.approach(2840)
+    assert not any(c[0] == "move_z" for c in fake.calls)
+    assert a.approach(2840, clearance=lambda z: True) == 2840
+
+
+def test_the_step_out_is_plus_y_and_stays_inside_the_stage_travel(fake):
+    x, y, basis = step_out_target(fake, 8026.0, 571.6)  # fake Y travel -35..35 mm
+    assert (x, y) == (8026.0, 15571.6)
+    assert basis["basis"]["escape_dy_um"] == "unmeasured provisional"
+    with pytest.raises(GuardError, match="outside the stage Y travel"):
+        step_out_target(fake, 8026.0, 25000.0)
+    real_info = fake.info
+
+    def no_limits():
+        info = real_info()
+        info.stage_limits.y_um = None
+        return info
+    fake.info = no_limits
+    with pytest.raises(GuardError, match="no stage Y limit"):
+        step_out_target(fake, 8026.0, 571.6)
+
+
+LENS_LABELS = {  # nosepiece labels: bench (mm_demo_core), mock world, FakeBackend
+    "1-Plan Apo LmbdD20 4x": "4x",
+    "2-Plan Apo LmbdD 10x": "10x",
+    "2-Plan Apo 10x": "10x",
+    "3-Plan Apo LmbdD 20x": "20x",
+    "3-Plan Apo 20x": "20x",
+    "4-Apo LmbdS 40xC WI": "40x-WI",
+    "4-Plan Apo 40x WI": "40x-WI",
+    "5-Plan Apo LmbdD 60x Oil": "60x-Oil",
+    "5-Plan Apo 60x Oil": "60x-Oil",
+    "6-Plan Apo LmbdD0.13 100x Oil": "100x-Oil",
+}
+
+
+@pytest.mark.parametrize("label, key", sorted(LENS_LABELS.items()))
+def test_every_known_lens_label_has_a_table_row(label, key):
+    assert registry_key(label) == key
+    assert limits_for(label)[1] == key  # not the strictest row
+
+
+def test_config_lens_names_map_to_table_rows():
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[2] / "configs"
+    names = [yaml.safe_load(p.read_text(encoding="utf-8"))["system"]["name"]
+             for p in sorted(root.glob("ti2_*.yaml"))]
+    assert len(names) == 6
+    keys = {registry_key(n) for n in names}
+    assert keys == {"4x", "10x", "20x", "40x-WI", "60x-Oil", "100x-Oil"}
+
+
+@pytest.mark.parametrize("bench, refused", [(True, True), (False, False)])
+def test_the_bench_flag_decides_when_present(fake, bench, refused):
+    real_info = fake.info
+
+    def flagged():
+        info = real_info()
+        info.kind = "mock"
+        info.bench = bench  # T-033 field; set by hand until it lands
+        return info
+    fake.info = flagged
+    fake.z = 0.0
+    a = axis(fake)
+    if refused:
+        with pytest.raises(GuardError, match="needs a clearance check"):
+            a.approach(2810)
+    else:
+        assert a.approach(2810) == 2810
+
+
+
+def _climbs_above_2800(key):
+    wd = FREE_WD_UM.get(key)
+    return wd is not None and wd >= SAMPLE_Z_WINDOW_UM[1] - RETURN_Z_UM
+
+
+@pytest.mark.parametrize("key", sorted(OBJECTIVE_LIMITS) + ["2x", None])
+def test_approach_ceiling_per_lens(fake, key):
+    """Above 2800 only a lens whose free WD covers the window may climb (today the 4x);
+    every other lens, an unlisted key (2x) and an unreadable objective (None) are refused
+    there, not clamped."""
+    fake.z = 0.0
+    a = FocusAxis(fake, key, allow_motion=True, sleep=lambda s: None)
+    assert a.approach(2800) == 2800  # every lens may come back to the window floor
+    if _climbs_above_2800(key):
+        assert key == "4x"
+        assert a.approach(2850) == 2850
+    else:
+        with pytest.raises(GuardError, match="is above 2800 um"):
+            a.approach(2850)
+        assert fake.z == 2800  # refused before any move: no clamp
+
+
+def test_100x_oil_approach_to_3200_is_refused_not_clamped(fake):
+    fake.z = 0.0
+    a = axis(fake, OIL)
+    with pytest.raises(GuardError, match="100x-Oil.*130 um"):
+        a.approach(3200)
+    assert not any(c[0] == "move_z" for c in fake.calls)
+
+
+@pytest.mark.parametrize("how", ["read error", "no label"])
+def test_an_unreadable_objective_caps_the_approach_at_2800(fake, how):
+    if how == "read error":
+        def broken():
+            raise OSError("Nosepiece not answering")
+        fake.nosepiece = broken
+    else:
+        fake.nosepiece = lambda: ""
+    fake.z = 0.0
+    a = FocusAxis.from_backend(fake, allow_motion=True, sleep=lambda s: None)
+    assert a.key == UNKNOWN_OBJECTIVE
+    with pytest.raises(GuardError, match="unknown objective"):
+        a.approach(2900)
+    assert not any(c[0] == "move_z" for c in fake.calls)
+    assert a.approach(2800) == 2800
+    with pytest.raises(GuardError, match="working distance"):
+        a.plan(2900, 10, 5)  # no sweep plan for an unknown lens either
+
+
+
+def test_an_unreadable_info_counts_as_the_bench(fake):
+    def broken():
+        raise OSError("core not answering")
+    fake.info = broken
+    fake.z = 0.0
+    with pytest.raises(GuardError, match="needs a clearance check"):
+        axis(fake).approach(2810)

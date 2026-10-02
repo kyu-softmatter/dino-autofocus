@@ -88,3 +88,33 @@
 - guards `registry_key`: the regex `(\d+)x\b` fails on the real 40x label "4-Apo LmbdS 40xC WI", so it falls to
   the strictest row. Match `(\d+)x` followed by a letter or boundary; add tests with every lens label in
   `configs/ti2_*.yaml` and the mock world, including "40xC WI" → "40x-WI".
+
+## T-027b (AF 실행1, after 99873ae; review AF 검토보조1)
+
+Branch `exec1/T-027b-approach-ceiling` from main's hash. Owned paths as above plus `engine/guards.py`.
+
+1. SAFETY, lock-lift prerequisite (from 검토보조1's T-029 review and AF 검토): `FocusAxis.approach()` checks its target
+   only against `self.window`, so a 3200 µm target passes on 100x-Oil (free WD 130 µm) and climbs past focus.
+   `approach()` refuses (GuardError, no clamp) a target above `RETURN_Z_UM` (2800) unless the lens's `FREE_WD_UM`
+   entry is known and covers the window above it (`FREE_WD_UM[key] >= window[1] - RETURN_Z_UM`; today only 4x).
+   An unknown lens gets the 2800 cap. Parametrised test over every `OBJECTIVE_LIMITS` key, an unknown lens, and the
+   100x-Oil 3200 case. The test must include both an unlisted lens key and an unreadable objective (None or a
+   read error) refusing above 2800, no clamp (director, same as strictest-on-unknown for the XY table). T-029 keeps
+   the same rule as a second layer.
+2. `objectives_used`: add `OBJECTIVE_CHANGED = "objective_changed"` (data `{from_key, to_key, label}`) to
+   `engine/sample.py`, project it into the sample view as `objectives_used` (ordered, unique) and into the derived
+   `sample.json`. T-029 writes the event.
+3. After T-015b merges: `FocusAxis._simulated` and the other guards' bench checks call `backend.is_bench(info)`.
+   Can ride in this branch if T-015b lands first, otherwise a separate small commit.
+
+## T-027c (AF 실행1; review AF 검토보조1) — keep flag and candidate history (from T-102, map.md G10)
+
+- Today `records.events.fold()` pops a flag on `flag_remove` and overwrites a particle/candidate in place, so the
+  map screen cannot show retired flags on toggle or rejected candidates (grey ×, who and when) as ui-spec 7.4 asks.
+  The information is gone before the projection sees it, so the fix is in the fold, kept generic:
+  - flags: `flag_remove` keeps the entry with `retired: True`; every flag and particle entry gets
+    `history: [{kind, by, at}]` from the stamped events, in order.
+  - `engine/sample.py` (the only consumer of `state.flags`, ~447) projects `flags` with `retired` and `history`, and
+    candidates with `history`; anything that means "active flags" filters `retired`.
+- Owned paths for this change: `records/events.py` (fold only; tell AF 실행2, the records owner) plus the T-027
+  paths. Tests: remove then list keeps a retired flag; confirm then reject keeps both in history with by/at.

@@ -157,7 +157,7 @@ class MmDemoBackend:
             bit_depth=int(core.getProperty(cam, "BitDepth")),
             objectives=[self._objective_info(o) for o in d.objectives()],
             stage_limits=StageLimits(None, None, (BENCH_RETRACT_UM, self.zmap.bench_range_um[1])),
-            notes=self.notes(),
+            notes=self.notes(), bench=False,
         )
 
     def notes(self) -> dict[str, str]:
@@ -296,7 +296,7 @@ class MmDemoBackend:
         if device not in core.getLoadedDevices():  # e.g. the bench names Aura, DiaLamp
             raise PropertyNotAllowed(f"{device!r} is not a device on mm-demo; light is written "
                                      "as White Light Shutter.State or LED.Label/State")
-        return Readback(**asdict(self._d().set_and_read(device, prop, value)))
+        return Readback(**asdict(self._d().set_and_read(device, prop, value, token=token)))
 
     def lamp_on(self, *, token: object = None) -> list[Readback]:
         require_token(token)
