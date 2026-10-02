@@ -56,7 +56,8 @@ Everything below "HANDOVER" is the older working backlog and stays for history.
 - Rules live in docs/sessions.md (branch from a hash, `git merge main`, commit by path, push by hash only by the
   reviewer, full suites limited to 3 at once with `OPENBLAS/OMP/MKL_NUM_THREADS=1`).
 - This desktop's limit is Windows commit charge, not RAM: about 30 open sessions left 10 GB free; full runs crash
-  with 0xc000070a / 0x8007000e below ~20 GB free. Those codes mean rerun, not a test failure.
+  with 0xc000070a / 0x8007000e below ~20 GB free. Those codes mean rerun, not a test failure. Check for orphaned
+  pytest processes too: one full run from exec4 hung for ~16 h (2026-10-01 18:44 to 10-02) holding memory unseen.
 - Safety cards to read before any stand motion: T-036 (lock), T-029d (BENCH_APPROACH), T-027b (per-lens ceiling),
   T-015b/c (is_bench fail-safe), T-036b/d (preset check), T-029c (step-out intent), T-038 (runbook).
 - Ownership after archiving: guards/sample.py/gates had 실행1/17, runner 실행15; any new owner reads those cards.
