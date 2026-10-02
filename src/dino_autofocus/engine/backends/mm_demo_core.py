@@ -289,7 +289,7 @@ class DemoDevices:
         n = len(self.core.getStateLabels(DEMO_NOSEPIECE))
         if not 0 <= state < n:
             raise ValueError(f"nosepiece state {state} is not in 0..{n - 1}")
-        return self._set_and_read(DEMO_NOSEPIECE, "State", state)
+        return self.set_and_read(DEMO_NOSEPIECE, "State", state)
 
     # -- light, meaning-level, each step read back
 
@@ -313,7 +313,7 @@ class DemoDevices:
         return [*self.lamp_off(),
                 DemoReadback.of(DEMO_LED, f"{line}_Intensity (emulated)", permille,
                                 self._aura_permille[line]),
-                self._set_and_read(DEMO_LED, "Label", AURA_LINES[line]),
+                self.set_and_read(DEMO_LED, "Label", AURA_LINES[line]),
                 self._shutter(DEMO_LED_SHUTTER, True)]
 
     def aura_off(self) -> list[DemoReadback]:
@@ -332,7 +332,7 @@ class DemoDevices:
 
     # -- helpers
 
-    def _set_and_read(self, device: str, prop: str, value: Any) -> DemoReadback:
+    def set_and_read(self, device: str, prop: str, value: Any) -> DemoReadback:
         self.core.setProperty(device, prop, value)
         self.core.waitForDevice(device)
         return DemoReadback.of(device, prop, value, self.core.getProperty(device, prop))
