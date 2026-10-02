@@ -10,9 +10,10 @@ Numbers come from the 2026-09-30 bench run (`docs/runs/2026-09-30_substrate-scan
 one place so a measurement replaces them.
 
 Coordinates are the bench's: stage x/y and ZDrive z in um, increasing z = toward the sample.
-The camera image is mirrored against the stage as on the Ti2 (seen 2026-09-30): the sample
-point under sensor pixel (row, col) is at x = x_stage + (cx - col) * px,
-y = y_stage + (row - cy) * px, with (cy, cx) the sensor centre.
+ZDrive increasing = toward the sample, 0 = fully retracted (PLAN v1.2). The camera image is
+mirrored against the stage (PLAN v1.2, seen 2026-09-30): the stage point imaged at sensor
+pixel p = (col, row) is stage + inv(M) @ (centre - p), with M the 2026-09-30 4x calibration
+in px per um (`Camera.m_4x_px_per_um`), scaled by magnification for the other lenses.
 
 Image model (`MockWorld.render`):
 
@@ -160,6 +161,9 @@ class Camera:
     #: variance. With 1.6 e- read noise and 1.25 e-/ADU the two differ by under one ADU, and
     #: Poisson sampling costs ~15 ms per 512 x 512 frame, so the default is 0 (Gaussian).
     poisson_below_e: float = 0.0
+    #: stage um -> sensor px at 4x, 2026-09-30 edge-tracker calibration (1.6252 um/px, 0.117 deg)
+    m_4x_px_per_um: tuple[tuple[float, float], tuple[float, float]] = (
+        (0.61602, 0.00236), (0.00126, -0.61456))
 
     @property
     def ceiling(self) -> int:
@@ -280,6 +284,35 @@ class VirtualSample:
     def particle_z(self, i) -> np.ndarray:
         """4x in-focus ZDrive of particle(s) i."""
         return self.focus_z(self.px[i], self.py[i]) + self.height[i]
+
+
+class _Field:
+    """Stage coordinates of every pixel of one (ROI, binned) frame, and the inverse map."""
+
+    def __init__(self, m, stage, sensor, origin, nh, nw, b):
+        self.m, self.b, self.nh, self.nw = m, b, nh, nw
+        self.stage = np.asarray(stage, float)
+        self.centre_px = np.array([(sensor[1] - 1) / 2, (sensor[0] - 1) / 2])  # (col, row)
+        self.origin = np.asarray(origin, float)  # ROI (x0, y0) in sensor px
+        cols = origin[0] + (np.arange(nw) + 0.5) * b - 0.5  # sensor px of binned centres
+        rows = origin[1] + (np.arange(nh) + 0.5) * b - 0.5
+        a = np.linalg.inv(m)  # um per px
+        dc = self.centre_px[0] - cols  # (nw,)
+        dr = self.centre_px[1] - rows  # (nh,)
+        self.sx = self.stage[0] + a[0, 0] * dc[None, :] + a[0, 1] * dr[:, None]
+        self.sy = self.stage[1] + a[1, 0] * dc[None, :] + a[1, 1] * dr[:, None]
+        cx, cy = self.sx[[0, 0, -1, -1], [0, -1, 0, -1]], self.sy[[0, 0, -1, -1], [0, -1, 0, -1]]
+        self.box = (float(cx.min()), float(cx.max()), float(cy.min()), float(cy.max()))
+        self.centre = (float(self.sx.mean()), float(self.sy.mean()))
+        self.px_per_um = math.sqrt(abs(np.linalg.det(m))) / b
+
+    def to_image(self, x, y):
+        """Binned-image (col, row) of stage points: centre - M @ (q - stage), then ROI/bin."""
+        dx, dy = np.asarray(x) - self.stage[0], np.asarray(y) - self.stage[1]
+        col = self.centre_px[0] - (self.m[0, 0] * dx + self.m[0, 1] * dy)
+        row = self.centre_px[1] - (self.m[1, 0] * dx + self.m[1, 1] * dy)
+        return ((col - self.origin[0] + 0.5) / self.b - 0.5,
+                (row - self.origin[1] + 0.5) / self.b - 0.5)
 
 
 class StageLimitError(ValueError):
@@ -413,29 +446,23 @@ class MockWorld:
         if b < 1:
             raise ValueError("binning must be >= 1")
         x0, y0, rw, rh = self._roi_box(roi) if roi is not None else (0, 0, *cam.sensor[::-1])
-        nh, nw = rh // b, rw // b
-        cy, cx = (cam.sensor[0] - 1) / 2, (cam.sensor[1] - 1) / 2
-        # sample coordinates of binned pixel centres (mirrored, see module docstring)
-        cols = x0 + (np.arange(nw) + 0.5) * b - 0.5
-        rows = y0 + (np.arange(nh) + 0.5) * b - 0.5
-        sx = x_um + (cx - cols) * objective.pixel_um  # (nw,)
-        sy = y_um + (rows - cy) * objective.pixel_um  # (nh,)
+        fld = _Field(self.pixel_matrix(objective), (x_um, y_um), cam.sensor, (x0, y0),
+                     rh // b, rw // b, b)
 
         scale = exposure_ms * b * b  # light per binned pixel per unit rate
         if frame_index in self.faults.dropout_frames:
             scale *= self.faults.dropout_factor
-        signal = np.zeros((nh, nw), np.float32)
+        signal = np.zeros((fld.nh, fld.nw), np.float32)
         dia = light.dia_on and light.dia_intensity > 0
         fl = light.fluor_permille
         if dia or fl > 0:
             hx, hy = self.spec.hole_centre_um  # signed distance to the hole edge, > 0 outside
-            d = np.hypot((sx - hx).astype(np.float32)[None, :],
-                         (sy - hy).astype(np.float32)[:, None]) - np.float32(self.sample.radius_um)
+            d = (np.hypot(fld.sx - hx, fld.sy - hy) - self.sample.radius_um).astype(np.float32)
             if dia:
-                signal += self._transmitted(sx, sy, d, z_um, objective) * np.float32(
+                signal += self._transmitted(fld, d, z_um, objective) * np.float32(
                     DIA_ADU_PER_MS_PER_UNIT * light.dia_intensity * scale)
             if fl > 0:
-                signal += self._fluorescence(sx, sy, d, z_um, objective) * np.float32(
+                signal += self._fluorescence(fld, d, z_um, objective) * np.float32(
                     objective.fluor_adu_per_ms_permille * fl * scale)
 
         key = repr((self.spec.seed, round(x_um, 4), round(y_um, 4), round(z_um, 4),
@@ -448,7 +475,7 @@ class MockWorld:
         # Poisson below Camera.poisson_below_e. Binned read noise adds in quadrature over the
         # b x b pixels; the offset stays one offset.
         r = np.float32(cam.read_noise_e * b)
-        n = rng.standard_normal((nh, nw), dtype=np.float32)
+        n = rng.standard_normal((fld.nh, fld.nw), dtype=np.float32)
         e = lam + np.sqrt(lam + r * r) * n
         if cam.poisson_below_e > 0:
             low = (lam > 0) & (lam < cam.poisson_below_e)
@@ -457,19 +484,43 @@ class MockWorld:
         adu = e / np.float32(g) + np.float32(cam.offset_adu)
         return np.clip(np.rint(adu), 0, cam.ceiling).astype(np.uint16)
 
+    # -- image geometry (PLAN v1.2: stage of pixel p = stage + inv(M) @ (centre - p))
+    def pixel_matrix(self, objective: Objective | None = None) -> np.ndarray:
+        """M (sensor px per stage um) for `objective`: the 4x calibration scaled by
+        magnification. Rotation and mirror are the camera's, so they are shared by all lenses."""
+        o = objective or self.objective
+        return np.asarray(self.camera.m_4x_px_per_um, float) * (o.magnification / 4.0)
+
+    def stage_of_pixel(self, col: float, row: float, objective: Objective | None = None,
+                       stage: tuple[float, float] | None = None) -> tuple[float, float]:
+        """Stage coordinates (um) of sensor pixel (col, row): stage + inv(M) @ (centre - p)."""
+        st = np.array(stage if stage is not None else (self.x_um, self.y_um), float)
+        h, w = self.camera.sensor
+        centre = np.array([(w - 1) / 2, (h - 1) / 2])
+        xy = st + np.linalg.solve(self.pixel_matrix(objective), centre - np.array([col, row]))
+        return float(xy[0]), float(xy[1])
+
+    def pixel_of_stage(self, x_um: float, y_um: float, objective: Objective | None = None,
+                       stage: tuple[float, float] | None = None) -> tuple[float, float]:
+        """Sensor pixel (col, row) where stage point (x, y) is imaged: centre - M @ (q - stage)."""
+        st = np.array(stage if stage is not None else (self.x_um, self.y_um), float)
+        h, w = self.camera.sensor
+        centre = np.array([(w - 1) / 2, (h - 1) / 2])
+        p = centre - self.pixel_matrix(objective) @ (np.array([x_um, y_um]) - st)
+        return float(p[0]), float(p[1])
+
     # -- image terms (unit rates; multiplied by intensity and exposure in render)
     def _blur(self, objective: Objective, dz, sigma0) -> np.ndarray:
         return np.sqrt(sigma0**2 + objective.psf_sigma_um**2
                        + (objective.blur_per_um * np.asarray(dz)) ** 2)
 
-    def _view_particles(self, sx, sy, z_um, objective, transmitted: bool):
-        """(index, blur sigma um, relative peak) of the particles that reach the field."""
+    def _view_particles(self, fld: _Field, z_um, objective, transmitted: bool):
+        """(index, blur sigma um, relative peak) of the particles that may reach the field."""
         s = self.sample
-        x0, x1 = min(sx[0], sx[-1]), max(sx[0], sx[-1])
-        y0, y1 = min(sy[0], sy[-1]), max(sy[0], sy[-1])
+        x0, x1, y0, y1 = fld.box
         # widest blur a particle near the field can have: field-centre defocus, plus the
         # tilt across the field, plus the highest particle layer
-        dz_c = z_um - (float(s.focus_z((x0 + x1) / 2, (y0 + y1) / 2)) + objective.parfocal_um)
+        dz_c = z_um - (float(s.focus_z(*fld.centre)) + objective.parfocal_um)
         reach = abs(dz_c) + 0.004 * max(x1 - x0, y1 - y0) + max(s.spec.upper_height_um)
         sig_max = float(self._blur(objective, reach, s.spec.particle_diameter_um[1]))
         margin = min(4 * sig_max, 400.0)
@@ -480,55 +531,51 @@ class MockWorld:
         amp = (sigma0 / sig) ** 2
         return idx, sig, amp * (0.45 if transmitted else 1.0)
 
-    def _splat(self, out, sx, sy, idx, sig, amp, sign: float) -> None:
-        """Add sign * amp * Gaussian(sig) for each particle.
+    def _splat(self, out, fld: _Field, idx, sig_um, amp, sign: float) -> None:
+        """Add sign * amp * Gaussian for each particle, drawn in image pixels.
 
-        Particles whose Gaussian stays below 1e-4 of full scale over the whole field are
-        dropped. Compact ones go on a 4-sigma patch; ones whose patch would cover a large part
-        of the field (strong defocus) are summed in one matrix product of separable factors.
+        M is close to a scaled mirror with a 0.1 degree rotation, so an isotropic Gaussian in
+        the sample stays one in the image, with sigma_px = sigma_um * sqrt(|det M|) / binning.
+        Particles that stay below 1e-4 of full scale over the field are dropped. Up to a size
+        limit all are summed in one matrix product of separable factors; beyond it, compact
+        ones go on 4-sigma patches.
         """
         if len(idx) == 0:
             return
         s = self.sample
-        px, py = s.px[idx], s.py[idx]
-        xlo, xhi = min(sx[0], sx[-1]), max(sx[0], sx[-1])
-        ylo, yhi = min(sy[0], sy[-1]), max(sy[0], sy[-1])
-        ex = np.maximum(0.0, np.maximum(xlo - px, px - xhi))
-        ey = np.maximum(0.0, np.maximum(ylo - py, py - yhi))
-        reach = amp * np.exp(-0.5 * (ex**2 + ey**2) / sig**2)
-        keep = reach > 1e-4
-        idx, px, py, sig, amp = idx[keep], px[keep], py[keep], sig[keep], amp[keep]
-        dxs = sx[1] - sx[0] if len(sx) > 1 else -1.0  # signed um per column (mirrored: < 0)
-        dys = sy[1] - sy[0] if len(sy) > 1 else 1.0
+        c, r = fld.to_image(s.px[idx], s.py[idx])
+        sig = sig_um * fld.px_per_um
         nh, nw = out.shape
-        if len(idx) * nh * nw <= 6e7:  # one BLAS product beats a Python loop up to here
-            wide = np.ones(len(idx), bool)
+        ec = np.maximum(0.0, np.maximum(-c, c - (nw - 1)))
+        er = np.maximum(0.0, np.maximum(-r, r - (nh - 1)))
+        keep = amp * np.exp(-0.5 * (ec**2 + er**2) / sig**2) > 1e-4
+        c, r, sig, amp = c[keep], r[keep], sig[keep], amp[keep]
+        if len(c) * nh * nw <= 6e7:  # one BLAS product beats a Python loop up to here
+            wide = np.ones(len(c), bool)
         else:
-            area = np.minimum(8 * sig / abs(dxs) + 2, nw) * np.minimum(8 * sig / abs(dys) + 2, nh)
-            wide = area > 0.1 * nh * nw
+            wide = np.minimum(8 * sig + 2, nw) * np.minimum(8 * sig + 2, nh) > 0.1 * nh * nw
         if wide.any():
             sg = sig[wide][:, None].astype(np.float32)
-            gx = np.exp(-0.5 * ((sx[None, :] - px[wide][:, None]).astype(np.float32) / sg) ** 2)
-            gy = np.exp(-0.5 * ((sy[None, :] - py[wide][:, None]).astype(np.float32) / sg) ** 2)
+            jc = np.arange(nw, dtype=np.float32)[None, :]
+            jr = np.arange(nh, dtype=np.float32)[None, :]
+            gx = np.exp(-0.5 * ((jc - c[wide][:, None].astype(np.float32)) / sg) ** 2)
+            gy = np.exp(-0.5 * ((jr - r[wide][:, None].astype(np.float32)) / sg) ** 2)
             out += (gy * (sign * amp[wide][:, None]).astype(np.float32)).T @ gx
-        for x, y, sg, a in zip(px[~wide], py[~wide], sig[~wide], amp[~wide], strict=True):
-            c, r = (x - sx[0]) / dxs, (y - sy[0]) / dys
-            hw_c, hw_r = 4 * sg / abs(dxs), 4 * sg / abs(dys)
-            c0, c1 = max(int(c - hw_c), 0), min(int(c + hw_c) + 2, nw)
-            r0, r1 = max(int(r - hw_r), 0), min(int(r + hw_r) + 2, nh)
+        for cc, rr, sg, a in zip(c[~wide], r[~wide], sig[~wide], amp[~wide], strict=True):
+            c0, c1 = max(int(cc - 4 * sg), 0), min(int(cc + 4 * sg) + 2, nw)
+            r0, r1 = max(int(rr - 4 * sg), 0), min(int(rr + 4 * sg) + 2, nh)
             if c0 >= c1 or r0 >= r1:
                 continue
-            gx = np.exp(-0.5 * ((sx[c0:c1] - x) / sg) ** 2)
-            gy = np.exp(-0.5 * ((sy[r0:r1] - y) / sg) ** 2)
+            gx = np.exp(-0.5 * ((np.arange(c0, c1) - cc) / sg) ** 2)
+            gy = np.exp(-0.5 * ((np.arange(r0, r1) - rr) / sg) ** 2)
             out[r0:r1, c0:c1] += sign * a * np.outer(gy, gx)
 
-    def _transmitted(self, sx, sy, d, z_um, objective) -> np.ndarray:
+    def _transmitted(self, fld: _Field, d, z_um, objective) -> np.ndarray:
         """Transmission 0..1: open glass 1.0, spacer 0.55, chamber 0.9, dark edge line, dark
         particle shadows. The edge is blurred by the substrate's defocus at the field centre
         (the tilt across one field is ignored for the edge; particles use their own z)."""
         s, spec = self.sample, self.spec
-        xc, yc = float(np.mean(sx)), float(np.mean(sy))
-        dz = z_um - (float(s.focus_z(xc, yc)) + objective.parfocal_um)
+        dz = z_um - (float(s.focus_z(*fld.centre)) + objective.parfocal_um)
         sig = max(float(self._blur(objective, dz, 0.0)), 1e-3)
         t_in, t_spacer = 0.9, 0.55
         w0, depth = 4.0, 0.5  # edge line width (sigma, um) and depth
@@ -541,18 +588,19 @@ class MockWorld:
                        - depth * (w0 / ws) * np.exp(-0.5 * (dn / ws) ** 2))
         hx, hy = spec.hole_centre_um
         half_w = 500.0 * np.array(spec.size_mm)
-        on_x, on_y = np.abs(sx - hx) <= half_w[0], np.abs(sy - hy) <= half_w[1]
-        if not (on_x.all() and on_y.all()):  # off the slide: open light
-            t[~(on_y[:, None] & on_x[None, :])] = 1.0
-        idx, psig, amp = self._view_particles(sx, sy, z_um, objective, transmitted=True)
-        self._splat(t, sx, sy, idx, psig, amp, -1.0)
+        x0, x1, y0, y1 = fld.box
+        if x0 < hx - half_w[0] or x1 > hx + half_w[0] or y0 < hy - half_w[1] or y1 > hy + half_w[1]:
+            off = (np.abs(fld.sx - hx) > half_w[0]) | (np.abs(fld.sy - hy) > half_w[1])
+            t[off] = 1.0  # off the slide: open light
+        idx, psig, amp = self._view_particles(fld, z_um, objective, transmitted=True)
+        self._splat(t, fld, idx, psig, amp, -1.0)
         return np.clip(t, 0.0, None)
 
-    def _fluorescence(self, sx, sy, d, z_um, objective) -> np.ndarray:
+    def _fluorescence(self, fld: _Field, d, z_um, objective) -> np.ndarray:
         """Particle peaks of 1.0 when in focus, on a 0.02 chamber background (estimate)."""
         f = np.where(d < 0, np.float32(0.02), np.float32(0.0))
-        idx, psig, amp = self._view_particles(sx, sy, z_um, objective, transmitted=False)
-        self._splat(f, sx, sy, idx, psig, amp, 1.0)
+        idx, psig, amp = self._view_particles(fld, z_um, objective, transmitted=False)
+        self._splat(f, fld, idx, psig, amp, 1.0)
         return f
 
     # -- truth helpers (tests and the mock backend's "where is focus" answers)

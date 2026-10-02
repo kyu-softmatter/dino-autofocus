@@ -222,6 +222,48 @@ def test_hole_edge_is_mirrored_against_the_stage(world):
     assert mid < left  # the dark edge line sits at the field centre
 
 
+def test_pixel_mapping_follows_the_plan_convention(world):
+    """PLAN v1.2: stage of pixel p = stage + inv(M) @ (centre - p), 9/30 4x M."""
+    m = np.array([[0.61602, 0.00236], [0.00126, -0.61456]])
+    st = np.array([world.x_um, world.y_um])
+    centre = np.array([1199.5, 1199.5])
+    for p in ([0.0, 0.0], [2399.0, 100.0], [1199.5, 1199.5]):
+        want = st + np.linalg.solve(m, centre - np.array(p))
+        assert world.stage_of_pixel(*p) == pytest.approx(tuple(want))
+        assert world.pixel_of_stage(*want) == pytest.approx(tuple(p))
+    assert np.allclose(world.pixel_matrix(objective_at(5)), m * 25)
+
+
+def test_particle_is_drawn_where_the_matrix_puts_it(world):
+    world.set_nosepiece(5)
+    i = isolated_particle(world, clear_um=80.0)  # alone in a 1024-px (67 um) field
+    s = world.sample
+    world.move_xy(s.px[i] + 10.0, s.py[i] - 6.0)  # particle off-centre in the field
+    world.move_z(float(s.particle_z(i)) + world.objective.parfocal_um)
+    particle_light(world)
+    world.set_exposure(10)
+    world.set_roi(1024)
+    world.binning = 2
+    f = world.snap().astype(float) - 102
+    f[f < 0.3 * f.max()] = 0
+    rr, cc = np.indices(f.shape)
+    got = (float((cc * f).sum() / f.sum()), float((rr * f).sum() / f.sum()))
+    col, row = world.pixel_of_stage(s.px[i], s.py[i])
+    x0 = y0 = (2400 - 1024) // 2  # ROI origin in sensor px
+    want = ((col - x0 + 0.5) / 2 - 0.5, (row - y0 + 0.5) / 2 - 0.5)
+    assert got == pytest.approx(want, abs=1.0)
+    assert want[0] > 256 + 50  # particle at -x of the stage sits right of centre: the mirror
+
+
+def test_zdrive_up_is_toward_the_sample_and_zero_is_retract(world):
+    world.move_z(0.0)  # full retract is inside the travel
+    with pytest.raises(StageLimitError):
+        world.move_z(-0.1)
+    s = world.sample
+    up = np.flatnonzero(s.upper)
+    assert np.all(s.particle_z(up) > s.focus_z(s.px[up], s.py[up]))  # deeper = higher z
+
+
 def test_roi_and_binning(world):
     world.set_roi(518)
     assert world.roi == (941, 941, 518, 518)
