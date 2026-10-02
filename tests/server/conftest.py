@@ -3,6 +3,7 @@ frames, and seeded fake accounts (example.test only) with a test-only password."
 
 from __future__ import annotations
 
+import json
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -115,16 +116,52 @@ def seat(tmp_path) -> AuthSeat:
     return s
 
 
+class EventsSocket:
+    """`/ws/events` opens with the login's lock state (T-009c). This keeps that first message
+    as `.lock` and hands every other message through, so tests read events as before; a
+    refusal sent instead of the lock state is still the first thing `receive_text` gives."""
+
+    def __init__(self, ws) -> None:
+        self.ws = ws
+        self.lock: dict | None = None
+        self._buffer: list[str] = []
+        first = ws.receive_text()
+        if json.loads(first).get("type") == "lock":
+            self.lock = json.loads(first)
+        else:
+            self._buffer.append(first)
+
+    def receive_text(self) -> str:
+        return self._buffer.pop(0) if self._buffer else self.ws.receive_text()
+
+    def __getattr__(self, name: str):
+        return getattr(self.ws, name)
+
+
+class _EventsConnect:
+    def __init__(self, cm) -> None:
+        self._cm = cm
+
+    def __enter__(self) -> EventsSocket:
+        return EventsSocket(self._cm.__enter__())
+
+    def __exit__(self, *exc):
+        return self._cm.__exit__(*exc)
+
+
 class LoopbackClient(TestClient):
     """TestClient sends WebSockets to ws://testserver whatever base_url says; the Host
-    allow-list refuses that, so relative WebSocket paths go to the loopback base instead."""
+    allow-list refuses that, so relative WebSocket paths go to the loopback base instead.
+    `/ws/events` comes wrapped in `EventsSocket` unless `raw=True`."""
 
     login_token: str | None = None
 
-    def websocket_connect(self, url: str, *args, **kwargs):
+    def websocket_connect(self, url: str, *args, raw: bool = False, **kwargs):
+        events = url.split("?")[0] == "/ws/events"
         if url.startswith("/"):
             url = f"ws://{self.base_url.netloc.decode()}{url}"
-        return super().websocket_connect(url, *args, **kwargs)
+        cm = super().websocket_connect(url, *args, **kwargs)
+        return cm if raw or not events else _EventsConnect(cm)
 
 
 @pytest.fixture(scope="session")
