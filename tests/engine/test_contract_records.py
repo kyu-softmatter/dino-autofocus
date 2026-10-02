@@ -98,3 +98,15 @@ def test_a_failing_event_sink_still_leaves_the_summary(fake, tmp_path):
     s = json.loads((tmp_path / op.op_id / "summary.json").read_text())
     assert s["status"] == "finished" and "UI went away" in s["error"]
     assert s["lights_off"]["verified"]
+
+
+def test_a_sink_failing_on_the_error_event_keeps_the_original_error(fake, tmp_path):
+    def sink(ev):
+        if ev.kind == "error":
+            raise RuntimeError("UI went away")
+    with pytest.raises(ValueError, match="the real problem"), \
+            operation(fake, tmp_path, "op", sink=sink) as op:
+        raise ValueError("the real problem")
+    s = json.loads((tmp_path / op.op_id / "summary.json").read_text())
+    assert s["status"] == "error" and "the real problem" in s["error"]
+    assert "UI went away" in s["error"]

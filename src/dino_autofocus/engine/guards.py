@@ -13,11 +13,13 @@ Rules (docs/runs/2026-09-30_substrate-scan.md, scripts/change_objective.py, focu
   operation asks the operator with `scope.ask("climb_past_top", ...)`.
 - Every move is read back; off by more than the tolerance stops the operation
   (2026-09-30: commanded 3037.0, read 3036.0 -> stopped).
-- Coming back from a retract, Z does not jump to its target: `approach` climbs in steps
-  from where it is, each step read back (soft-matter-agents task 026: a handed-over Z is
-  a goal, not a destination).
-- XY targets stay in the box (+1 mm). A move longer than the objective's row in
-  `LONG_XY_UM` needs Z retracted to z_safe, confirmed by readback. The objective is read
+- Coming back from a retract, Z does not jump to its target. `approach` keeps the bench
+  procedure: one move up to 2800 um (the bottom of the sample window), then steps of at
+  most the objective's `approach_step_um` with readback, a rise check and the caller's
+  clearance check at every step (soft-matter-agents task 026: a handed-over Z is a goal,
+  not a destination).
+- XY targets stay in the box (+1 mm). A move longer than the objective's `long_xy_um`
+  in `OBJECTIVE_LIMITS` needs Z retracted to z_safe, confirmed by readback. The objective is read
   back from the nosepiece at each move; unreadable or not in the table means the
   strictest value (any move needs Z retracted). There is no per-operation override
   (director, PLAN section 5). At integration the table moves to soft-matter-agents
@@ -69,19 +71,46 @@ Z_TOL_UM = 0.25
 XY_TOL_UM = 5.0
 
 
-# Long-XY-move threshold per objective (registry key -> um), unmeasured provisional.
-# Rule: free WD >= 10 mm -> 10 mm (4x tile steps of 3.3 mm stay at sample Z, as on
-# 2026-09-30; the F5 escape of 15-20 mm still retracts); otherwise min(field of view, 1 mm),
-# field = 2400 px x the calibrated pixel (configs/ti2_*.yaml, catalogue working distances).
-LONG_XY_UM: dict[str, float] = {
-    "4x": 10000.0,  # WD 20 mm
-    "10x": 1000.0,  # WD 4 mm, field 1.56 mm
-    "20x": 777.0,  # WD 0.8 mm, field 0.777 mm
-    "40x-WI": 390.0,  # WD 0.16 mm, field 0.39 mm
-    "60x-Oil": 260.0,  # WD 0.15 mm, field 0.26 mm
-    "100x-Oil": 156.0,  # WD 0.13 mm, field 0.156 mm
+@dataclass(frozen=True)
+class ObjectiveLimits:
+    """One row of the per-objective guard table. Every value is unmeasured provisional."""
+
+    long_xy_um: float  # an XY move longer than this needs Z retracted first
+    approach_step_um: float  # largest Z step when climbing back above 2800 um
+
+
+# The per-objective guard table (registry key -> row), unmeasured provisional; it moves to
+# soft-matter-agents envelope/ at integration.
+# long_xy_um: free WD >= 10 mm -> 10 mm (4x tile steps of 3.3 mm stay at sample Z, as on
+#   2026-09-30; the F5 escape of 15-20 mm still retracts); otherwise min(field of view,
+#   1 mm), field = 2400 px x the calibrated pixel (configs/ti2_*.yaml, catalogue WD).
+# approach_step_um: 10 um for every lens to start, about WD/13 for the 100x Oil (checklist
+#   Q13); to be confirmed on the bench before M4.
+OBJECTIVE_LIMITS: dict[str, ObjectiveLimits] = {
+    "4x": ObjectiveLimits(10000.0, 10.0),  # WD 20 mm
+    "10x": ObjectiveLimits(1000.0, 10.0),  # WD 4 mm, field 1.56 mm
+    "20x": ObjectiveLimits(777.0, 10.0),  # WD 0.8 mm, field 0.777 mm
+    "40x-WI": ObjectiveLimits(390.0, 10.0),  # WD 0.16 mm, field 0.39 mm
+    "60x-Oil": ObjectiveLimits(260.0, 10.0),  # WD 0.15 mm, field 0.26 mm
+    "100x-Oil": ObjectiveLimits(156.0, 10.0),  # WD 0.13 mm, field 0.156 mm
 }
-STRICTEST_LONG_XY_UM = 0.0  # objective unreadable or not in the table: retract first
+# objective unreadable or not in the table: retract before any XY move, smallest Z step
+STRICTEST = ObjectiveLimits(0.0, min(r.approach_step_um for r in OBJECTIVE_LIMITS.values()))
+
+
+def limits_for(label_or_key: str | None) -> tuple[ObjectiveLimits, str]:
+    """(row, row name) for a nosepiece label or registry key; the strictest row if unknown."""
+    if label_or_key is None:
+        return STRICTEST, "strictest (objective unreadable)"
+    key = label_or_key
+    if key not in OBJECTIVE_LIMITS:
+        try:
+            key = registry_key(label_or_key)
+        except GuardError:
+            return STRICTEST, f"strictest ({label_or_key!r} has no magnification)"
+    if key not in OBJECTIVE_LIMITS:
+        return STRICTEST, f"strictest ({key} not in OBJECTIVE_LIMITS)"
+    return OBJECTIVE_LIMITS[key], key
 
 
 class GuardError(RuntimeError):
@@ -206,7 +235,7 @@ class FocusAxis:
         n = int(math.floor((hi - lo) / s + 1e-9)) + 1
         return SweepPlan(self.key, c, h, s, top, [round(lo + i * s, 4) for i in range(n)])
 
-    def _send(self, z: float, how: str) -> float:
+    def _send(self, z: float, how: str, basis: dict | None = None) -> float:
         if self.dry_run:
             read, sent = z, False
             self._z_dry = z
@@ -215,7 +244,7 @@ class FocusAxis:
                 raise GuardError("FocusAxis was made with allow_motion=False")
             read, sent = self.b.move_z(z, token=GUARD_TOKEN), True
         rec = {"axis": "z", "how": how, "target_um": z, "read_um": read, "sent": sent,
-               "tol_um": self.tol, "basis": {"tol_um": PROVISIONAL}}
+               "tol_um": self.tol, "basis": {"tol_um": PROVISIONAL, **(basis or {})}}
         self.motions.append(rec)
         self.emit(Event("motion", self.op_id, rec))
         if abs(read - z) > self.tol:
@@ -295,25 +324,45 @@ class FocusAxis:
     def _send_step(self, z: float, step: float) -> float:
         return self.move_to(z, allow_ascent_um=step)
 
-    def approach(self, target_um: float, step_um: float) -> float:
-        """Climb from the current Z (e.g. the 0 um retract) to `target_um` in steps of at
-        most `step_um`, each read back. Above the target it descends straight there."""
-        z, s = plain(target_um, "approach target"), plain(step_um, "approach step")
+    def approach(self, target_um: float, step_um: float | None = None,
+                 clearance: Callable[[float], bool] | None = None) -> float:
+        """Climb to `target_um` by the bench procedure: from below 2800 um one move to 2800,
+        then steps of at most the objective's `approach_step_um` (a smaller `step_um` may
+        be asked for, never a larger one). After every move the readback must match and
+        rise, and `clearance(z_read)` must return True, or the approach stops with
+        GuardError. Above the target it descends straight there."""
+        z = plain(target_um, "approach target")
         if not self.window[0] <= z <= self.window[1]:
             raise GuardError(f"approach target {z:.2f} um is outside the window {self.window}")
-        if s <= self.tol:
-            raise GuardError(f"approach step {s} um must exceed the readback tolerance "
+        row, name = limits_for(self.key)
+        step = row.approach_step_um
+        if step_um is not None:
+            asked = plain(step_um, "approach step")
+            if asked > step:
+                raise GuardError(f"approach step {asked} um is larger than {name}'s "
+                                 f"{step} um ({PROVISIONAL})")
+            step = asked
+        if step <= self.tol:
+            raise GuardError(f"approach step {step} um must exceed the readback tolerance "
                              f"{self.tol} um")
+        basis = {"approach_step_um": f"OBJECTIVE_LIMITS[{name}].approach_step_um, {PROVISIONAL}"}
         here = self.position_um()
         if here >= z:
             return self.move_to(z)
-        for _ in range(int(math.ceil((z - here) / s)) + 1):
+
+        def check(read: float, before: float) -> float:
+            if read <= before:
+                raise GuardError(f"Z did not rise: read {read:.3f} um after {before:.3f} um")
+            if clearance is not None and not clearance(read):
+                raise GuardError(f"clearance check stopped the approach at {read:.3f} um")
+            return read
+
+        if here < RETURN_Z_UM - self.tol:
+            here = check(self._send(RETURN_Z_UM, "approach_to_window", basis), here)
+        for _ in range(int(math.ceil((z - here) / step)) + 1):
             if here >= z - self.tol:
                 return here
-            read = self._send(min(z, here + s), "approach")
-            if read <= here:
-                raise GuardError(f"Z did not rise: read {read:.3f} um after {here:.3f} um")
-            here = read
+            here = check(self._send(min(z, here + step), "approach", basis), here)
         if here >= z - self.tol:
             return here
         raise GuardError(f"approach to {z:.2f} um did not arrive (Z reads {here:.2f} um)")
@@ -362,8 +411,9 @@ class XYBox:
 
 
 class XYAxis:
-    """XY moves inside the box, read back. The long-move threshold comes from `LONG_XY_UM`
-    for the objective read back at each move; the motion record names the table row."""
+    """XY moves inside the box, read back. The long-move threshold is `long_xy_um` in
+    `OBJECTIVE_LIMITS` for the objective read back at each move; the motion record names
+    the table row."""
 
     def __init__(self, backend: Backend, box: XYBox, *, allow_motion: bool = False,
                  dry_run: bool = False, sink: EventSink = null_sink, op_id: str = "",
@@ -373,14 +423,13 @@ class XYAxis:
         self.motions: list[dict] = []
 
     def long_move_um(self) -> tuple[float, str]:
-        """(threshold, table row) for the objective in place now."""
+        """(threshold, table row) for the objective in place now, read back."""
         try:
-            key = registry_key(self.b.nosepiece())
+            label = self.b.nosepiece()
         except Exception:  # noqa: BLE001 - unreadable objective: the strictest row
-            return STRICTEST_LONG_XY_UM, "strictest (objective unreadable)"
-        if key not in LONG_XY_UM:
-            return STRICTEST_LONG_XY_UM, f"strictest ({key} not in LONG_XY_UM)"
-        return LONG_XY_UM[key], key
+            label = None
+        row, name = limits_for(label)
+        return row.long_xy_um, name
 
     def goto(self, x_um: float, y_um: float) -> tuple[float, float]:
         x, y = plain(x_um, "x target"), plain(y_um, "y target")
@@ -390,7 +439,8 @@ class XYAxis:
         if p.x_um is None or p.y_um is None or p.z_um is None:
             raise GuardError(f"position unreadable before an XY move: {p.errors}")
         long_um, row = self.long_move_um()
-        basis = {"long_move_um": f"LONG_XY_UM[{row}], {PROVISIONAL}", "tol_um": PROVISIONAL,
+        basis = {"long_move_um": f"OBJECTIVE_LIMITS[{row}].long_xy_um, {PROVISIONAL}",
+                 "tol_um": PROVISIONAL,
                  "retracted_max_um": PROVISIONAL}
         if math.hypot(x - p.x_um, y - p.y_um) > long_um and p.z_um > RETRACTED_MAX_Z_UM:
             raise GuardError(f"XY move over {long_um:.0f} um ({row}) needs Z retracted; "
@@ -517,7 +567,12 @@ def operation(backend: Backend, parent: Path, op: str, sink: EventSink = null_si
         raise
     except BaseException as exc:
         status, error = "error", f"{type(exc).__name__}: {exc}"
-        scope.emit(Event("error", rec.op_id, {"error": error}))
+        ev = Event("error", rec.op_id, {"error": error})
+        rec.sink(ev)
+        try:
+            sink(ev)
+        except Exception as sink_exc:  # noqa: BLE001 - keep the operation's own error
+            error += f"; event sink failed on error: {type(sink_exc).__name__}: {sink_exc}"
         raise
     finally:
         lights = lights_off(backend)
