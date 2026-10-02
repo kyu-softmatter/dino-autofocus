@@ -128,7 +128,8 @@
 - A pydantic `Snapshot` model for `GET /api/state` (lights, positions, running op, sample, hardware,
   last_shutdown_lights, unclean_shutdown), so the web side gets generated types instead of an untyped dict.
 - T-009b test (director): a request from another loopback origin without a session cookie gets nothing beyond the
-  login routes (no state, no events, no commands except abort per D13).
+  login routes (no state, no events, no commands except loopback abort and lights_off; PLAN rule 12 and D13 as of
+  85440a5/5be7028: remote abort needs a login, remote lights_off stays refused).
 
 ## Mark remote refusals (T-009b, from the screen manager)
 
