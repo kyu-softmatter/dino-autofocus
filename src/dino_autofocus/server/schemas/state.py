@@ -102,6 +102,26 @@ class HardwareState(_Open):
     error: str | None = None
 
 
+class TrapOut(_Open):
+    index: int
+    on: bool
+    x_um: float
+    y_um: float
+    z_um: float = 0.0
+    power_pct: float | None = None
+
+
+class TweezersState(_Open):
+    """`snapshot()["tweezers"]` (engine/tweezers.py `state_of`); null when there are none."""
+
+    kind: str
+    n_traps: int
+    bench: bool = True
+    notes: dict[str, str] | None = None
+    traps: list[TrapOut] = Field(default_factory=list)
+    error: str | None = None
+
+
 class Snapshot(_Open):
     """The engine's current state."""
 
@@ -115,6 +135,7 @@ class Snapshot(_Open):
     session: SessionRef | None = None
     sample: SampleRef | None = None
     last_shutdown_lights: dict[str, Any] | None = None
+    tweezers: TweezersState | None = None
     unclean_shutdown: dict[str, Any] | None = None
     hardware: HardwareState | None = None
     stream: dict[str, Any] | None = None

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import { PatternCanvas, type PatternOut, patternTime, type ToPx } from "../../app/patterns";
+import { PatternCanvas, type PatternOut, patternTime, type ToPx } from "../patterns";
 import type { FrameMeta } from "./frames";
 
 /** Used when a frame does not say its pixel size; the overlay then says the scale is assumed. */

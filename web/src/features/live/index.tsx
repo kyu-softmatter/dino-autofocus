@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { useClient } from "../../app/client";
+import { useClient, useEngineEvents } from "../../app/client";
 import {
   type PatternOut,
   type PatternSummary,
@@ -11,8 +11,9 @@ import {
   targetLabel,
 } from "../../app/patterns";
 import { areaHref, useAreaPath } from "../../app/route";
-import { type CamFrame, LiveView } from "./LiveView";
-import { PatternOverlay } from "./PatternOverlay";
+import { type CamFrame, LiveView, PatternOverlay, type Trap, TrapOverlay } from "../../app/live";
+
+const TRAP_EVENTS = ["motion", "finished"] as const;
 
 /** `?pattern=<id>` in the route rest */
 function patternIdOf(rest: string): string {
@@ -22,7 +23,8 @@ function patternIdOf(rest: string): string {
 /**
  * The live area (owned by the shell, T-010). Route: `#/live`, or `#/live?pattern=<id>` to draw a
  * saved motion pattern over the frames (coloured by time, gray to dark green) with a time slider.
- * The overlay is display only: it shows where the piezo and the traps would go, it moves nothing.
+ * With tweezers on the setup, "Traps" draws where each trap is now (the Tweezers area moves them).
+ * The overlays are display only: they move nothing.
  */
 export default function LiveScreen() {
   const client = useClient();
@@ -32,10 +34,21 @@ export default function LiveScreen() {
   const [pattern, setPattern] = useState<PatternOut | null>(null);
   const [t, setT] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [traps, setTraps] = useState<Trap[] | null>(null);
+  const [showTraps, setShowTraps] = useState(true);
 
   useEffect(() => {
     client.get<PatternSummary[]>("/api/patterns").then(setList, () => setList([]));
   }, [client]);
+
+  const readTraps = useCallback(() => {
+    client.get<{ tweezers?: { traps?: Trap[] } | null }>("/api/state").then(
+      (s) => setTraps(s.tweezers ? (s.tweezers.traps ?? []) : null),
+      () => setTraps(null),
+    );
+  }, [client]);
+  useEffect(readTraps, [readTraps]);
+  useEngineEvents(readTraps, TRAP_EVENTS);
 
   useEffect(() => {
     setT(0);
@@ -56,9 +69,15 @@ export default function LiveScreen() {
     );
   }, [client, id]);
 
+  const trapsShown = showTraps && traps !== null;
   const overlay = useCallback(
-    (frame: CamFrame) => (pattern ? <PatternOverlay pattern={pattern} t={t} meta={frame.meta} /> : null),
-    [pattern, t],
+    (frame: CamFrame) => (
+      <>
+        {pattern && <PatternOverlay pattern={pattern} t={t} meta={frame.meta} />}
+        {trapsShown && traps && <TrapOverlay traps={traps} meta={frame.meta} />}
+      </>
+    ),
+    [pattern, t, trapsShown, traps],
   );
 
   return (
@@ -87,6 +106,11 @@ export default function LiveScreen() {
           </>
         )}
         {error && <span className="warn">{error}</span>}
+        {traps !== null && (
+          <label>
+            <input type="checkbox" checked={showTraps} onChange={(e) => setShowTraps(e.target.checked)} /> Traps
+          </label>
+        )}
       </div>
       {pattern && (
         <>
@@ -94,7 +118,7 @@ export default function LiveScreen() {
           <PatternReadout tracks={pattern.tracks} t={patternTime(pattern, t)} />
         </>
       )}
-      <LiveView overlay={pattern ? overlay : undefined} />
+      <LiveView overlay={pattern || trapsShown ? overlay : undefined} />
     </section>
   );
 }

@@ -392,7 +392,9 @@ def encode_frame(
     Image.fromarray(u8).save(buf, format="JPEG", quality=quality)
     jpeg = buf.getvalue()
     frame = WsFrame(
-        seq=seq, t=float(meta.get("t", 0.0)), width=wb, height=hb, binning=b,
+        # the runner's frames carry t_read (when popped from the camera), the placeholder t
+        seq=seq, t=float(meta.get("t", meta.get("t_read", 0.0)) or 0.0), width=wb, height=hb,
+        binning=b,
         source_width=w, source_height=h, display_min=lo, display_max=hi,
         jpeg_bytes=len(jpeg), camera=(str(meta["camera"]) if meta.get("camera") else None),
         meta=meta,

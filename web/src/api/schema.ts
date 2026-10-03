@@ -3153,6 +3153,7 @@ export interface components {
             last_shutdown_lights?: {
                 [key: string]: unknown;
             } | null;
+            tweezers?: components["schemas"]["TweezersState"] | null;
             /** Unclean Shutdown */
             unclean_shutdown?: {
                 [key: string]: unknown;
@@ -3263,6 +3264,51 @@ export interface components {
             target: string;
             /** Points */
             points: number[][];
+        };
+        /** TrapOut */
+        TrapOut: {
+            /** Index */
+            index: number;
+            /** On */
+            on: boolean;
+            /** X Um */
+            x_um: number;
+            /** Y Um */
+            y_um: number;
+            /**
+             * Z Um
+             * @default 0
+             */
+            z_um: number;
+            /** Power Pct */
+            power_pct?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * TweezersState
+         * @description `snapshot()["tweezers"]` (engine/tweezers.py `state_of`); null when there are none.
+         */
+        TweezersState: {
+            /** Kind */
+            kind: string;
+            /** N Traps */
+            n_traps: number;
+            /**
+             * Bench
+             * @default true
+             */
+            bench: boolean;
+            /** Notes */
+            notes?: {
+                [key: string]: string;
+            } | null;
+            /** Traps */
+            traps?: components["schemas"]["TrapOut"][];
+            /** Error */
+            error?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** UnlockIn */
         UnlockIn: {

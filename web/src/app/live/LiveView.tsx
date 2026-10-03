@@ -1,9 +1,10 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { useClient } from "../../app/client";
-import { EncoderZ } from "../../app/Verdict";
+import { useClient } from "../client";
+import { EncoderZ } from "../Verdict";
 import { FpsMeter, type FrameMeta, FramePairer } from "./frames";
 import { MergedView, mergeColor } from "./MergedView";
+import { frameScale } from "./PatternOverlay";
 
 type Conn = "connecting" | "open" | "closed" | "unsupported";
 
@@ -54,24 +55,52 @@ function FrameInfo({ frame, testIds }: { frame: CamFrame; testIds: boolean }) {
 /** Something drawn over a frame (the pattern overlay), sized to that frame. */
 export type Overlay = (frame: CamFrame) => ReactNode;
 
-function Stack({ frame, overlay, children }: { frame: CamFrame; overlay?: Overlay; children: ReactNode }) {
-  if (!overlay) return <>{children}</>;
+/** A click on a frame, in um from the centre of the field (x right, y down as on the image). */
+export type FramePick = (p: { camera: string; x_um: number; y_um: number; scaleKnown: boolean }) => void;
+
+function Stack({
+  frame,
+  overlay,
+  onPick,
+  children,
+}: {
+  frame: CamFrame;
+  overlay?: Overlay;
+  onPick?: FramePick;
+  children: ReactNode;
+}) {
+  if (!overlay && !onPick) return <>{children}</>;
+  const pick = onPick
+    ? (e: React.MouseEvent<HTMLDivElement>) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0) return;
+        const { umPerPx, known } = frameScale(frame.meta);
+        const px = ((e.clientX - box.left) / box.width) * frame.meta.width;
+        const py = ((e.clientY - box.top) / box.height) * frame.meta.height;
+        onPick({
+          camera: frame.camera,
+          x_um: (px - frame.meta.width / 2) * umPerPx,
+          y_um: (py - frame.meta.height / 2) * umPerPx,
+          scaleKnown: known,
+        });
+      }
+    : undefined;
   return (
-    <div className="live-stack">
+    <div className={onPick ? "live-stack live-pick" : "live-stack"} onClick={pick} data-testid="live-stack">
       {children}
-      {overlay(frame)}
+      {overlay?.(frame)}
     </div>
   );
 }
 
-function CameraPanel({ frame, overlay }: { frame: CamFrame; overlay?: Overlay }) {
+function CameraPanel({ frame, overlay, onPick }: { frame: CamFrame; overlay?: Overlay; onPick?: FramePick }) {
   return (
     <figure className="live-panel" aria-label={`Camera ${frame.camera}`}>
       <figcaption className="live-info">
         <strong>{frame.camera}</strong>
         <FrameInfo frame={frame} testIds={false} />
       </figcaption>
-      <Stack frame={frame} overlay={overlay}>
+      <Stack frame={frame} overlay={overlay} onPick={onPick}>
         <img className="live-frame" src={frame.url} alt={`Live frame ${frame.camera}`} />
       </Stack>
     </figure>
@@ -86,7 +115,16 @@ function CameraPanel({ frame, overlay }: { frame: CamFrame; overlay?: Overlay })
  * (blue camera green, red camera magenta) or one at a time. Display only: raw
  * frames stay on disk.
  */
-export function LiveView({ now = performanceNow, overlay }: { now?: () => number; overlay?: Overlay }) {
+export function LiveView({
+  now = performanceNow,
+  overlay,
+  onPick,
+}: {
+  now?: () => number;
+  overlay?: Overlay;
+  /** a click on a frame (the Tweezers area moves the chosen trap there) */
+  onPick?: FramePick;
+}) {
   const client = useClient();
   const [cams, setCams] = useState<Record<string, CamFrame>>({});
   const [mode, setMode] = useState<Mode>("side");
@@ -174,14 +212,14 @@ export function LiveView({ now = performanceNow, overlay }: { now?: () => number
       {detail && conn === "unsupported" && <p className="muted">{detail}</p>}
       {frames.length === 0 && <p className="muted">No frame yet.</p>}
       {single && (
-        <Stack frame={single} overlay={overlay}>
+        <Stack frame={single} overlay={overlay} onPick={onPick}>
           <img className="live-frame" src={single.url} alt="Live camera frame" />
         </Stack>
       )}
       {frames.length > 1 && shown === "side" && (
         <div className="live-side">
           {frames.map((f) => (
-            <CameraPanel key={f.camera} frame={f} overlay={overlay} />
+            <CameraPanel key={f.camera} frame={f} overlay={overlay} onPick={onPick} />
           ))}
         </div>
       )}
@@ -194,12 +232,12 @@ export function LiveView({ now = performanceNow, overlay }: { now?: () => number
               </span>
             ))}
           </figcaption>
-          <Stack frame={frames[0]} overlay={overlay}>
+          <Stack frame={frames[0]} overlay={overlay} onPick={onPick}>
             <MergedView frames={frames} />
           </Stack>
         </figure>
       )}
-      {frames.length > 1 && shown.startsWith("one:") && <CameraPanel frame={cams[shown.slice(4)]} overlay={overlay} />}
+      {frames.length > 1 && shown.startsWith("one:") && <CameraPanel frame={cams[shown.slice(4)]} overlay={overlay} onPick={onPick} />}
     </div>
   );
 }
