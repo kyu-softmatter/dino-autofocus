@@ -12,7 +12,17 @@ import {
   targetLabel,
 } from "../../app/patterns";
 import { areaHref, useAreaPath } from "../../app/route";
-import { type CamFrame, LiveView, PatternOverlay, type Trap, TrapOverlay } from "../../app/live";
+import {
+  type CamFrame,
+  FocusPanel,
+  type FocusSample,
+  LiveView,
+  PatternOverlay,
+  pushSample,
+  sampleOf,
+  type Trap,
+  TrapOverlay,
+} from "../../app/live";
 
 const TRAP_EVENTS = ["motion", "finished"] as const;
 
@@ -25,7 +35,8 @@ function patternIdOf(rest: string): string {
  * The live area (owned by the shell, T-010). Route: `#/live`, or `#/live?pattern=<id>` to draw a
  * saved motion pattern over the frames (coloured by time, gray to dark green) with a time slider.
  * With tweezers on the setup, "Traps" draws where each trap is now (the Tweezers area moves them).
- * The overlays are display only: they move nothing.
+ * Beside the frames: each camera's live focus score and the focus height (stage z + piezo z)
+ * over the last minute. The overlays and the panel are display only: they move nothing.
  */
 export default function LiveScreen() {
   const client = useClient();
@@ -37,6 +48,8 @@ export default function LiveScreen() {
   const [error, setError] = useState<string | null>(null);
   const [traps, setTraps] = useState<Trap[] | null>(null);
   const [showTraps, setShowTraps] = useState(true);
+  const [samples, setSamples] = useState<FocusSample[]>([]);
+  const onFrame = useCallback((f: CamFrame) => setSamples((list) => pushSample(list, sampleOf(f))), []);
 
   useEffect(() => {
     client.get<PatternSummary[]>("/api/patterns").then(setList, () => setList([]));
@@ -120,7 +133,10 @@ export default function LiveScreen() {
           <PatternRunControls patternId={pattern.id} onTime={setT} />
         </>
       )}
-      <LiveView overlay={pattern || trapsShown ? overlay : undefined} />
+      <div className="live-with-focus">
+        <LiveView overlay={pattern || trapsShown ? overlay : undefined} onFrame={onFrame} />
+        <FocusPanel samples={samples} />
+      </div>
     </section>
   );
 }

@@ -3,7 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Client, ClientProvider } from "../../app/client";
 import { fakeTransport } from "../../test/fakes";
-import { ASSUMED_PIXEL_UM, FpsMeter, FramePairer, frameScale, LiveView } from "../../app/live";
+import {
+  ASSUMED_PIXEL_UM,
+  type FocusSample,
+  FpsMeter,
+  FramePairer,
+  frameScale,
+  heightOf,
+  LiveView,
+  pushSample,
+  sampleOf,
+} from "../../app/live";
 import LiveScreen from "./index";
 
 const META = {
@@ -210,5 +220,53 @@ describe("pattern overlay", () => {
     expect(screen.getByRole("slider", { name: "Pattern time" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Edit" }).getAttribute("href")).toBe("#/patterns/square");
     expect((screen.getByRole("combobox", { name: "Pattern overlay" }) as HTMLSelectElement).value).toBe("square");
+  });
+});
+
+describe("focus panel", () => {
+  beforeEach(() => {
+    let n = 0;
+    URL.createObjectURL = vi.fn(() => `blob:frame-${++n}`);
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("adds the piezo z to the stage z and keeps the last minute", () => {
+    const s = (t: number, stageZ: number | null, piezoZ: number | null): FocusSample => ({
+      t, camera: "", score: 1, metric: "vollath4", stageZ, piezoZ,
+    });
+    expect(heightOf(s(0, 1200, 50.5))).toBe(1250.5);
+    expect(heightOf(s(0, 1200, null))).toBe(1200); // no piezo: the stage alone
+    expect(heightOf(s(0, null, 50))).toBeNull();
+    let list: FocusSample[] = [];
+    for (const t of [0, 30, 59, 61]) list = pushSample(list, s(t, 1, 0));
+    expect(list.map((x) => x.t)).toEqual([30, 59, 61]);
+    expect(sampleOf({ camera: "a", url: "", jpeg: jpeg(), fps: null, meta: { ...META, focus_score: 0.42, focus_metric: "vollath4", meta: { z_um: 10, piezo_z_um: 2 } } } as never))
+      .toMatchObject({ camera: "a", score: 0.42, stageZ: 10, piezoZ: 2 });
+  });
+
+  it("shows each camera's focus score and the stage + piezo height beside the frames", () => {
+    window.location.hash = "#/live";
+    const t = fakeTransport({ "/api/patterns": () => ({ status: 200, body: [] }) });
+    render(
+      <ClientProvider client={new Client(t.transport, "127.0.0.1")}>
+        <LiveScreen />
+      </ClientProvider>,
+    );
+    const ws = t.sockets.find((s) => s.path === "/ws/frames")!;
+    act(() => {
+      ws.open();
+      for (const [camera, score, dt] of [["Kinetix_blue", 0.5123, 0], ["Kinetix_red", 0.25, 0.1], ["Kinetix_blue", 0.75, 1]] as const) {
+        ws.send({ ...META, camera, t: META.t + dt, focus_score: score, focus_metric: "vollath4", meta: { z_um: 2989.42 + dt, piezo_z_um: 50 } });
+        ws.onmessage?.(new MessageEvent("message", { data: jpeg() }));
+      }
+    });
+    const panel = screen.getByRole("complementary", { name: "Focus" });
+    expect(screen.getByTestId("focus-score-Kinetix_blue").textContent).toBe("0.7500");
+    expect(screen.getByTestId("focus-score-Kinetix_red").textContent).toBe("0.2500");
+    expect(panel.textContent).toContain("vollath4");
+    expect(screen.getByTestId("focus-z").textContent).toContain("3040.42 µm");
+    expect(screen.getByTestId("focus-z").textContent).toContain("piezo 50.00 µm");
+    expect(screen.getByRole("img", { name: "Z height over time" })).toBeTruthy();
+    expect(screen.getByTestId("z-line").getAttribute("d")).toMatch(/^M.* L.* L/);
   });
 });

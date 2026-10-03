@@ -3626,6 +3626,16 @@ export interface components {
              * @default null
              */
             camera: string | null;
+            /**
+             * Focus Score
+             * @default null
+             */
+            focus_score: number | null;
+            /**
+             * Focus Metric
+             * @default null
+             */
+            focus_metric: string | null;
             /** Meta */
             meta?: {
                 [key: string]: unknown;
