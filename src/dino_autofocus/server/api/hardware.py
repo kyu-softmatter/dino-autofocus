@@ -10,27 +10,37 @@ PLAN.md 6 rule 2). Login and remote rules are the app's middleware (server/api/_
 `/config` is the one read that is not the snapshot: it parses a Micro-Manager `.cfg` file
 (`engine.mm_config_tree`, text only, no core) so the screen can list what the config declares,
 with the hub tree, and join it with the scan. Only files from a fixed list are read: the cfg
-the last scan loaded, the cfg mm-real would load (`mm_real.config_path()`), and the repo's
-`configs/micromanager/*.cfg`.
+the last scan loaded, the cfg mm-real would load (`mm_real.config_path()`), the repo's
+`configs/micromanager/*.cfg`, and the cfgs saved here (`<settings folder>/micromanager`).
+
+`/config/match` ranks those files against the last scan; `/config/draft` drafts a new cfg from
+the scan (`engine.mm_config_from_scan`); `POST /config/draft` saves that draft as a new file in
+the settings folder: local operator only, never overwrites, and never makes it the active
+config (that stays the `mm_config` setting, a person's edit).
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from ...engine.mm_config_tree import read_cfg
-from . import Engine, Refusal
+from ...engine.mm_config_from_scan import check_draft, draft_cfg, draft_header, match_config
+from ...engine.mm_config_tree import CfgTree, read_cfg
+from . import Auth, Engine, Login, Refusal, origin_refusal, server_action_why
 
 router = APIRouter()
 
 NOT_REPORTED = "not reported"
 #: the repo's Micro-Manager configs (src/dino_autofocus/server/api -> repo root)
 REPO_MM_CONFIGS = Path(__file__).resolve().parents[4] / "configs" / "micromanager"
+#: saved drafts: `<settings folder>/micromanager/<name>.cfg`
+SAVED_DIR = "micromanager"
+SAVE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 
 
 class DeviceRow(BaseModel):
@@ -161,6 +171,48 @@ class ConfigDevice(BaseModel):
     line: int = 0
 
 
+class ConfigMatchRow(BaseModel):
+    path: str
+    name: str
+    source: str
+    score: float  # matched / every label in the scan or the cfg
+    exact: bool
+    matched: list[str] = Field(default_factory=list)
+    differs: list[str] = Field(default_factory=list)  # same label, other library or adapter
+    missing: list[str] = Field(default_factory=list)  # in the cfg, not loaded in the scan
+    extra: list[str] = Field(default_factory=list)  # loaded in the scan, not in the cfg
+
+
+class ConfigMatchOut(BaseModel):
+    detected_at: str | None = None  # the scan compared; None = never scanned
+    rows: list[ConfigMatchRow] = Field(default_factory=list)  # best first
+    error: str | None = None
+
+
+class ConfigDraftOut(BaseModel):
+    text: str
+    devices: int
+    base: ConfigChoice | None = None  # where the details the scan lacks came from
+    from_base: list[str] = Field(default_factory=list)
+    unknown_adapter: list[str] = Field(default_factory=list)  # commented out in the text
+    hub_found: list[str] = Field(default_factory=list)  # "hub: name", commented out
+    warnings: list[str] = Field(default_factory=list)
+    load_check: str | None = None  # None: mm-real would load it; else why it would refuse
+    suggested_name: str
+
+
+class ConfigSaveIn(BaseModel):
+    name: str  # file name, ".cfg" added; letters, digits, _ . -
+    base: str | None = None  # a path from `available`; None = the best match
+    no_base: bool = False  # True: from the scan alone, no base cfg
+
+
+class ConfigSavedOut(BaseModel):
+    path: str
+    sha256: str
+    load_check: str | None = None
+
+
 class ConfigTreeOut(BaseModel):
     path: str | None  # the file parsed; None when no config file is found
     sha256: str | None = None
@@ -289,7 +341,7 @@ def _sha256(path: Path) -> str | None:
         return None
 
 
-def config_choices(hw: dict[str, Any]) -> list[ConfigChoice]:
+def config_choices(hw: dict[str, Any], saved: Path | None = None) -> list[ConfigChoice]:
     """The cfg files `/config` may read, best first, each once, existing files only.
 
     When the scanned cfg is not on this machine (a desktop or remote viewer), a listed file
@@ -310,6 +362,8 @@ def config_choices(hw: dict[str, Any]) -> list[ConfigChoice]:
         pass
     if REPO_MM_CONFIGS.is_dir():
         found += [(p, "repo") for p in sorted(REPO_MM_CONFIGS.glob("*.cfg"))]
+    if saved is not None and saved.is_dir():
+        found += [(p, "saved") for p in sorted(saved.glob("*.cfg"))]
     out: list[ConfigChoice] = []
     kept: list[Path] = []
     for path, source in found:
@@ -385,10 +439,10 @@ def status(eng: Engine) -> StatusResultOut | None:
     response_model=ConfigTreeOut,
     responses={404: {"description": "path is not one of the listed config files"}},
 )
-def config(eng: Engine, path: str | None = None) -> ConfigTreeOut:
+def config(eng: Engine, auth: Auth, path: str | None = None) -> ConfigTreeOut:
     """The devices a Micro-Manager `.cfg` declares, with the hub each hangs under. `path`
     picks one of `available`; without it, the first (the scanned cfg when there is one)."""
-    choices = config_choices(_hardware(eng))
+    choices = config_choices(_hardware(eng), saved_dir(auth))
     if path is None:
         chosen = choices[0] if choices else None
     else:
@@ -411,3 +465,127 @@ def config(eng: Engine, path: str | None = None) -> ConfigTreeOut:
         startup=tree.startup,
         warnings=tree.warnings,
     )
+
+
+def saved_dir(auth: Any) -> Path:
+    """`<settings folder>/micromanager`: next to this server's accounts file."""
+    return Path(auth.accounts.path).parent / SAVED_DIR
+
+
+def _scan(eng: Any) -> dict[str, Any] | None:
+    raw = _hardware(eng).get("profile")
+    return raw if isinstance(raw, dict) else None
+
+
+def _ranked(profile: dict[str, Any],
+            choices: list[ConfigChoice]) -> list[tuple[ConfigMatchRow, CfgTree]]:
+    """Every readable listed cfg against the scan, best score first; a tie keeps the list's
+    order (the scanned cfg first)."""
+    rows = profile.get("device_list") or []
+    ranked = []
+    for c in choices:
+        try:
+            tree = read_cfg(Path(c.path))[0]
+        except OSError:
+            continue
+        m = match_config(rows, tree)
+        ranked.append((ConfigMatchRow(path=c.path, name=c.name, source=c.source, score=m.score,
+                                      exact=m.exact, matched=m.matched, differs=m.differs,
+                                      missing=m.missing, extra=m.extra), tree))
+    return sorted(ranked, key=lambda rt: -rt[0].score)
+
+
+@router.get("/config/match", response_model=ConfigMatchOut)
+def config_match(eng: Engine, auth: Auth) -> ConfigMatchOut:
+    """Every listed cfg against the last scan's loaded devices, best match first."""
+    profile = _scan(eng)
+    if profile is None:
+        return ConfigMatchOut(error="not scanned yet: run the hardware scan first")
+    ranked = _ranked(profile, config_choices(_hardware(eng), saved_dir(auth)))
+    return ConfigMatchOut(detected_at=str(profile.get("detected_at") or ""),
+                          rows=[r for r, _ in ranked])
+
+
+def _scan_labels(profile: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """The nosepiece's state labels as the scan read them (objective rows)."""
+    rows = profile.get("device_list") or []
+    nosepiece = next((d.get("label") for d in rows
+                      if isinstance(d, dict) and d.get("role") == "nosepiece"), None)
+    if not nosepiece:
+        return {}
+    return {nosepiece: {str(o["state"]): str(o["label"])
+                        for o in profile.get("objective_rows") or []
+                        if isinstance(o, dict) and o.get("state") is not None and o.get("label")}}
+
+
+def _draft(eng: Any, auth: Any, base: str | None, no_base: bool = False) -> ConfigDraftOut:
+    profile = _scan(eng)
+    if profile is None:
+        raise Refusal(409, "not_scanned", "not scanned yet: run the hardware scan first").http()
+    ranked = _ranked(profile, config_choices(_hardware(eng), saved_dir(auth)))
+    if no_base:
+        pick = None
+    elif base is None:
+        pick = next(((r, t) for r, t in ranked if r.score > 0), None)
+    else:
+        pick = next(((r, t) for r, t in ranked if r.path == base), None)
+        if pick is None:
+            raise Refusal(404, "unknown_config", f"{base!r} is not a listed config").http()
+    choice = None if pick is None else \
+        ConfigChoice(path=pick[0].path, name=pick[0].name, source=pick[0].source)
+    base_name = choice.name if choice else None
+    d = draft_cfg(profile.get("device_list") or [], pick[1] if pick else None,
+                  base_name=base_name, scan_labels=_scan_labels(profile),
+                  header=draft_header(profile, base_name))
+    stamp = re.sub(r"[^0-9]", "", str(profile.get("detected_at") or ""))[:12] or "scan"
+    return ConfigDraftOut(text=d.text, devices=d.devices, base=choice, from_base=d.from_base,
+                          unknown_adapter=d.unknown_adapter, hub_found=d.hub_found,
+                          warnings=d.warnings, load_check=check_draft(d.text, "the draft"),
+                          suggested_name=f"from-scan-{stamp}")
+
+
+@router.get(
+    "/config/draft",
+    response_model=ConfigDraftOut,
+    responses={404: {"description": "base is not a listed config"},
+               409: {"description": "not scanned yet"}},
+)
+def config_draft(eng: Engine, auth: Auth, base: str | None = None,
+                 no_base: bool = False) -> ConfigDraftOut:
+    """A new `.cfg` drafted from the last scan; details the scan did not report come from
+    `base` (a listed cfg), the best match without it, or nowhere with `no_base`. Nothing is
+    written."""
+    return _draft(eng, auth, base, no_base)
+
+
+@router.post(
+    "/config/draft",
+    response_model=ConfigSavedOut,
+    status_code=201,
+    responses={403: {"description": "not the local operator"},
+               404: {"description": "base is not a listed config"},
+               409: {"description": "not scanned yet, or the file exists"},
+               422: {"description": "bad file name"}},
+)
+def config_draft_save(body: ConfigSaveIn, request: Request, eng: Engine, auth: Auth,
+                      me: Login) -> ConfigSavedOut:
+    """Save the draft as `<settings folder>/micromanager/<name>.cfg`. Local operator only;
+    an existing file is never replaced; the active config does not change."""
+    if why := origin_refusal(request) or server_action_why(me, "config_save"):
+        raise why.http()
+    name = body.name.strip().removesuffix(".cfg")
+    if not SAVE_NAME.match(name):
+        raise Refusal(422, "bad_name", "use letters, digits, '_', '.' or '-' (up to 80)").http()
+    draft = _draft(eng, auth, body.base, body.no_base)
+    folder = saved_dir(auth)
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{name}.cfg"
+    data = draft.text.encode("utf-8")
+    try:
+        with open(target, "xb") as f:  # x: never replace an existing file
+            f.write(data)
+    except FileExistsError:
+        why = Refusal(409, "exists", f"{target.name} already exists; pick another name")
+        raise why.http() from None
+    return ConfigSavedOut(path=str(target), sha256=hashlib.sha256(data).hexdigest(),
+                          load_check=draft.load_check)

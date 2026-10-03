@@ -75,6 +75,12 @@ class DeviceRow:
     read_back: bool = False
     write_verified: bool | None = None
     properties: dict[str, dict] = field(default_factory=dict)
+    #: `backend.DeviceInfo` wiring: what a `.cfg` needs to load it again (profiles written
+    #: before 2026-10-02 lack these and read back with the defaults)
+    adapter: str | None = None
+    parent: str | None = None
+    preinit: dict[str, str] = field(default_factory=dict)
+    installed: list[str] | None = None
 
 
 @dataclass

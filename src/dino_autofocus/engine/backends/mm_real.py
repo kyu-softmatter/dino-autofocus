@@ -73,6 +73,7 @@ from ..backend import (
     StageLimits,
     StreamActive,
     check_set_property,
+    read_wiring,
     require_token,
 )
 
@@ -109,6 +110,7 @@ USER_CHECKS = (
     "Kinetix Port that gave 2026-09-30's ReadoutRate 100MHz 12bit (2026-10-02 shows 16bit only)",
     "opening the NanoBench session for a read changes nothing (checklist Q19)",
     "stage travel limits (StageLimits are None until read)",
+    "hub getInstalledDevices during hardware_scan (Ti2-E__0, NIDAQHub) only reads",
 )
 
 
@@ -486,11 +488,13 @@ class MmRealBackend:
         for label in core.getLoadedDevices():
             props = {n: self._property_info(label, n) for n in core.getDevicePropertyNames(label)}
             dtype = core.getDeviceType(label)
-            out.append(DeviceInfo(label, getattr(dtype, "name", str(dtype)),
+            tname = getattr(dtype, "name", str(dtype))
+            out.append(DeviceInfo(label, tname,
                                   str(core.getDeviceLibrary(label)),
                                   str(core.getDeviceDescription(label)),
                                   all(p.read_ok for p in props.values()),
-                                  properties=props if include_properties else {}))
+                                  properties=props if include_properties else {},
+                                  **read_wiring(core, label, tname)))
         return out
 
     def _property_info(self, label: str, name: str) -> PropertyInfo:

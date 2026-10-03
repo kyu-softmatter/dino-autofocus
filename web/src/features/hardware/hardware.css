@@ -171,3 +171,19 @@
   font-size: 0.85em;
   word-break: break-all;
 }
+
+.hw-draft-notes {
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+}
+
+.hw-draft-text {
+  max-height: 20rem;
+  overflow: auto;
+  margin: 0.4rem 0;
+  padding: 0.5rem;
+  background: #f6f6f4;
+  border: 1px solid #ddd;
+  font-size: 0.82em;
+  white-space: pre;
+}

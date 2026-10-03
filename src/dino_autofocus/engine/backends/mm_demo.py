@@ -53,6 +53,7 @@ from ..backend import (
     StageLimits,
     StreamActive,
     check_set_property,
+    read_wiring,
     require_token,
 )
 from .mm_demo_core import (
@@ -270,9 +271,10 @@ class MmDemoBackend:
             if include_properties:
                 for name in core.getDevicePropertyNames(label):
                     props[name] = self._property_info(label, name)
-            out.append(DeviceInfo(label, getattr(dtype, "name", str(dtype)),
+            tname = getattr(dtype, "name", str(dtype))
+            out.append(DeviceInfo(label, tname,
                                   str(core.getDeviceLibrary(label)), desc, True,
-                                  properties=props))
+                                  properties=props, **read_wiring(core, label, tname)))
         return out
 
     def nosepiece_labels(self) -> list[NosepieceLabel]:

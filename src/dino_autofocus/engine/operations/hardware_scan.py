@@ -158,7 +158,11 @@ def scan(backend: Backend, *, include_properties: bool = True,
         config=cfg,
         device_list=[DeviceRow(d.label, d.type, d.library, d.description, role_of.get(d.label),
                                bool(d.read_back), d.write_verified,
-                               {k: asdict(p) for k, p in d.properties.items()})
+                               {k: asdict(p) for k, p in d.properties.items()},
+                               adapter=getattr(d, "adapter", None),
+                               parent=getattr(d, "parent", None),
+                               preinit=dict(getattr(d, "preinit", None) or {}),
+                               installed=getattr(d, "installed", None))
                      for d in devices],
         objective_rows=rows,
         camera=camera,
