@@ -53,6 +53,7 @@ from typing import Any
 
 from .backend import GUARD_TOKEN, Backend, BackendInfo, PfsState, Readback, is_bench
 from .events import Event, EventSink, fan_out, null_sink
+from .patterns import TRAP_RANGE_UM
 from .records import GRADE_MODEL, Graded, OpRecord
 
 PROVISIONAL = "unmeasured provisional"
@@ -637,6 +638,133 @@ class XYAxis:
             raise GuardError(f"XY commanded ({x:.1f}, {y:.1f}), read ({read[0]:.1f}, "
                              f"{read[1]:.1f}) um")
         return read
+
+
+TRAP_TOL_UM = 0.05  # PROVISIONAL: a trap's readback against its target
+
+
+class TrapAxis:
+    """Tweezer trap moves and on/off (card T-20261002-2205 stage 3): inside the provisional
+    trap range (`patterns.TRAP_RANGE_UM`), read back, recorded as a `motion` event. Real
+    tweezers (`info().bench` not exactly False) are refused while the stand's bench-motion
+    lock is on (`bench_lock`: the backend's `notes["bench_motion"]`, "LOCKED: ..." on
+    mm-real), and refused when that state cannot be read."""
+
+    def __init__(self, tweezers: Any, *, bench_lock: str | None, sink: EventSink = null_sink,
+                 op_id: str = "", tol_um: float = TRAP_TOL_UM, record: bool = True):
+        self.t, self.lock, self.tol = tweezers, bench_lock, tol_um
+        self.emit, self.op_id = sink, op_id
+        #: False (pattern runs): no motion event and no list entry per move, only the counts
+        self.record = record
+        self.motions: list[dict] = []
+        self.moves = 0
+        self.max_off_um = 0.0
+
+    def allowed(self) -> None:
+        """Raises when these tweezers may not move now (none, unreadable, real and locked)."""
+        self._allowed()
+
+    def _allowed(self) -> None:
+        if self.t is None:
+            raise GuardError("no tweezers on this backend")
+        try:
+            real = self.t.info().bench is not False
+        except Exception as exc:  # noqa: BLE001 - unreadable tweezers count as real ones
+            raise GuardError(f"tweezers info unreadable ({type(exc).__name__}: {exc})") from exc
+        if real and not (self.lock or "").startswith("UNLOCKED"):
+            raise GuardError(f"real tweezers stay still while bench motion is locked "
+                             f"({self.lock or 'lock state not reported'})")
+
+    def move(self, index: int, x_um: float, y_um: float, z_um: float = 0.0) -> dict:
+        self._allowed()
+        target = {"x": plain(x_um, "trap x"), "y": plain(y_um, "trap y"),
+                  "z": plain(z_um, "trap z")}
+        for axis, v in target.items():
+            lo, hi = TRAP_RANGE_UM[axis]
+            if not lo <= v <= hi:
+                raise GuardError(f"trap {index} {axis} {v:g} um is outside {lo:g}..{hi:g} um "
+                                 f"({PROVISIONAL} trap range)")
+        read = self.t.move_trap(int(index), target["x"], target["y"], target["z"],
+                                token=GUARD_TOKEN)
+        rec = {"axis": "trap", "trap": int(index), "sent": True,
+               "target_um": [target["x"], target["y"], target["z"]],
+               "read_um": [read.x_um, read.y_um, read.z_um], "tol_um": self.tol,
+               "basis": {"range": f"patterns.TRAP_RANGE_UM, {PROVISIONAL}",
+                         "tol_um": PROVISIONAL}}
+        off = max(abs(r - t) for r, t in zip(rec["read_um"], rec["target_um"], strict=True))
+        self.moves += 1
+        self.max_off_um = max(self.max_off_um, off)
+        if self.record:
+            self.motions.append(rec)
+            self.emit(Event("motion", self.op_id, rec))
+        if off > self.tol:
+            raise GuardError(f"trap {index} commanded {rec['target_um']}, read "
+                             f"{rec['read_um']} um")
+        return rec
+
+    def set_on(self, index: int, on: bool) -> dict:
+        self._allowed()
+        read = self.t.set_trap(int(index), bool(on), token=GUARD_TOKEN)
+        rec = {"axis": "trap", "trap": int(index), "sent": True, "on": bool(on),
+               "read_on": read.on}
+        self.motions.append(rec)
+        self.emit(Event("motion", self.op_id, rec))
+        if read.on is not bool(on):
+            raise GuardError(f"trap {index} commanded {'on' if on else 'off'}, reads "
+                             f"{'on' if read.on else 'off'}")
+        return rec
+
+
+PIEZO_TOL_UM = 0.05  # PROVISIONAL: a piezo axis's readback against its target
+
+
+class PiezoAxis:
+    """XYZ piezo moves for patterns (card T-20261002-2205 stage 4): inside the device's
+    travel, read back. A real piezo (`info().bench` not exactly False) is always refused:
+    piezo writes stay locked until M5 (operations-spec 9.2), whatever the bench-motion lock
+    says. Per-move events are off by default (`record=False`): a pattern run reports progress
+    and a summary instead of thousands of motion events."""
+
+    def __init__(self, piezo: Any, *, sink: EventSink = null_sink, op_id: str = "",
+                 tol_um: float = PIEZO_TOL_UM, record: bool = False):
+        self.p, self.tol, self.record = piezo, tol_um, record
+        self.emit, self.op_id = sink, op_id
+        self.max_off_um = 0.0
+        self.moves = 0
+
+    def allowed(self) -> dict[str, tuple[float, float]]:
+        """The travel per axis; raises when this piezo may not move."""
+        if self.p is None:
+            raise GuardError("no movable piezo on this setup (the stand's piezo is read only "
+                             "until M5)")
+        try:
+            info = self.p.info()
+        except Exception as exc:  # noqa: BLE001 - unreadable: treated as the real piezo
+            raise GuardError(f"piezo info unreadable ({type(exc).__name__}: {exc})") from exc
+        if info.bench is not False:
+            raise GuardError("the real piezo is read only until M5 (operations-spec 9.2)")
+        return dict(info.travel_um)
+
+    def move(self, x_um: float, y_um: float, z_um: float) -> tuple[float, float, float]:
+        travel = self.allowed()
+        target = {"x": plain(x_um, "piezo x"), "y": plain(y_um, "piezo y"),
+                  "z": plain(z_um, "piezo z")}
+        for axis, v in target.items():
+            lo, hi = travel[axis]
+            if not lo <= v <= hi:
+                raise GuardError(f"piezo {axis} {v:g} um is outside its travel {lo:g}..{hi:g} um")
+        read = self.p.move(target["x"], target["y"], target["z"], token=GUARD_TOKEN)
+        got = (read.x_um, read.y_um, read.z_um)
+        off = max(abs(r - t) for r, t in zip(got, target.values(), strict=True))
+        self.moves += 1
+        self.max_off_um = max(self.max_off_um, off)
+        if self.record:
+            self.emit(Event("motion", self.op_id, {"axis": "piezo", "sent": True,
+                                                  "target_um": list(target.values()),
+                                                  "read_um": list(got), "tol_um": self.tol}))
+        if off > self.tol:
+            raise GuardError(f"piezo commanded {list(target.values())}, read {list(got)} um")
+        return got
 
 
 # -- scopes -------------------------------------------------------------------------------

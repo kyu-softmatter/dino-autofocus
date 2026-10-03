@@ -144,7 +144,15 @@ describe("results screen", () => {
     fireEvent.click(within(ex).getByRole("checkbox", { name: /theory \(dashed\)/ }));
     expect(within(ex).queryAllByTestId("theory-line")).toHaveLength(0);
     fireEvent.change(within(ex).getByRole("combobox", { name: /X axis/ }), { target: { value: "msd_um2_theory" } });
+    const yPick = ex.querySelector("details.res-ypick") as HTMLDetailsElement;
+    expect(yPick.open).toBe(false);
+    expect(yPick.querySelector("summary")?.textContent).toBe("Y axis msd_um2");
+    fireEvent.click(yPick.querySelector("summary")!);
+    expect(yPick.open).toBe(true);
     fireEvent.click(within(ex).getByRole("checkbox", { name: /^lag_s/ }));
+    expect(yPick.querySelector("summary")?.textContent).toBe("Y axis msd_um2, lag_s");
+    fireEvent.mouseDown(document.body);
+    expect(yPick.open).toBe(false);
     await waitFor(() => expect(within(ex).getByRole("img", { name: "msd_um2, lag_s vs msd_um2_theory" })).toBeTruthy());
     fireEvent.change(within(ex).getByRole("combobox", { name: /Dataset/ }), { target: { value: "run-1/observables.json:curve" } });
     expect(within(ex).getByRole("img", { name: "psi6 vs time_si" })).toBeTruthy();

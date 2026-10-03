@@ -130,10 +130,15 @@ class Frame:
     x_um: float | None = None
     y_um: float | None = None
     z_um: float | None = None
+    #: the camera device label (e.g. "Kinetix_red"); None when the backend does not say
+    camera: str | None = None
+    #: one image pixel in the sample plane, um (binning included); None when not known
+    pixel_um: float | None = None
 
     def meta(self) -> dict:
         return {"t_read": self.t_read, "exposure_ms": self.exposure_ms, "x_um": self.x_um,
-                "y_um": self.y_um, "z_um": self.z_um, "shape": list(self.image.shape)}
+                "y_um": self.y_um, "z_um": self.z_um, "shape": list(self.image.shape),
+                "camera": self.camera, "pixel_um": self.pixel_um}
 
 
 # ---------------------------------------------------------------- discovery reads (F2)

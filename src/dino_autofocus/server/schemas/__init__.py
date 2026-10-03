@@ -28,6 +28,7 @@ from .contract import (
     EngineAPI,
     Event,
     FrameSource,
+    MultiFrameSource,
 )
 from .state import (
     AuraState,
@@ -47,7 +48,8 @@ __all__ = [
     "COMMAND_KINDS", "EVENT_KINDS", "ORIGINS", "SERVER_STAMPED", "WS_MODELS", "ApiError",
     "AuraState", "Command", "CommandAccepted", "CommandIn", "CommandKind", "EngineAPI", "Event",
     "EventKind", "EventOut", "FrameSource", "GateRow", "HardwareState", "Health", "LampState",
-    "Lights", "OpSummary", "PermissionOut", "Positions", "RefusalDetail", "SampleRef", "SessionRef",
+    "Lights", "MultiFrameSource", "OpSummary", "PermissionOut", "Positions", "RefusalDetail",
+    "SampleRef", "SessionRef",
     "ShutdownAccepted", "ShutdownIn", "Snapshot", "WsAccepted", "WsCommand", "WsError",
     "WsEvent", "WsFrame", "WsLock",
 ]

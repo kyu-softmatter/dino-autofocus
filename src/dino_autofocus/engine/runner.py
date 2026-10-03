@@ -56,6 +56,8 @@ from typing import Any, ClassVar, Protocol, runtime_checkable
 from . import records as op_records
 from .backend import AURA_LINES, Frame, Positions, is_bench
 from .events import Command, Event, EventSink
+from .piezo import piezo_state_of
+from .tweezers import state_of
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +137,9 @@ PERMISSIONS: dict[str, Permission] = {
     "goto_xy": MOTION,
     "focus_100x": MOTION,
     "objective_change": MOTION,
+    "trap_move": MOTION,  # optical tweezers (card T-20261002-2205): like any stage move
+    "trap_set": MOTION,
+    "pattern_run": MOTION,  # the piezo and the traps over time (card T-20261002-2205 stage 4)
     # command kinds, listed so the server's table is complete (D13: remote abort only)
     "abort": Permission("stop", False, False),
     LIGHTS_OFF: Permission("stop", False, False),
@@ -466,6 +471,11 @@ class OpContext:
         self.runner, self._op = runner, op
         self.backend = runner._backend if backend is None else backend
         self.stream = runner._stream
+        # the optical tweezers (engine/tweezers.py), None when there are none; operations
+        # move them through guards.TrapAxis only
+        self.tweezers = runner.tweezers if backend is None else None
+        # the XYZ piezo for patterns (engine/piezo.py), None when none may move
+        self.piezo = runner.piezo if backend is None else None
 
     op_id = property(lambda self: self._op.op_id)
     op = property(lambda self: self._op.op)
@@ -564,8 +574,14 @@ class Runner:
                  state_dir: str | Path | None = None,
                  hardware: Callable[[], dict] | None = None,
                  awaiting_return: dict | None = None,
-                 on_awaiting_return: Callable[[dict | None], None] | None = None):
+                 on_awaiting_return: Callable[[dict | None], None] | None = None,
+                 tweezers: Any = None, piezo: Any = None,
+                 patterns: Callable[[str], Any] | None = None):
         self._backend = SerializedBackend(backend)
+        self.tweezers = tweezers  # engine/tweezers.py; None: no tweezers on this setup
+        self.piezo = piezo  # engine/piezo.py; None: no piezo that may move (the stand, < M5)
+        #: pattern id -> engine.patterns.Pattern or None (the server's pattern folder)
+        self.patterns = patterns
         self._registry = registry
         self._control = control or DenyAll()
         self._records = records or (lambda meta: NoRecord())
@@ -594,6 +610,7 @@ class Runner:
         self._info: Any = None  # BackendInfo, read once at start()
         self._info_dict: dict | None = None
         self._latest: tuple[Any, dict] | None = None  # newest frame (image, meta)
+        self._latest_by_camera: dict[str, tuple[Any, dict]] = {}  # newest per camera
         self._frame_ids = itertools.count(1)
         self._last_shutdown = self._read_state(LAST_SHUTDOWN)  # ui-spec 5.2, first screen
         self._unclean: dict | None = None
@@ -712,6 +729,8 @@ class Runner:
                 "hardware": self._hardware_state(),
                 "backend_info": self._info_dict,
                 "stream": {"running": bool(self._stream.running())},
+                "tweezers": state_of(self.tweezers),
+                "piezo": piezo_state_of(self.piezo),
                 "recent": [o.public() for o in ops if o.state in ENDED],
                 "operations": self._registry.names(),
                 "permissions": permission_table(),
@@ -777,6 +796,12 @@ class Runner:
         meta with `frame_id`), or None before the first one. Nothing is queued."""
         return self._latest
 
+    def latest_frames(self) -> dict[str, tuple[Any, dict]]:
+        """MultiFrameSource for `/ws/frames`: the newest frame of each camera, keyed by the
+        camera label ("" for a frame that names none). Dual-camera setups send both."""
+        with self._lock:
+            return dict(self._latest_by_camera)
+
     def publish_frame(self, frame: Frame, source_op: str = "", op_id: str = "") -> int:
         """Called by operations (`ctx.publish_frame`) and the acquisition stream: keep it as
         the newest frame and announce it with a `frame_ready` carrying meta, never pixels."""
@@ -784,6 +809,7 @@ class Runner:
             frame_id = next(self._frame_ids)
             meta = {"frame_id": frame_id, **frame.meta(), "source_op": source_op}
             self._latest = (frame.image, meta)
+            self._latest_by_camera[frame.camera or ""] = self._latest
         self._emit(Event("frame_ready", op_id, dict(meta)))
         return frame_id
 

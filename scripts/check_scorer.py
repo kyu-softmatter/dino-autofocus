@@ -1,6 +1,6 @@
 """End-to-end check of FocusScorer on synthetic frames with known defocus, no hardware.
 
-    uv run python scripts/check_scorer.py --head outputs/heads/head_k100x_dinov2_vits14_L1.joblib
+    uv run python scripts/check_scorer.py --head outputs/heads/head_k100x_dinov2_vits14_L1.npz
 
 Pastes four 224-px frames of one synthetic focal plane into a dark 2400 x 2400 sensor
 (their own camera noise included), scores the full frame as the live view does, and

@@ -4,7 +4,9 @@ import json
 import subprocess
 import sys
 
-from dino_autofocus.server.__main__ import PlaceholderEngine, main
+import numpy as np
+
+from dino_autofocus.server.__main__ import PlaceholderEngine, main, simulated_extras
 from dino_autofocus.server.schemas import Command
 
 COMMON = {"CommandIn", "CommandAccepted", "EventOut", "Health", "ApiError",
@@ -38,6 +40,15 @@ def test_import_pulls_no_heavy_modules():
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
+def test_placeholder_engine_has_two_cameras_that_share_some_blobs():
+    eng = PlaceholderEngine(shape=(600, 800))  # blobs are sigma 40 px: a small frame saturates
+    t = 12.3
+    blue, red = (eng._picture(t, eng.CAMERAS[c]) for c in ("Kinetix_blue", "Kinetix_red"))
+    assert blue.shape == red.shape == (600, 800) and blue.dtype == red.dtype == np.uint16
+    assert not np.array_equal(blue, red)
+    assert sorted(eng.CAMERAS) == ["Kinetix_blue", "Kinetix_red"]
+
+
 def test_placeholder_engine_moves_nothing():
     eng = PlaceholderEngine(shape=(60, 80))
     seen = []
@@ -50,3 +61,16 @@ def test_placeholder_engine_moves_nothing():
         assert eng.snapshot()["positions"] == before
     finally:
         unsubscribe()
+
+
+def test_simulated_backends_get_mock_tweezers_and_piezo_and_only_the_mock_a_stream():
+    from dino_autofocus.engine.backends.mock import MockBackend
+
+    mock = MockBackend(seed=1)
+    mock.open()
+    tw, piezo, stream = simulated_extras("mock", mock, bench=False)
+    assert tw.info().kind == "mock" and piezo.info().bench is False
+    assert stream is not None and not stream.running()
+    tw, piezo, stream = simulated_extras("mm-demo", mock, bench=False)
+    assert tw is not None and piezo is not None and stream is None
+    assert simulated_extras("mm-real", mock, bench=True) == (None, None, None)

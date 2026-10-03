@@ -325,6 +325,7 @@ def create_app(
     hardware: Any = None,
     sessions: SessionSeat | None = None,
     samples_root: Path | None = None,
+    patterns_root: Path | None = None,
     remote_view: bool = False,
     remote_abort: bool = True,
     allowed_hosts: Sequence[str] = (),
@@ -343,6 +344,8 @@ def create_app(
     record seat (`session_records`), so both see the same open session.
     `hardware` (from `build_runner`) is kept on `app.state.hardware`: the gates the
     assistant's tools ask (`gates=app.state.hardware.check`, T-013b) and the screens read.
+    `patterns_root` is the folder of motion patterns (`/api/patterns`, one JSON file each);
+    without it that router answers 503.
     `allowed_hosts` adds Host header names beyond the loopback ones; under remote view the
     launcher passes this PC's host names and addresses. `dev_origins` names page origins
     besides this server's own that may write, e.g. the Vite dev server
@@ -369,6 +372,10 @@ def create_app(
     app.state.committer = committer
     app.state.interrupted_sessions = []  # closed at start-up, for the sessions screen
     app.state.hardware = hardware
+    app.state.patterns = None
+    if patterns_root is not None:
+        from .api.patterns import PatternStore
+        app.state.patterns = PatternStore(patterns_root)
     if records is not None:
         install_sample_seat(engine, records, samples_root, app.state.sessions)
     app.state.remote_view = remote_view

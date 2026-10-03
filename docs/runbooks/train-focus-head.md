@@ -4,7 +4,8 @@
   이 PC 에서만 한다. 개발 데스크톱(GTX 1650 SUPER)에서는 이 런북의 명령을 실행하지 않는다.
 - 실행하는 사람: 사용자. 개발 세션은 이 문서를 고치기만 하고 명령을 돌리지 않는다.
 - 작성: AF 실행2 (T-003), 2026-10-01. 근거 파일은 각 절 끝에 적었다.
-- 결과물: `outputs/heads/head_<data>_<backbone>.joblib` 와 `.json`. 검토 후 `models/heads/` 로 옮긴다.
+- 결과물: `outputs/heads/head_<data>_<backbone>.npz` (라이브 뷰가 읽는 피클 없는 헤드), `.joblib` (재학습용
+  파이프라인, 저장소에 넣지 않는다), `.json`. 검토 후 `.npz` 와 `.json` 만 `models/heads/` 로 옮긴다.
 
 학습된 헤드의 출력은 **모델 숫자**다. 초점 판정(`dino_autofocus.focus.verdict`)에서 grade
 `"model"` 로 기록되고, 모션 한계나 안전 판단에는 쓰이지 않는다 (PLAN.md 6절).
@@ -144,7 +145,7 @@ uv run python -c "from dino_autofocus.backbone import DinoExtractor; print(DinoE
 
 ## 2. 합성 데이터셋 생성
 
-현재 헤드(`models/heads/head_k100x_dinov2_vits14_L1.joblib`)는 100x 오일 형광 합성 세트
+현재 헤드(`models/heads/head_k100x_dinov2_vits14_L1.npz`)는 100x 오일 형광 합성 세트
 `k100x` 로 학습됐다. 같은 조건으로 다시 만들거나 장면 수를 늘릴 때:
 
 ```
@@ -207,7 +208,7 @@ uv run python scripts/train_head.py --data data/k100x
   헤드는 전체 데이터로 다시 맞춘다.
 - 광자 신호 스칼라는 MAE 를 0.25 DoF 넘게 줄일 때만 쓴다. 카메라 이득(e-/ADU)을 아직 재지
   않았기 때문이다. 쓰게 되면 `FocusScorer` 가 거부하므로 사용자에게 알린다.
-- 출력: `outputs/heads/head_k100x_dinov2_vits14_L1.joblib` 와 `.json`.
+- 출력: `outputs/heads/head_k100x_dinov2_vits14_L1.npz`, `.joblib`, `.json`.
 - `train_head.py` 는 `--data` 폴더 바로 아래의 `shard_*.npz` 만 읽는다. `farm_p5.py` 의 청크
   폴더 구조는 읽지 않으므로 p5 세트는 지금 `learning_curve_p5.py` 로 평가만 한다.
 
@@ -218,7 +219,7 @@ uv run python scripts/train_head.py --data data/k100x
 배선 확인 (학습에 쓴 장면이라 일반화 성능이 아니라 타일링, 전처리, 융합, 시간을 본다):
 
 ```
-uv run python scripts/check_scorer.py --head outputs/heads/head_k100x_dinov2_vits14_L1.joblib --data data/k100x
+uv run python scripts/check_scorer.py --head outputs/heads/head_k100x_dinov2_vits14_L1.npz --data data/k100x
 ```
 
 필요한 장면 수:
@@ -243,10 +244,11 @@ fp16 기본값 유지 여부의 근거가 된다.
 1. `outputs/heads/*.json` 의 지표를 지금 헤드(`models/heads/head_k100x_dinov2_vits14_L1.json`)와
    비교한다. 볼 것: `mae_dof`, `sign_acc_|dz|>=1`, `near_focus_mae_dof`,
    `sigma.coverage_1sigma` (0.68 근처), `valid_head.accuracy`.
-2. 나아졌으면 `.joblib` 와 `.json` 을 `models/heads/` 로 복사한다. 저장소 반영은 개발 흐름
+2. 나아졌으면 `.npz` 와 `.json` 을 `models/heads/` 로 복사한다 (`.joblib` 은 피클이라 넣지 않는다). 저장소 반영은 개발 흐름
    (매니저 배정, 실행 세션 커밋, 검토 세션 병합)을 따른다. 현미경 PC 에서 `main` 에 직접 커밋하지
    않는다.
-3. 라이브 뷰에는 `--head models/heads/<파일>.joblib` 로 넘긴다.
+3. 라이브 뷰에는 `--head models/heads/<파일>.npz` 로 넘긴다. 예전 `.joblib` 만 있으면
+   `uv run python scripts/export_head_npz.py <파일>.joblib` 로 바꾼다 (직접 학습한 파일만 연다).
 
 ## 8. 기록할 것
 

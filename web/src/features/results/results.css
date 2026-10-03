@@ -21,7 +21,20 @@
 .res-explorer { margin-top: 16px; }
 .res-explorer h4 { margin: 0 0 8px; }
 .res-controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; margin-bottom: 8px; font-size: 13px; }
-.res-controls fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px 6px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.res-ypick { position: relative; }
+.res-ypick summary { list-style: none; cursor: pointer; }
+.res-ypick summary::-webkit-details-marker { display: none; }
+.res-ypick-btn {
+  display: inline-block; min-width: 160px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: middle; padding: 1px 22px 1px 4px; border: 1px solid #767676; border-radius: 2px; background: #fff; position: relative;
+}
+.res-ypick-btn::after { content: "\25BE"; position: absolute; right: 6px; top: 0; }
+.res-ypick-menu {
+  position: absolute; z-index: 10; left: 44px; top: calc(100% + 2px); min-width: 200px; max-height: 280px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.res-ypick-menu label { white-space: nowrap; }
 .res-plot { margin: 0; }
 .res-plot figcaption { font-size: 12px; font-weight: 600; margin-bottom: 2px; overflow-wrap: anywhere; }
 .res-plot svg[role="img"] { width: 100%; max-width: 640px; height: auto; display: block; }

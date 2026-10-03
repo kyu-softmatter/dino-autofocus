@@ -75,13 +75,17 @@ class SampleRef(_Open):
     session_id: str | None = None
 
 
-class GateRow(_Open):
-    """One feature gate (T-028 `gates.gate_rows`): off rows come first."""
+class StateGateRow(_Open):
+    """One feature gate (T-028 `gates.gate_rows`): off rows come first. Named apart from
+    `server/api/hardware.GateRow` so the OpenAPI keeps both names short."""
 
     op: str
     enabled: bool
     reasons: list[str] = Field(default_factory=list)
     requires: Any = None
+
+
+GateRow = StateGateRow  # the old import name
 
 
 class HardwareState(_Open):
@@ -92,9 +96,46 @@ class HardwareState(_Open):
     profile_path: str | None = None
     sha256: str | None = None
     previous: dict[str, Any] | None = None
-    gates: list[GateRow] | dict[str, Any] = Field(default_factory=list)
+    gates: list[StateGateRow] | dict[str, Any] = Field(default_factory=list)
     objective_options: list[dict[str, Any]] = Field(default_factory=list)
     last_status: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class TrapOut(_Open):
+    index: int
+    on: bool
+    x_um: float
+    y_um: float
+    z_um: float = 0.0
+    power_pct: float | None = None
+
+
+class TweezersState(_Open):
+    """`snapshot()["tweezers"]` (engine/tweezers.py `state_of`); null when there are none."""
+
+    kind: str
+    n_traps: int
+    bench: bool = True
+    notes: dict[str, str] | None = None
+    traps: list[TrapOut] = Field(default_factory=list)
+    error: str | None = None
+
+
+class PiezoPositionOut(_Open):
+    x_um: float
+    y_um: float
+    z_um: float
+
+
+class PiezoStateOut(_Open):
+    """`snapshot()["piezo"]` (engine/piezo.py `piezo_state_of`): the piezo patterns may move;
+    null on the stand (read only until M5)."""
+
+    kind: str
+    travel_um: dict[str, list[float]] = Field(default_factory=dict)
+    bench: bool = True
+    position: PiezoPositionOut | None = None
     error: str | None = None
 
 
@@ -111,6 +152,8 @@ class Snapshot(_Open):
     session: SessionRef | None = None
     sample: SampleRef | None = None
     last_shutdown_lights: dict[str, Any] | None = None
+    tweezers: TweezersState | None = None
+    piezo: PiezoStateOut | None = None
     unclean_shutdown: dict[str, Any] | None = None
     hardware: HardwareState | None = None
     stream: dict[str, Any] | None = None

@@ -40,6 +40,7 @@ from typing import Any
 import numpy as np
 
 from .api import AuthSeat, SessionSeat
+from .api.patterns import PatternStore
 from .app import build_runner, create_app, session_records
 from .schemas import Command, Event
 
@@ -53,16 +54,23 @@ log = logging.getLogger("dino_autofocus.server")
 
 
 class PlaceholderEngine:
-    """Stands in for the engine runner. No hardware, no backend, no decisions."""
+    """Stands in for the engine runner. No hardware, no backend, no decisions. Two cameras, as
+    on the dual-camera stand: the red one sees blobs 0-2 of the blue one plus two of its own,
+    so a merged view shows both overlap and difference."""
 
     frame_hz = 10.0
     position_every_s = 1.0
+    #: sample-plane size of one camera pixel, um: Kinetix 6.5 um behind a 60x objective
+    pixel_um = 0.108
+    #: camera label -> blob indices it shows (0-4 shared phases, 5-6 red only)
+    CAMERAS = {"Kinetix_blue": (0, 1, 2, 3, 4), "Kinetix_red": (0, 1, 2, 5, 6)}
 
     def __init__(self, shape: tuple[int, int] = (1200, 1600)) -> None:
         self._sinks: list[Callable[[Event], None]] = []
         self._lock = threading.Lock()
         self._ticker: threading.Thread | None = None
         self._frame: tuple[np.ndarray, dict[str, Any]] | None = None
+        self._frames: dict[str, tuple[np.ndarray, dict[str, Any]]] = {}
         # the runner's one light shape (engine/runner.py `_light_payload`)
         self._lights = {"dialamp": {"state": "off", "intensity": None},
                         "aura": {"state": "off", "lines": {}}, "verified": True, "records": []}
@@ -134,6 +142,9 @@ class PlaceholderEngine:
     def latest_frame(self) -> tuple[np.ndarray, dict[str, Any]] | None:
         return self._frame
 
+    def latest_frames(self) -> dict[str, tuple[np.ndarray, dict[str, Any]]]:
+        return dict(self._frames)
+
     def _tick(self) -> None:
         last_position = 0.0
         while True:
@@ -142,20 +153,23 @@ class PlaceholderEngine:
                     self._ticker = None
                     return
             now = time.time()
-            self._frame = (self._picture(now), {"t": now, **self._positions,
-                                                "bit_depth": 12, "placeholder": True})
+            frames = {cam: (self._picture(now, blobs), {
+                "t": now, **self._positions, "bit_depth": 12, "placeholder": True,
+                "camera": cam, "pixel_um": self.pixel_um}) for cam, blobs in self.CAMERAS.items()}
+            self._frames = frames
+            self._frame = frames["Kinetix_red"]
             self._emit("frame_ready")
             if now - last_position >= self.position_every_s:
                 self._emit("position", **self._positions)
                 last_position = now
             time.sleep(max(0.0, now + 1.0 / self.frame_hz - time.time()))
 
-    def _picture(self, t: float) -> np.ndarray:
+    def _picture(self, t: float, blobs: tuple[int, ...] = (0, 1, 2, 3, 4)) -> np.ndarray:
         h, w = self._shape
         self._n += 1
         img = self._noise[self._n % 2].copy()
         sigma, r = 40.0, 160  # each drifting blob is drawn only within 4 sigma of its centre
-        for k in range(5):
+        for k in blobs:
             cy = int(h * (0.5 + 0.3 * np.sin(0.3 * t + 1.3 * k)))
             cx = int(w * (0.5 + 0.3 * np.cos(0.2 * t + 1.7 * k)))
             y0, y1, x0, x1 = max(cy - r, 0), min(cy + r, h), max(cx - r, 0), min(cx + r, w)
@@ -202,6 +216,26 @@ def open_backend(kind: str, *, mm_config: str | None = None,
             f"backend {kind!r} cannot open on this PC: {type(e).__name__}: {e}. "
             f"Nothing was started and no other backend is used in its place.") from e
     return backend, info
+
+
+def simulated_extras(kind: str, backend: Any, bench: bool) -> tuple[Any, Any, Any]:
+    """`(tweezers, piezo, live stream)` for this backend. Simulated backends get mock tweezers
+    and a mock XYZ piezo; only the mock gets a live stream (its frames shifted by the piezo, the
+    traps drawn in, and a second camera with the trap laser spots). The bench gets none: the
+    Tweez300 adapter is not wired yet, the stand's piezo is read only until M5, and the stand's
+    live stream is a separate decision (card T-20261002-2205)."""
+    if bench:
+        return None, None, None
+    from ..engine.piezo import MockPiezo
+    from ..engine.stream import BackendStream
+    from ..engine.tweezers import MockTweezers, mock_views
+
+    tweezers, piezo = MockTweezers(), MockPiezo()
+    if kind != "mock":
+        return tweezers, piezo, None
+    stream = BackendStream.for_backend(backend, decorate=mock_views(tweezers, piezo=piezo),
+                                       pixel_um=lambda: backend.info().pixel_um)
+    return tweezers, piezo, stream
 
 
 def record_roots(records_root: Path | None, bench: bool) -> tuple[Path, Path, Path]:
@@ -283,11 +317,13 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
                   allowed_hosts=hosts or [], dev_origins=args.dev_origin,
                   web_dist=args.web_dist)
     auth = AuthSeat.from_config(args.config_dir)
+    from ..auth import config as auth_config
+    # designs, not records: one folder for the mock and the bench alike
+    common["patterns_root"] = auth_config.config_dir(args.config_dir) / "patterns"
     if args.backend == "placeholder":
         engine = PlaceholderEngine()
         return Built(create_app(engine, auth=auth, engine_name="placeholder", **common),
                      engine, "placeholder")
-    from ..auth import config as auth_config
     from ..engine.backend import is_bench
     from ..engine.runner import RunnerConfig
     from ..records import AutoCommitter, FolderStore, GitFolderStore, RecordsConfig
@@ -297,6 +333,7 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
     runner = None
     try:
         bench = is_bench(info)
+        tweezers, piezo, stream = simulated_extras(args.backend, backend, bench)
         records, data, samples = roots = record_roots(args.records_root, bench)
         cfg = RecordsConfig(records_root=records, data_root=data)
         if shutil.which("git"):
@@ -308,11 +345,16 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
         sessions = SessionSeat()
         runner, hardware = build_runner(
             backend, records_root=records, auth=auth, state_dir=state_dir,
-            records=session_records(sessions, data / "engine_records"), config=RunnerConfig())
+            records=session_records(sessions, data / "engine_records"), config=RunnerConfig(),
+            tweezers=tweezers, piezo=piezo, stream=stream,
+            patterns=PatternStore(common["patterns_root"]).get)
         runner.start()
         app = create_app(runner, auth=auth, records=store, committer=AutoCommitter(store),
                          samples_root=samples, hardware=hardware, sessions=sessions,
                          engine_name=args.backend, **common)
+        if stream is not None:  # render only while someone has /ws/frames open
+            stream.wanted = lambda: app.state.frames.watching > 0
+            stream.attach(runner.publish_frame)
     except BaseException:
         if runner is not None:  # started: lights off and its threads stopped first
             try:

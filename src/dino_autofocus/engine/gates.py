@@ -221,6 +221,12 @@ GATES: tuple[Gate, ...] = (
     Gate("focus_100x", ("camera", "z_drive", "pfs", "aura", "nosepiece"), ("100x-Oil",),
          checks=("camera_bit_depth",)),
     Gate("loading_check_image", ("camera", "dia_lamp"), ("4x",)),
+    # optical tweezers (card T-20261002-2205): the profile has no tweezers role yet (the scan
+    # does not detect Tweez300), so the gate asks for the camera that shows the trap; whether
+    # there are tweezers at all is the operation's preflight
+    Gate("trap_move", ("camera",)),
+    Gate("trap_set", ("camera",)),
+    Gate("pattern_run", ("camera",)),  # which targets exist is the operation's preflight
 )
 
 #: never gated: stops, the scan that makes the profile, and operations on records only
