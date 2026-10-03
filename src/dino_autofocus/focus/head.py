@@ -1,7 +1,7 @@
 """The DINO focus head as plain arrays in an `.npz` file, scored with numpy.
 
 A head used to be a joblib pickle of three scikit-learn pipelines; loading a pickle runs
-code, so a head file from a public repository must not be one (docs/public-release-audit.md).
+code, so a head file from a public repository must not be one.
 The `.npz` holds only arrays and is opened with `allow_pickle=False`.
 
     dz     StandardScaler -> MLPRegressor (relu hidden layers, identity output)
