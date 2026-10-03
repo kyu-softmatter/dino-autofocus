@@ -1,0 +1,576 @@
+# dino-autofocus 를 soft-matter-agents 에 합치는 작업 계획 (최종안, 2026-10-03)
+
+작성 기준: dino-autofocus `origin/main` **56fc588** (2026-10-02; 공유 작업 폴더는 다른 세션의 브랜치 `security-auth` 0f7a881 에 체크아웃), soft-matter-agents 체크아웃 **b346c02** (브랜치 `feature/autofocus-ui`, `origin/main` 과 같음). 두 저장소 모두 읽기 전용으로 읽었다. 이 문서는 계획이고, dino-autofocus 의 `docs/` 에 두는 이 파일 외에는 두 저장소 어디에도 쓰지 않는다.
+
+표기: `SMA` = soft-matter-agents (D:/codes/github/soft-matter-agents), `dino` = dino-autofocus (D:/codes/github/dino-autofocus), `internal` = dino-autofocus-internal (비공개 메모 저장소). 공개 기한은 2026-10-23 (금) 이었고 **2026-10-03 에 공개가 끝났다**(GitHub 가시성 PUBLIC, 1.1 참조). 1주차 = 10-05(월)..10-09(금), 2주차 = 10-12..16, 3주차 = 10-19..23. 2026-10-02 는 금요일이고 오늘 10-03 은 토요일이다.
+
+SMA 쪽 용어는 그 저장소 표기(영어) 그대로 쓰고, 처음 나올 때 말로 풀어 쓴다. SMA 의 등급: **E1** 은 그쪽 run 안에서 측정된 값, **E3** 은 문서에서 인용한 값, **E5** 는 근거를 적은 가정값, **E6** 은 모델이 낸 값(카드에 들어가지 않는다).
+
+---
+
+## 0. 한 쪽 요약
+
+**이미 된 것.** 사용자 결정 Q1–Q7 과 9절 추가 결정(동작은 plan 으로만, 콘솔은 dino 에 남김, 기록은 모두 SMA `runs/` 로, scipy 제거)은 끝났다. dino 쪽은 의존성 분리(S0), 초점 핵심 평탄화(S1), 순수 핵심 평탄화(S2, `focus_step_rules` 만 남음), 판정→run_log 이벤트(S3), `records/redact.py` 와 `records/export.py`, 평탄 파일 모양 검사(`tests/test_sma_shape.py`), README·LICENSE, 로그인 강화 카드(0f7a881, `origin/main` 에 병합 완료), 라이브 초점 패널과 Z 점수 게이지(8a8c532, 62aac32, 병합 완료), 하드웨어 탭 cfg 찾기까지 되어 있다. SMA 쪽은 plan 스키마의 `operation`/`trap_steps` 가지, 압전·광집게 한계값, 압전(`python_serial.py`)·Tweez300(`python_tcp.py`) 장치 파일, 과제 023 의 1·2 항(후퇴 뒤 터릿 회전, 간극 비교로 거부; 5e6a8eb, e35e24c)이 들어가 있고, SMA 쪽 세션이 `feature/autofocus-ui` 브랜치(b346c02)를 받는 브랜치로 만들었다.
+
+**남은 것.** (1) SMA 거버넌스 사슬: plan.md 기록 → 좌석 등록 → 과제 카드 → 복사. (2) dino 평탄 파일을 넘길 수 있는 상태로: 단계 규칙 파일, 벤치 숫자 제거, 출처 헤더와 해시, 판정 계약(P2). (3) 공개 **사후 위생**(공개는 10-03 에 됐으므로 R-07 훑기를 바로 한다; 발견되면 이력 재작성이 필요하다). (4) `console/` 이동(S4)과 `hw_port`(S5). (5) 벤치 측정 세 번. (6) Z 이동 해제 사슬(복사와 무관, 10-23 뒤). (7) 라이브러리언 카드 89 장 중 복사 전 20 장.
+
+**가장 어려운 세 가지.** (a) **SMA 에서 ZDrive 를 소프트웨어가 움직이게 하는 일**: 봉투(envelope) 키가 없고, 거부 목록에 있으며, plan.md 11-21 이 "커버슬립으로 접근하는 첫 초점 찾기"를 operation plan 에서 제외하고 있다. 사람 값, 벤치 측정, 설계문서 수정, 거부가 실제 장비에서 작동하는 것을 본 뒤에야 가능하다. (b) **`hw_port` 한 이음새**: 콘솔 10 개 파일의 엔진 import 35 개 안팎을 한 프로토콜 뒤로 보내면서 OpenAPI 를 바꾸지 않는 일. (c) **사람이 직렬 병목**: 결정 묶음 두 번, 벤치 방문, 봉투 값 쓰기, plan 승인, 공개가 모두 사용자 손이다.
+
+**이번 주(10-05 주)에 사용자가 정할 것.** 5절의 묶음 A 열여섯 항목(한 자리, 약 60 분, 월요일), 그리고 벤치 방문 1 날짜(목 10-08 권고). 묶음 B 는 벤치 방문 뒤.
+
+---
+
+## 1. 두 저장소의 현재 상태
+
+### 1.1 dino-autofocus
+
+| 참조 | SHA | 내용 |
+|---|---|---|
+| 공유 작업 폴더 | 브랜치 `security-auth`, 0f7a881 | 다른 세션의 로그인 강화 카드(T-20261003-0321). 이미 `origin/main` 의 조상이다(검증: `git merge-base --is-ancestor 0f7a881 origin/main` 참). 그 카드는 **끝났다**. |
+| 지역 `main` | 4066e10 | pattern-run(f0a97f9) 포함, S0–S3, `microscope_agent/` 평탄 파일 8 + 테스트 3, `_flat.py`, `records/redact.py`, `focus/head.py`(npz), `mm_config_tree.py`, `docs/integration-sma.md` 7·9절, `docs/librarian-handoff.md` 89 장, `docs/records-privacy.md`, `tests/test_sma_shape.py`. |
+| `origin/main` | **56fc588** (4066e10 보다 14 커밋 앞) | + 라이브 초점 패널(8a8c532), Z 점수 게이지(62aac32), 하드웨어 탭 cfg 찾기(e7667e0)와 생성 타입(69bb49f), mm-real 허브 주변장치 조회 금지(f4ea9ba), `records/export.py`(1131fb7, 6절 답 네 가지 반영), 루트 `README.md`(4c5af3b: 합병 예고, 잠금 두 개, "서버 포트를 밖으로 열지 않는다", DINOv2 Apache-2.0 표기, MIT), 로그인 강화(0f7a881). |
+| GitHub 가시성 | **PUBLIC** | 2026-10-03 확인(`gh repo view kyu-softmatter/dino-autofocus`: visibility PUBLIC, pushedAt 04:11Z; dino 세션 "공개 설정 및 README 업데이트" 가 수행). Q7 의 기한(10-23)은 충족됐다. P5 의 R-07 훑기보다 공개가 먼저 됐으므로 R-07 은 **사후 위생**이 된다(발견 시 이력 재작성·GitHub 캐시 정리·비밀값 교체). |
+| 안전 잠금 | | `mm_real.BENCH_MOTION = "LOCKED"` (mm_real.py:88); `guards.BENCH_APPROACH = "MEASURED"` (guards.py:84; 렌즈별 상한 3200/2800 µm; `SAMPLE_Z_WINDOW_UM = (2800, 3200)`; `Z_TOL_UM = 0.25`). 둘 다 사용자만 바꾼다. |
+| 안 된 것 | | `console/` 없음(S4); `hw_port.py` 없음(S5); `focus_step_rules.py` 없음(S2 잔여); 평탄 파일에 출처 헤더 없음; 벤치 숫자가 평탄 파일에 남아 있음(2.1 D-02 표); `scripts/` 5.3k 줄 레거시; P2 판정 계약 미작성. |
+| 기록 | | `export.RUN_ID` 는 `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$` (SMA `runs/` 는 `[a-z0-9-]+`); `session.py` 에 `sma_run_id` 는 있으나 설정되지 않고 `bench` 필드가 없다 → mock 세션 내보내기를 거부하지 못한다. |
+| 미병합 브랜치 | | `origin/main` 에 안 들어간 것은 없다(`live-focus-gauge`, `merge/security` 모두 56fc588 에 포함). 지역 브랜치 약 126 개(exec* 108), 워크트리 33 개, 보류된 `exec12/T-036-unlock`(ebfff88, 모션 잠금 해제 — D-05 로 불필요해짐). |
+
+pattern-run 에 있는 기능(이중 카메라 라이브, 패턴 설계기와 오버레이, mock 광집게 `trap_move`/`trap_set`, mock 압전, mock 라이브 스트림, `pattern_run`, 가드 `PiezoAxis`/`TrapAxis`, 모든 호출을 거부하는 `tweez300.py` 스텁)은 `main` 과 `origin/main` 에 모두 들어 있고, 운명은 2.3 과 8절에 적는다.
+
+### 1.2 soft-matter-agents
+
+| 참조 | SHA | 내용 |
+|---|---|---|
+| **개발 데스크톱 체크아웃** (이 PC, 호스트 "Office") | **b346c02**, 브랜치 `feature/autofocus-ui` | `origin/main` 과 같다(`rev-list HEAD..origin/main` = 0; 이전 문서의 "59 커밋 뒤" 는 해소됨). `core.hooksPath` **미설정**(검증), `core.autocrlf=true`. SMA 측 주도 세션("병합 계획 주도 — soft-matter-agents 측"; 사용자가 SMA 쪽에서 합병 계획을 이끌게 한 루트 세션)이 이 브랜치를 복사 주차의 **받는 브랜치**로 만들어 푸시했고, `integration-sma.md` 7·9절을 계약으로 받아들였다. 그 세션은 자신이 architecture 인지 manager 인지 아직 모르고, 사람이 말하기 전까지 SMA 에 아무것도 쓰지 않는다. dino 측과 30 분마다 메시지를 주고받는다. |
+| **현미경 PC 체크아웃** (`D:\soft-matter-agents`, 사용자 "Takatori lab") | 미확인 | SHA, 훅, `sh`/`python` 유무를 아직 아무도 확인하지 않았다. 벤치 방문 1 때 확인한다(G-05b). |
+| `origin/main` | b346c02 | baf6f1e 이후 59 커밋: 09-26/09-30/10-01 좌석들, 과제 051–053(bleach recovery), 라이브러리언 040–042 와 KB 공개(kbv-70754d3df50b), `synthesis.py`, `envelope/snapshot.json`(kbv-a0f093a66393 로 KB 보다 뒤처짐). **plan.md, validate.py, 스키마, devices/, CLAUDE.md, ARCHITECT.md 는 변화 없음.** |
+| 복사에 필요한 거버넌스 | | `ALLOWED_PATHS`(validate.py 약 1570–1626 줄; 저장소에 있어도 되는 경로 목록)가 이미 `microscope_agent/src/<평탄 파일>`, `microscope_agent/tests/<평탄>.py`, `findings/<좌석-날짜>.json`, `runs/<[a-z0-9-]+>/<평탄>`, `rulings.jsonl` 을 허용한다. numpy 는 pixi 기본 표에 있다. → **복사는 ALLOWED_PATHS·pixi·validate.py 수정이 필요 없다.** 좌석은 architecture 가 `<역할>-<YYYYMMDD>-<n>` 형식으로 첫 커밋 전에 만든다(check 84: 커미터는 등록된 좌석이어야 한다는 검사). |
+| Z 이동에 없는 것 | | `envelope_safety.schema.json` 에 `z_drive_*` 키 없음(한계는 `targets[].limits` 아래, `additionalProperties:false`); ZDrive/XYStage/Nosepiece/PFS 는 `devices/micromanager.py` 의 `SOFTWARE_MAY_COMMAND`(소프트웨어가 명령해도 되는 장치 목록)에 없고 `REFUSED_CALLS`(장치와 무관하게 거부하는 호출: `setPosition` 포함)·`NAMED_REFUSALS`(이름을 적어 둔 거부, 권한을 더하지도 빼지도 않는 기록)에 있다; `_OPERATION_LIMIT_PREFIX = {"piezo_stage": "piezo"}`(validate.py:7753) 라서 check 86(operation plan 의 모든 목표가 봉투 한계 안인지 검사; 한계 키가 없으면 거부)은 압전만 안다; plan 스키마는 `operation` 과 `trap_steps` 가지만 있고 `derive_commands` 는 둘 다 있으면 `trap_steps` 를 읽지 않는다(operator.py:911–914); plan.md 11-21(operation plan 설계)은 "Z 는 방향 찾기 스텝만, 첫 초점 찾기는 카드 026 의 설계를 기다린다" 고 적고 있다. |
+| 과제 023 과 026 | | 023 의 1·2 항은 **들어갔다**(5e6a8eb: 상수를 조회 옆에서 풀고, 두 최소값 중 큰 쪽을 쓰고, 130 µm 바닥 아래는 거부; e35e24c: plan r2 가 PFS 해제 → 후퇴 → 터릿 → 중간 배율 → PFS 재획득 → 촬영으로 회전을 감싼다). 026(2단계 첫 초점)은 "미배정" 이고 본문은 아직 023 을 기다린다고 적고 있다. SMA 측 세션이 코드와 대조해 확인한 뒤 026 을 autofocus 좌석에 배정할 수 있다. 033 은 "실제 장비에서 거부가 보일 때까지 첫 소프트웨어 모션을 막는다" 고 기록한다. |
+| 이미 있는 장치 | | `python_tcp.py`(Tweez300, 돌아오는 정보 없음, `write_pattern` 으로 `.tpf` 파일을 쓰고 `LOAD_PATTERN`/`DELETE_PATTERN`/`TRAP_ASSIGN_PATTERN`/`TRAP_REMOVE_PATTERN` 을 감싼다; KB 에 `tweez300_load_pattern_name_first`, `tweez300_pattern_runs_on_assignment` E3), `python_serial.py`(압전, 봉투에서 한계 읽음, Z 는 방향 찾기만), `micromanager.py`(setProperty 삼중항만, 위치 쓰기 경로 없음), `mock.py`, `manual.py`, `lunf.py`. operator 에 `_operation_gate`(카드 040), 광집게 게이트(049), plan 숫자만 보는 `check_envelope`, `check_turret_rotation_allowed`. |
+| plan.md 와 dino | | plan.md 어디에도 dino-autofocus 가 없다. SMA 측 세션의 입장: **plan.md(architecture 의 파일)에 이 합병의 기록이 먼저** 들어가고, 그 뒤에 좌석 행이나 카드가 그것을 인용한다. |
+
+### 1.3 두 기한, 한 원칙
+
+원래 두 기한(공개 10-23, 복사 2주차)이 있었다. **공개는 2026-10-03 에 끝났으므로** 남은 달력 기한은 복사 주차(2주차)뿐이고, 공개 쪽에 남은 일(R-07 훑기, R-02 정리, R-03 기록 가드, D-08)은 기한이 아니라 **사후 위생**이다. 공개된 이력에서 개인 정보가 발견되면 이력 재작성과 GitHub 캐시 정리, 비밀값 교체가 따르므로 R-07 을 1주차 첫날로 당긴다. 복사와 S4/S5 는 서로 독립이다.
+
+---
+
+## 2. 합친 뒤의 시스템 구성
+
+### 2.1 그림
+
+```
+현미경 PC  (Micro-Manager 코어 하나, 압전 COM 하나, Tweez300 TCP 하나 -- 모두 SMA orchestrator 프로세스가 쥔다)
+==============================================================================================================
+| uv 환경 -- dino-autofocus (공개됨)                           | pixi `mic` 환경 -- soft-matter-agents (공개, MIT)       |
+|                                                            |                                                        |
+| [B] console/                      소유: dino 세션            | [A] microscope_agent/                                   |
+|   sma_console/  server, api, ws, auth, assistant, store,   |   src/  소유: autofocus (현미경 실행) 좌석                 |
+|                 hw_port.py(프로토콜+SmaFilesPort+로더),      |     focus_classical focus_verdict focus_run_log          |
+|                 plan_draft.py, contracts/plan.schema.json  |     focus_search focus_step_rules(새) map_edge           |
+|                 (읽기 전용 사본, 출처 헤더)                   |     map_geometry map_mosaic map_tiles  <- G-06 복사       |
+|   web/          React 12 기능 영역, FocusPanel+게이지(읽기)  |     operator.py orchestrator.py plan_card.py (SMA 것)    |
+|   launcher/     exe: 콘솔만 띄움, pixi 는 절대 안 부름        |     devices/ micromanager.py python_serial.py           |
+|   tests/        pytest (check 13 대상 아님)                  |             python_tcp.py mock.py manual.py lunf.py     |
+|                                                            |             (뒤에: z_drive 위치 경로, G-09)              |
+| [C] src/dino_autofocus/  독립 잔여부  소유: dino 세션         |   tests/  test_focus_core test_focus_search             |
+|   engine/ runner, backend 프로토콜, guards(숫자는 여기;      |           test_map_core test_focus_step_rules            |
+|           잠금 전환은 사용자), gates, records, sample,       |   envelope/safety.json   소유: 사람만                     |
+|           patterns, operations/*(벤치에선 mock 만),          |           (뒤에 z_drive_* 키, U-03)                       |
+|           backends/{mock,mock_world,replay,stacks,mm_demo*} |   approvals/appr-<qid>-rN.json  소유: 사람만              |
+|           backends/mm_real.py(cfg 적재+읽기+조명;            |   questions/<qid>/plan_*.json   소유: 좌석                |
+|             모션은 D-05 에서 삭제), piezo.py, tweezers.py,   |   runs/<run_id>/log.json [+events.jsonl, G-13]           |
+|           stream.py(mock 만), console_port.py(LocalEngine)  |                 /console.*  <- 비식별화된 dino 기록       |
+|   focus/ dino.py head.py backbone.py models/ (ml extra)    |   findings/<seat>-<date>.json  rulings.jsonl (좌석)      |
+|   synth/  live.py(ml)                                       |   tasks/05x-*.md  소유: manager-microscope               |
+|   microscope_agent/  G-06 뒤: [A] 의 읽기 전용 거울,         | contracts/  소유: architecture(seats.json, pyproject,    |
+|                      해시로 고정 (D-03 표류 검사)             |             pixi, ALLOWED_PATHS) / manager(validate.py,  |
+|   _flat.py  [C] 와 (C-04 전까지) 콘솔 테스트의 옛 이름 유지   |             schemas/) -- 복사에 수정 불필요               |
+|                                                            | librarian_agent/kb  소유: 라이브러리언 (dino 값 <=E3)     |
+| 지역 전용 (git 밖, SMA 밖):                                  | plan.md CLAUDE.md README.md  소유: architecture          |
+|   %LOCALAPPDATA%: accounts.json audit.jsonl people.json    |                                                        |
+|                   patterns/  plans/drafts/<draft_id>.json  |                                                        |
+|   D:\AutoFocus\records  비공개 git, 전체 보존, 푸시 안 함      |                                                        |
+|   D:\AutoFocus\data, D:\AutoFocus\samples  (OD-25)          |                                                        |
+|   D:\AutoFocus\outbox\<run_id>\console.*  내보내기 대기       |                                                        |
+==============================================================================================================
+```
+
+### 2.2 폴더별 역할
+
+| 폴더 | 소유 | 하는 일 | 쓰는 쪽 |
+|---|---|---|---|
+| SMA `microscope_agent/src/focus_*.py`, `map_*.py` | autofocus 좌석 (복사 뒤 **원본**, OD-3) | 초점 지표·판정·탐색 스텝 열거·단계 규칙·맵 기하/타일/모자이크/가장자리. 순수 함수, stdlib+numpy, 숫자 없음 | operator (G-12 뒤), dino 거울을 통해 dino 엔진과 콘솔 테스트 |
+| SMA `microscope_agent/src/{operator,orchestrator}.py`, `devices/` | 현미경/autofocus 좌석 | 장비를 움직이는 유일한 경로. 허용 목록·인터락·봉투 비교 | 사람이 pixi `mic` 에서 실행 |
+| SMA `envelope/safety.json`, `approvals/` | 사람 | 한계값과 승인 | operator 가 읽음; 콘솔은 읽기만 |
+| SMA `questions/`, `runs/`, `findings/`, `rulings.jsonl` | 좌석 | plan 카드, run 기록, 벤치 사실, 전수 판정 | 콘솔 `SmaFilesPort` 가 읽음(쓰지 않음); 라이브러리언 |
+| SMA `contracts/`, `plan.md`, `CLAUDE.md`, `README.md` | architecture / manager | 좌석 등록, 검증기, 스키마, 설계 기록 | 모든 좌석 |
+| dino `console/sma_console/` | dino 세션 | 화면 서버, 로그인, 보조(assistant) 텍스트, plan 초안 쓰기(콘솔 폴더에), SMA 파일 읽기 | 사람(브라우저) |
+| dino `console/web/`, `console/launcher/` | dino 세션 | React 화면, exe 실행기 | 사람 |
+| dino `src/dino_autofocus/` | dino 세션 | mock/replay/mm-demo 데모 엔진, 하드웨어 없는 UI 개발, 모델 제작·평가, `LocalEnginePort`, 거울 | 콘솔(모듈 경로 문자열로 적재), dino 테스트 |
+| dino `microscope_agent/` (거울) | dino 세션 (읽기 전용) | [A] 와 바이트 단위로 같아야 하는 사본; 날짜 카드로만 갱신 | dino 엔진·테스트 |
+| `%LOCALAPPDATA%` 계정·감사·사람 id·패턴·초안 | 사람 | git 밖. 이메일은 어디에도 안 나감 | 콘솔 |
+| `D:\AutoFocus\records` | 사람 | 전체 보존 비공개 git, 푸시 안 함 (D10) | 콘솔 세션 화면 "내보내기" |
+| `D:\AutoFocus\outbox` | 콘솔 | 비식별화된 `console.*` 대기 | SMA 좌석이 해시 확인 뒤 `runs/` 로 복사 |
+
+### 2.3 데이터 흐름 세 가지
+
+**동작은 plan 으로만.** 화면/보조 → `hw_port.plan_draft(op, args)` → `<config_dir>/plans/drafts/<draft_id>.json` (`status: DRAFT`, `drafted_by: <person_id>`, `author: human`, 모든 숫자에 `source: person|envelope`; 봉투 한계는 `envelope/safety.json` 을 읽기 전용으로; 키가 없으면 초안 거부; 보조(모델)가 고른 숫자는 `numbers[]` 에 들어가지 못하고 사람이 화면에서 직접 입력하거나 필드별로 받아들여야 한다 — E6 세탁 방지) → autofocus 좌석(또는 사람)이 **자기 이름으로** SMA `questions/<qid>/plan_*.json` 에 복사 → 사람이 `approvals/appr-<qid>-r<N>.json` 을 쓴다(콘솔은 JSON 을 보여 주고 클립보드에 복사할 뿐, 저장 버튼이 없다) → 사람이 pixi `mic` 에서 `operator.run` → `orchestrator.dispatch`(허용 목록·인터락·예외) → `runs/<run_id>/log.json` (G-13 뒤 `events.jsonl` 도) → 콘솔 `SmaFilesPort` 가 `runs/` 와 초안 폴더를 폴링 → 승인 상태, "<시각> 기준" 진행, 판정 표시. 중단(Abort)은 G-13 의 루프백 소켓이 생길 때까지 SMA 모드에서 비활성: "장비 앞 또는 operator 터미널에서 멈춘다".
+
+**기록은 비식별화 거쳐 `runs/` 로.** 엔진 기록 → `D:\AutoFocus\records` (세션에 `bench`, `backend_kind`, `sma_run_id`, `sma_runs[]` 추가) → 세션 화면 "내보내기" (`people.json` 으로 id 치환, `redact.py` 가 잔여 하나라도 있으면 세션 전체 거부, `bench: true` 아니면 거부) → `D:\AutoFocus\outbox\<run_id>\console.session.json`, `console.manifest.json`, `console.log.session.jsonl`, `console.records.<op>.jsonl`, `console.export.json`(파일별 sha256, `runs[]`, `session_hash`) → SMA 좌석이 해시 확인·`runs/<run_id>/` 에 `log.json` 옆으로 복사·파일 이름을 하나씩 적어 커밋 (G-08) → 라이브러리언은 `log.json` 이 있고 `bench: true` 인 run 만 읽는다. `console.*` 과 판정 이벤트는 **등급을 자기 신고하지 않고 출처(`measured:<run_id>`, `computed:<formula_id>`, `prior_run:dino-autofocus@<sha>`)만** 싣는다; 등급은 SMA 쪽이 출처에서 유도한다(L-04). `log.json` 없는 run 폴더는 check 15(run 폴더에는 operator 의 log 가 있어야 한다는 검사)에 걸리므로 SMA run 이 먼저 있어야 한다.
+
+**지식은 라이브러리언으로.** `docs/librarian-handoff.md` 의 질문 카드 → 사용자가 복사 전 20 장(숫자가 평탄 파일을 떠나는 16 장 + 충돌 4 장)에 답 → SMA `findings/<seat>-<date>.json` (document_fact / person_statement / unmeasured) → 라이브러리언이 인용 경로를 **지정된 커밋에서** 읽어 E3 이하로 입력 → KB 공개 → `envelope/snapshot.json`. dino 는 이미 공개됐으므로 라이브러리언이 읽을 출처는 **공개 URL 과 커밋 sha**(`prior_run:dino-autofocus@<sha>`)이고, 그것을 허용 출처로 적는 한 줄이 G-02 (e) 에 들어간다.
+
+### 2.4 pattern-run 기능의 운명
+
+| 기능 | 운명 | 근거 |
+|---|---|---|
+| `tweez300.py` 스텁 | D-05 에서 삭제. SMA `python_tcp.py` 가 드라이버. 문서는 1주차에 그쪽을 가리키게(P-01) | SMA 규칙: `devices/` 는 orchestrator 만; 둘째 장치 경로 금지 (Q1) |
+| `PiezoAxis`/`TrapAxis`/`MockPiezo`/`MockTweezers` | 가드는 장치 경로로서 D-05 에서 삭제; mock 은 [C] 에 "mock 이동 범위" 표시로 남음; 읽기 되돌림 계약은 mock 전용 표시 | 위와 같음; 광집게는 아무것도 되돌려 주지 않는다(SMA) |
+| `patterns.py` 범위(±100/±50, ±60/±10, 0.05 허용) | 봉투에서 읽은 한계로 교체(P-02); 숫자는 dino 코드를 떠남 | SMA 10.3: 안전 한계는 넘어가지 않고 사람이 봉투에 쓴다 |
+| `pattern_run`, `trap_move`, `trap_set` | [C] 의 mock 데모 작업으로 유지(OD-12). 벤치에서는 "SMA plan 초안" 버튼(P-03)으로, 표현 가능한 부분집합만 | 동작은 plan 으로만(9절) |
+| 패턴 설계기의 광집게 트랙 | 스트리밍 `TRAP_POSITION` 이 아니라 **`.tpf` 패턴 파일**(점마다 x, y, 세기; 트랩 기준 상대좌표)로 `write_pattern` 을 거친다. plan 이 `.tpf` 를 실을 수 있는지(기존 `trap_steps` 또는 새 kind)는 manager-microscope 의 스키마 질문(P-04 축소판) | SMA `python_tcp.py` 와 KB 의 두 항목(E3) |
+| 패턴 설계기의 압전 트랙 | 지금 합법인 plan 모양은 X/Y 사인과 스텝뿐; Z 는 방향 찾기만. 원·나선·래스터·반복·Z 트랙·압전+광집게 혼합은 이유를 달아 거부 | SMA 11-21 과 check 86 |
+| 이중 카메라 합성 보기 | 유지, 표시 전용. WsFrame 에 `time_base: "software"` 와 고정 자막(P-01). 물리량 계산에 쓰지 않음 | 동시 촬영은 하드웨어 트리거가 있는 SMA plan 의 일 |
+| 벤치 라이브 스트림 | SMA 가 프레임 탭(G-14)을 내기 전까지 mock 전용. 콘솔은 둘째 코어를 열지 않음 | 코어 하나(4.6.8 단일 진입점) |
+| FocusPanel + Z 점수 게이지 (병합됨) | 읽기 전용. 라이브 점수는 ws.py 에서 프레임 메타로(C-09); 벤치의 압전 Z 는 G-14 뒤 hw_port 상태 필드로, "압전 z 부호 미측정" 자막(C-12) | 콘솔은 COM4 를 열지 않음 |
+
+### 2.5 소유 규칙 한 줄 (SMA 쪽 작업의 공통 전제)
+
+**manager-microscope** 는 `contracts/`(check·스키마), `microscope_agent/CLAUDE.md`, `microscope_agent/tasks/`, README 만 쓴다. **현미경/autofocus 좌석**은 `microscope_agent/` 아래의 그 밖 모든 것(`src/`, `tests/`, `rulings.jsonl` 의 행 — `by` 는 manager, `recorded_by` 는 좌석 —, `findings/`)을 쓰되 `envelope/safety.json`, `approvals/`, `inbox/` 는 **사람**만 쓴다. **architecture** 는 `plan.md`, `CLAUDE.md`, `README.md`, `contracts/seats.json`, pyproject/pixi, ALLOWED_PATHS. check 41(좌석 경로 경계 검사)이 이 경계를 어긴 커밋을 거부하고, 루트에서 연 세션은 `.claude/settings.json` 이 `microscope_agent/src/**` 쓰기를 막으므로 좌석 세션은 `microscope_agent/` 안에서 연다.
+
+---
+
+## 3. 작업 목록
+
+표기: 크기 S/M/L/XL. **[벤치]** 는 현미경 PC 필요, **[사용자]** 는 사용자 본인 필요. 선행에 적힌 ID 가 모두 끝나야 시작한다. 고위험 항목은 완료 조건 앞에 "진행 증거" 를 둔다. dino 쪽 카드는 `internal/tasks/` 에 T-번호로 올린다(`.agent/tasks` 가 아니라). 모든 dino 카드는 검토 세션이 해시로 검토 → 병합 → 푸시한다(한 번에 테스트 묶음 3 개까지).
+
+### 3.0 이미 끝난 것 (다시 계획하지 않음)
+
+dino: S0 의존성 분리, S1·S2(`focus_step_rules` 제외)·S3, `tests/test_sma_shape.py`(check 13/16/82 거울: 평탄 파일만 / 의존 방향 / import 선언), `records/redact.py`(14 테스트)와 `records/export.py`, `focus/head.py` npz, FocusPanel 과 게이지, 하드웨어 탭 cfg 찾기, README·LICENSE, 내부 문서 분리, `.gitignore`(`.agent/ .claude/`), 질문 카드 89 장, 로그인 강화(0f7a881) **병합·푸시 완료**(R-01 은 끝났다).
+SMA: plan 스키마 `operation`+`trap_steps`, check 85/86 과 fixture, `_operation_gate`·광집게 게이트, `python_tcp`/`python_serial`, 봉투의 압전 0..600 과 렌즈별 광집게 ±40/±67/±100 (스텝 최대 1 µm), `objective_clearance_min`(작동 거리에서 풀림; Q4 의 모양), findings 스키마와 라이브러리언 경로(037, 040), 023 의 1–3 항, 13.2 어휘, 좌석 날짜 형식과 check 84, 커밋 훅, `human` 좌석, `feature/autofocus-ui` 브랜치.
+
+### 3.1 1단계 — 1주차 (10-05..09): SMA 사슬 열기, 파일을 넘길 수 있게, 공개 사후 위생
+
+| ID | 일 | 어디 | 누가 | 선행 | 완료 조건 | 크기 | 위험 |
+|---|---|---|---|---|---|---|---|
+| **R-08** | 묶음 A·B 결정지를 **한국어 평문**으로(내부 코드 없이; 5절이 그 초안) 만들고, 연결되면 Slack 으로 보낸다. 코드 달린 판은 기록용 | `internal/tasks/`, 이 문서 5절 | dino 세션 | — | 사용자가 월요일 전에 받음 | S | 낮음 |
+| **U-01** | 결정 묶음 A (OD-1~8, 10, 12, 13, 15, 16, 18~20, 23, 25~28; 한 자리 약 60 분, 월 10-05) **[사용자]** | 구두 → D-09 가 기록 | 사용자 | R-08 | 항목마다 한 줄 답 | S | 낮음; G-01, G-02, C-05, C-07 이 기다림 |
+| **D-09** | U-01/U-02 의 답을 `docs/integration-sma.md` 7절에 적고, 9절의 S6 사슬 문장을 고침(ALLOWED_PATHS·pixi·validate.py 수정 불필요; plan·봉투 스키마는 복사와 분리; OD-3 의 원본 문장 수정; 받는 브랜치 `feature/autofocus-ui`) | dino `docs/integration-sma.md` 7·9절 | dino 세션 | U-01 | 결정표에 날짜와 답 | S | 낮음 |
+| **G-02** | **plan.md 기록이 먼저**(SMA 측 입장). architecture 가 날짜 단락을 넣는다: (a) 10.2(이전 저장소를 참고하는 규칙)에 dino-autofocus 를 2026-09-17 조건(그대로 가져오지 않음, 과장은 낮춤, 안전 한계는 넘어오지 않음)으로 연다; 열린 행: 공식·판정 기준, 장치 사실(findings 로), 기록(`runs/console.*`); (b) 10.2.1(전수 항목은 닫힌 목록에서 **자리**를 지정해야 한다는 규칙)에 "operator 의 초점 탐색(13.2 1항, 카드 026)" 과 "operator 의 샘플 맵 작업" 을 자리로 추가하고, rulings.jsonl 22 행(이전 과제의 초점 스윕 기계 전체를 버린 판정)은 결정론적 지표·타일 코드에는 적용되지 않고 `FocusAxis` 제어 경로에만 남는다고 적는다; (c) 11-21/13.2 에 초점 탐색 plan 가지는 카드 026 의 것이라는 한 줄; (d) 7.2(코드 규칙)에 고전 핵심은 pixi 변경 불필요, DINO 용 torch 는 뒤의 architecture 결정이라는 한 줄; (e) **사람이 dino-autofocus 를 라이브러리언에게 연다**: 지역 경로와 sha(공개 전), URL(공개 뒤); 출처 종류 `prior_run:dino-autofocus@<sha>`(E3 상한) | SMA `plan.md` | SMA architecture | U-01 (OD-2, OD-3) | `python contracts/validate.py` 0 failed; `git show --stat` 이 plan.md 만 | S | 낮음 |
+| **G-02b** | 좌석들이 실제로 읽는 두 파일: `CLAUDE.md` 의 "이전 저장소" 단락에 dino-autofocus 와 조건; plan.md 7절 `runs/<run_id>/` 줄에 `console.*`(G-08), `events.jsonl`(G-13), `raw/` 프레임 링(G-14)과 각각의 쓰는 쪽. 공개 뒤 `README.md` 형제 저장소 표에 dino 행(복사한 파일과 원본 규칙) | SMA `CLAUDE.md`, `plan.md` 7, `README.md` | SMA architecture | G-02 (README 는 R-04) | validate.py 0 failed | S | 낮음 |
+| **G-01** | autofocus 좌석 행을 `contracts/seats.json` 에 날짜 형식으로, `microscope-20261001-1` 에서 코드로 복사, `owns ["microscope_agent"]`, 이메일 고유; **좌석의 첫 커밋 전** | SMA `contracts/seats.json` | SMA architecture | G-02, U-01 (OD-1) | validate.py 0 failed; check 84 PASS; 커미터는 architecture | S | 낮음 |
+| **G-04** | 복사 카드(05x) + 026 재발행: 좌석 이름; src 9 + tests 4 파일; 복사 시점의 dino `origin/main`(D-03 헤더를 가진 것; 실제 SHA 는 G-06 커밋이 적는다); 넘어가는 항목마다 rulings.jsonl 한 행과 findings 한 파일 요구; 완료 = validate.py 0 failed + pixi `mic` 에서 파일별 `python -m unittest`; **manager 확인 문장**("ALLOWED_PATHS·validate.py 수정 불필요, check 82 는 numpy 통과")을 카드 본문에 인용(별도 G-03 좌석은 열지 않음); 023 1·2 항이 5e6a8eb/e35e24c 로 들어갔고 Z plan 전에 장비에서 거부를 봐야 한다(B-02); 026 은 복사 부분에 한해 이 카드로 대체, plan 가지 설계는 유지(G-12); 첫 목표 렌즈 100x oil; 40x WI 는 0.17 칼라 작동 거리 측정 전까지 발행 불가; P2 계약(D-07) 인용; `tasks/000`("이 에이전트가 선 자리")에 합병 상태·dino 거울 규칙·표류 검사 한 단락 | SMA `microscope_agent/tasks/05x-*.md`, `tasks/000` | SMA manager-microscope | G-01, G-02 | 카드가 좌석·파일을 이름 짓고 validate.py 0 failed | M | 낮음 |
+| **G-05a** | 개발 데스크톱 SMA 사본 정비: `git config core.hooksPath contracts/hooks`; autocrlf 영향 확인; `python`(python3 아님), `PYTHONUTF8=1`; `git var GIT_COMMITTER_IDENT`. 지금 상태(2026-10-03 확인): `core.hooksPath` 미설정, `core.autocrlf=true`, 좌석 신원 없음(커미터 = 사용자). SMA CLAUDE.md 대로 **훅 설치는 manager 의 결정이고 첫 커밋들을 지켜보며 한다**; 좌석 신원(`extensions.worktreeConfig` + `--worktree committer.*`)은 **사용자가 좌석을 배정한 뒤 그 좌석 세션이** 설정한다. 어떤 세션도 동료 세션의 말로 이 설정을 바꾸지 않는다(SMA 측 주도 세션의 정정, 2026-10-03). (b346c02 로 이미 최신) | D:/codes/github/soft-matter-agents | 사용자(결정) + SMA manager(훅, 지켜보며) + 좌석(신원) | U-01, G-01 | `git config core.hooksPath` 가 훅 폴더를 출력; 상태 깨끗 | S | 낮음; **G-06 은 기본적으로 이 사본(또는 MacBook)에서 커밋** |
+| **G-05b** | 현미경 PC 사본 `D:\soft-matter-agents` 확인: `git rev-parse HEAD`, fetch/merge, hooksPath(CLAUDE.md 가 "manager 가 첫 커밋을 지켜보며 설치" 라고 적음), `sh` 가 PATH 에 있는지(PostToolUse 훅이 `sh -c`), 푸시는 `git -c credential.helper=manager push` **[벤치]** | 현미경 PC | manager 좌석 또는 사용자, B-01 방문 중 | — | HEAD·훅·`sh`·`python` 기록 | S | 낮음; 거기서 커밋하려면 필수(중단 기준 3) |
+| **D-00** | 안전 기준선 증거 묶음: `BENCH_MOTION == "LOCKED"`, `BENCH_APPROACH` 와 2026-10-02 렌즈별 상한표, `is_bench` 백엔드가 잠금 중 `move_z/move_xy/set_nosepiece` 거부, `tweez300` 전부 거부, `PiezoAxis` 가 실제 압전 거부, `BackendStream` 이 벤치 거부. 위치 쓰기 호출 자리 목록을 **세 묶음**으로: `mm_real.py`(벤치, 잠겨 있어야 함), `mm_demo_core.py`(`DEMO_*` 장치 상수에만, `is_bench` 거짓 단언), `scripts/*`(R-05 까지 허용, 새 자리가 생기면 실패). `tests/e2e/test_e2e_safety.py` 를 이 묶음에 포함 | dino `tests/engine/test_safety_baseline.py`, internal 카드 | dino 핵심 세션 | — | mock 에서 통과; 목록이 세 묶음과 정확히 일치; 카드에 잠금값 file:line | S | 낮음. D-01/D-04/D-05/C-01/P-02 의 기준; D-05 이외 이유로 깨지면 중단(기준 1) |
+| **D-01** | `focus_step_rules.py`: 한계를 인자로 받는 순수 함수(`ascending`, `readback_ok`, `rise_ok`, `may_move_up`, `park_only_descends`, `approach_steps`, `retracted`, `pfs_quiet`, `pfs_out_of_range`, `needs_retract_before_xy(..., immersion)`, `sweep_ceiling`(해제된 건식 렌즈는 None), `strictest_for_unknown_lens`, `refuse_model_graded`); 0/1 외 숫자 없음; `guards.FocusAxis/XYAxis` 는 위임만, 숫자와 `BENCH_APPROACH` 는 guards.py 에 남음; unittest 파일 | dino `microscope_agent/src/focus_step_rules.py`, `tests/test_focus_step_rules.py`, `engine/guards.py` | dino 핵심 세션 | D-00 | `test_sma_shape` 통과; `python -m unittest` 통과; 숫자 상수 없음; 엔진 가드 테스트 불변; D-00 녹색 | M | 중간: guards.py 공유(D-04, P-02 뒤에); 파일 잠금 먼저 알림 |
+| **D-02** | 평탄 파일의 벤치·튜닝 숫자 제거. **전부**: `focus_search.py` DEFAULT_CENTRE_UM 2930, PARFOCAL_4X_TO_100X_UM −60, DARK_OFFSET_ADU 102, SIGNAL_MIN_ADU 50, DEFAULT_EXPOSURE_MS 20, `FocusArgs` 기본값(40/2/3/0.2, `fine_half_um` 3.0) → 필수 인자; 50–56 줄의 `dino_autofocus.engine.*` 주석 인용 삭제; `focus_verdict.py` MIN_DYNAMIC_RANGE_ADU 20, MIN_CURVE_CONTRAST 0.05, MIN_SWEEP_FRAMES 3, IN_FOCUS_DOF 1.0, MAX_SIGMA_DOF 3.0 → 매개변수, dino 호출자에 `unmeasured provisional`(Q5)로; 64 줄 "~102 ADU" 주석은 말로; `focus_classical.py` MAX_SATURATED_FRACTION 0.001, DROPOUT_TOLERANCE 0.02, DOUBLE_PEAK_PROMINENCE 0.2 → 매개변수; `map_tiles.py` DEFAULT_UM_PER_PX 1.625 와 DEFAULT_M_PX_PER_UM 행렬(0.61602, 0.00236, 0.00126, −0.61456) → 필수 인자, 기본값은 `engine/mosaic.py`·scan_4x 호출자로; `map_mosaic.BENCH_M_4X` 도. **구조 상수**(BIN 8, BLOCKS 6, PEAK_BIN 4, TRUNCATE)는 "구조값, 벤치 수치 아님" 한 줄 주석과 함께 허용 목록. 완료 조건은 7 개 숫자 grep 이 아니라 **ast 로 숫자 리터럴 전부를 뽑아 파일별 허용 목록과 비교하는 테스트**. 제거한 숫자마다 질문 카드(L-032, L-033, L-057, L-077..L-089)에 기록 | dino `microscope_agent/src/{focus_search,focus_verdict,focus_classical,map_tiles,map_mosaic}.py`, `engine/{mosaic.py,operations/*}`, `tests/test_sma_shape.py`, `docs/librarian-handoff.md` | dino 핵심 세션 | — | ast 테스트가 허용 목록 밖 리터럴 0 개; dino 작업 테스트는 호출자 기본값으로 통과 | M | 낮음 |
+| **D-07** | **P2 판정 계약**: `focus_verdict.from_sweep/from_reading` 과 `focus_run_log.to_run_log_event` 의 JSON 입출력 계약을 docstring 수준으로 적고 평탄 unittest 하나. 이벤트 값은 등급이 아니라 **출처**(`measured:<run_id>`, `computed:<formula_id>`)를 싣는다(L-04 와 같은 커밋 가능) | dino `microscope_agent/src/{focus_verdict,focus_run_log}.py`, `tests/` | dino 핵심 세션 | D-02 | 계약 테스트 통과; G-04 가 인용 | S | 낮음 |
+| **D-03** | 넘길 준비 헤더: 각 평탄 src/test 첫 줄 `# origin: dino-autofocus <commit> microscope_agent/<path>  body-sha256: <아래 전체 해시>` (dino 가 비공개인 동안에도 풀 수 있게 **공개 URL 형식**으로 적고 풀리는 날짜를 적는다); docstring 은 `scripts/*.py`, `dino_autofocus.*`, `docs/*.md` 대신 "dino-autofocus <sha>" 한 번만; `test_sma_shape` 에 헤더·해시 검사, `microscope_agent/` 아래 `dino_autofocus`/`scripts/`/`docs/` 토큰 금지, 거울이 가리키는 SMA 커밋 고정, SMA 체크아웃이 있으면 본문 비교(표류 보고) | dino `microscope_agent/**`, `tests/test_sma_shape.py` | dino 핵심 세션 | D-01, D-02, D-07 (마지막, 해시 확정) | `uv run pytest tests/test_sma_shape.py` 통과; 본문만 고치면 실패; 토큰 grep 비어 있음 | S | 낮음 |
+| **R-02** | 공개 정리: `sk-ant-` 더미 이름 변경; `/docs`·redoc·openapi 는 `--dev` 에서만; 헤더 미들웨어(frame-ancestors 'none', nosniff, 기본 CSP); scrypt N 2**17; `dinov2_*` 백본 이름 허용 목록; 현미경 PC 사용자 경로·호스트명 치환 — `docs/microscope-pc-checklist.md` **121, 136–137 줄**과 `docs/runs/2026-10-02_bench-properties.json:18`; 데이터셋 runbook 의 `allow_pickle` 주석; `--remote-view` 는 "쓰지 않는다; LAN 접근은 뒤의 결정" 한 줄(runbook `launcher.md:51`) 또는 플래그 제거(S4 감사 결정); 콘솔 제목 "Takatori Lab Console" 은 OD-27 대로 | dino `tests/assistant/test_assistant_runner.py`, `server/{app,static,__main__}.py`, `auth/passwords.py`, `backbone.py`, docs | dino 공개 세션 | — | `git grep 'sk-ant-'` 와 사용자 경로 문자열 0 개(결정으로 남긴 것은 예외 목록에); `/docs` 404 테스트; 헤더·scrypt 테스트; 묶음 녹색 | M | 낮음 |
+| **R-03** | 기록 가드: `backend_kind`·`bench` 를 세션 열기/이어가기 때 기록; `export_session` 은 `bench is True` 아니면(없어도) 거부; `librarian_mock` 은 실제 루트에서 bench 거짓 건너뜀; `RUN_ID` 를 `^[a-z0-9][a-z0-9-]{0,63}$` 로; SMA 체크아웃이 있으면 validate.py 에서 `runs/` 정규식을 뽑아 모든 내보내기 이름을 대조하는 테스트(없으면 skip); `console.*` 에 `card`/`artifact` 키 없음 단언 | dino `records/{session,export,librarian_mock}.py`, `server/app.py`, `tests/records/*` | dino 공개 세션 | — | `Run_1` 거부, `run-20261003-001` 허용; `bench` 없는 세션 거부; mock 세션은 `bench: false` | S | 낮음 |
+| **D-08** | dino 안 값 불일치 위생 카드(질문 카드 4절): 40x WI 작동 거리 160(`configs/ti2_40x.yaml:23`, `mock_world:133`) 대 170(guards); `backend.py` 4095/12비트 주석 대 16비트; full well 80000 대 15000; QE 0.96 대 0.80 — **값을 합치지 않고** 사용자가 하나를 말하거나 "미측정" 으로 표시 | dino configs, engine, focus | dino 공개 세션 + 사용자 | — | 네 쌍 모두 한 값 또는 "미측정" | S | 낮음 |
+| **R-07** | **사후 위생, 1주차 첫날**(공개가 10-03 에 이미 됐다): 공개된 `main` 의 **전체 이력**에서 개인정보 훑기 — 발견되면 사용자에게 즉시 알리고 멈춘다(제거에는 이력 재작성·force push·GitHub 캐시 정리·비밀값 교체가 따른다). 대상: 커미터 외 이메일, `C:\Users\`, `%USERPROFILE%` 류 경로, `D:\AutoFocus\records` 내용, `people.json`, `accounts.json`; `.cfg` 가 해시된 판과 바이트 동일(`.gitattributes -text`); `data/`, `outputs/`, `models/*.joblib`, `.agent/`, `.claude/` 미추적; 브랜치 목록 — `main` 만 푸시(지역 126 개 중 exec* 는 모두 포함됨; `exec12/T-036-unlock` 은 internal BACKLOG 에 "D-05 로 대체" 표시); `git worktree prune` 은 공개 뒤 선택 | dino 루트; `internal/public-release-audit.md` | dino 공개 세션 | — (바로) | grep 마다 "0 건" 또는 수용된 예외(일련번호·운영자 이름은 결정으로 수용); 원격에 `main` 만 | S | 낮음; 중단 기준 6 의 입력 |
+| **P-01** | pattern-run 정직화(문서) + 소프트웨어 시간축: `tweez300.py` docstring, `docs/screens/tweezers.md` 3절, internal "Tweez300 명령 참조" 를 SMA `devices/python_tcp.py` 와 라이브 점검표로 가리킴; WsFrame 메타에 `time_base: "software"`; 합성/나란히 보기에 고정 자막("호스트 도착 시각으로 겹친 프레임; 동시 아님; 표시 전용; 타이밍·상관·공존 분석에 쓰지 않음; 동시 촬영은 하드웨어 트리거 있는 SMA plan"); `docs/screens/patterns.md` 와 ui-spec 에 규칙 | dino `engine/backends/tweez300.py`, `server/schemas/common.py`, `server/ws.py`, `web/src/app/live/*`, docs | dino 공개 세션 | — | WsFrame 에 `time_base`; `live.test.tsx` 자막 단언; 스텁 여전히 거부; D-00 녹색 | S | 낮음 |
+| **L-01** | 질문 카드의 "KB 에 이미 있음" 열을 kbv-70754d3df50b 로 다시 유도(지금은 kbv-4b981dc870d3); file:line 을 D-03 커밋으로 다시 고정(지금은 025080f); SMA `snapshot.json` 의 뒤처짐(kbv-a0f093a66393) 기록; 패턴/광집게 행 추가(Tweez300 GUI 가 쥔 카메라 바디·트랩 면을 찍는 MM 라벨, 트랩 y 부호, 픽셀 크기 출처 L-031, Tweez300 단위 확인 전용, dino 의 가정 0.1 µm/px 와 `BENCH_PIXEL_UM {4x 1.625, 100x 0.065}`); 복사 전 목록은 **20 장**(16 + 충돌 4; 15 장 상한은 버림) | dino `docs/librarian-handoff.md`; SMA kb (`git show origin/main:`) | dino 핵심 세션(읽기만) | D-03 | 열이 새 kbv 인용; 새 행; 20 장 목록 | S | 낮음 |
+| **R-06** | 테스트 runbook: dino 게이트(`uv run pytest tests microscope_agent/tests -q` BLAS 1 스레드, `uv run npm --prefix web test`, 빌드, 모양 게이트), 커밋당 3 묶음 규칙과 충돌 코드 두 개(0xc000070a/0x8007000e = 재실행), 복사 뒤 SMA 게이트(`python contracts/validate.py` 0 failed, `--expect-fail` N/N, pixi `mic` 에서 파일별 unittest, PYTHONUTF8=1), pytest 가 unittest 파일도 수집, 양쪽에 CI 없음; T-035d: `tests/test_backbone.py` 와 **`tests/test_live.py`** 의 torch import 를 테스트 안으로(`live.py` 는 ml extra 에 남음); T-038d(runbook 2c "blocked" 제거) 포함 | dino `docs/runbooks/tests.md`, tests | dino 공개 세션 | — | 적힌 명령이 그대로 실행됨; importorskip | S | 낮음 |
+| **G-15** | check 86 이 `operation` 과 `trap_steps` 를 **둘 다** 실은 plan 을 FAIL 하게(지금은 압전만 움직이고 광집게를 조용히 건너뜀); 거부 fixture | SMA `contracts/validate.py`, `contracts/examples/rejected/check86_both_blocks/` | SMA manager-microscope | — | `--expect-fail` 이 fixture 거부; 0 failed | S | 낮음 |
+| **G-11** | T-036b 전수 판정(cfg 의 Startup/Shutdown 프리셋이나 초기화 뒤 속성이 모션 장치를 쓰면 거부; 구조만, 장치 이름은 레지스트리에서, 숫자 없음)을 O1 preflight 자리로 rulings.jsonl 에 기록(`by` manager, `recorded_by` 좌석); 구현은 **현미경 좌석**이 `micromanager.load_configuration` 또는 preflight 에 | SMA `rulings.jsonl`, `src/devices/micromanager.py` 또는 `src/operator.py` | manager-microscope(판정 문장), 현미경 좌석(행 기록·코드) | G-02 | ZDrive 에 Startup 줄이 있는 fixture cfg 가 `loadSystemConfiguration` 전에 거부 | S | 낮음 |
+| **G-17 (지금 절반)** | XY 보류 기록: `docs/integration-sma.md` 9절과 `docs/screens/{map,objective}.md` 에 `scan_4x`, `sample_map/goto_xy`, `edge_trace`, objective_change 의 +Y 비켜서기는 합친 뒤에도 mock/replay 전용; XY plan 모양·예외·봉투 키를 이번 합병에서 요청하지 않음; 긴 XY 이동 전 후퇴 표는 Q4 아래 dino 쪽에 남고 L-019/L-020 참고로 | dino docs | dino 핵심 세션 | U-01 (OD-20) | 문서에 적힘 | S | 낮음 |
+| **G-07 (초안)** | Z 드라이브 봉투 스키마 키 초안(2주차에 커밋): `targets[].limits` 아래 `z_drive_position_min/max`(`resolved_from: objective` 조회형, `objective_clearance_min` 처럼 **모든 렌즈에 행이 풀리도록** — 건식 렌즈의 "해제" 는 **없는 키가 아니라 사람이 쓴 더 넓은 값**; SMA 에서 없는 한계는 거부), `z_drive_retract_position`, `z_drive_step_max`, `z_drive_position_readback_tolerance`, 같은 확인 기록 모양; 거부 fixture(쌍 밖의 Z 목표, 미확인 한계); 한계 키 등록 목록 줄 | SMA `contracts/schemas/envelope_safety.schema.json`, examples, validate.py 등록만 | SMA manager-microscope | U-01 (OD-8) | 2주차 G-07 참조 | S | 낮음 |
+| **B-01** | **벤치 방문 1: 손으로만, 소프트웨어는 아무것도 움직이지 않음 [벤치][사용자]**. PFS 는 **Ti2 패널에서 손으로** 켜고 끄며 소프트웨어는 속성과 문구를 전후로 읽기만(L-062/L-063)과 PFSOffset 부호; 40x WI 0.17 칼라 작동 거리; 동초점 잔차 4x→100x; 4x 명시야로 유리 계면 Z(026 1단계 입력); 방식별 through-focus 곡선; 접근 스텝(Q13); 침지 렌즈에서 Z 후퇴가 필요한 XY 이동(Q20); 재물대 범위; 사람이 원하는 Z 후퇴 높이; 무명령 Z 표류; 1x1 픽셀 크기(E2 12 항목으로 안 닫혔으면); Kinetix_red 비트 깊이; Tweez300 GUI 가 쥔 카메라 바디와 트랩 y 부호(트랩 하나를 (0,0), +x, +y 로 벤더 GUI 에서 옮기며 두 카메라 관찰); 압전 Z 방향; **ZDrive 엔코더 부호(샘플 쪽으로 손으로 돌릴 때 값이 느는지 주는지)** — check 86 의 z_drive "오름차순" 규칙은 이 KB 항목이 있어야 한다(압전의 `PIEZO_Z_DIRECTION_ENTRY` 와 같은 모양); 2026-10-02 후속 세 가지: `Core.Focus` 비어 있음, CSUW1-Port 상태 번호(0 blue_only / 1 blue_red / 2 red_only)와 Lapp 50/50 거울, Aura 깜빡임(−23% 프레임)과 스텝당 읽기 지연(T-029d); G-05b 도 이 때. 각 값에 측정 방법 | 현미경 PC; 결과는 당일 dino `docs/runs/<date>_*.yaml`; SMA `findings/<seat>-<date>.json` | 벤치(사용자 + 현미경/autofocus 좌석) | 방문: 없음; findings 커밋: **G-01 + G-05(a 또는 b)** | 값마다 수치+방법 또는 "미측정"; findings 가 스키마 통과 | L | 중간: 장비 시간; **손 회전만**(중단 기준 8) |
+
+### 3.2 2단계 — 2주차 (10-12..16): 복사 주차; Z 키 사슬 시작 (공개는 끝남)
+
+| ID | 일 | 어디 | 누가 | 선행 | 완료 조건 | 크기 | 위험 |
+|---|---|---|---|---|---|---|---|
+| **G-06** | **복사 커밋**. 좌석으로서(`GIT_COMMITTER_NAME='seat:<name>' GIT_COMMITTER_EMAIL=<name>@seat.invalid`; 파일을 하나씩 이름 지어, `-A` 나 폴더 금지) dino `origin/main` 의 `microscope_agent/src/{focus_classical,focus_verdict,focus_run_log,focus_search,focus_step_rules,map_edge,map_geometry,map_mosaic,map_tiles}.py` 와 `tests/{test_focus_core,test_focus_search,test_focus_step_rules,test_map_core}.py` 를 헤더째 바이트 단위로 `feature/autofocus-ui` 에; 커밋 메시지에 실제 dino SHA. rulings.jsonl 행 추가(각 행 G-02 (b) 단락과 22 행 인용): 전수(vollath4/brenner/정점 찾기/포물선 꼭짓점 → 자리 "operator 의 초점 탐색"; 판정→13.2 어휘; 뱀길 타일·평면 맞춤·가장자리 맞춤 → "operator 의 샘플 맵"; 단계 규칙 순수 함수), 낮춤(모든 튜닝 상수는 반증 조건을 단 E5), 폐기(모든 가드 한계값 — 10.3 4항 —, `BENCH_M_4X` 코드, dino 등급 문자열, 20.0785x, `FocusAxis` 스윕 기계 — 22 행 유지). 구조만인 dino 학습(hardware_scan 중 허브 조회 금지, T-036b)은 코드가 아니라 판정/findings 로. `findings/<seat>-<date>.json` 은 질문 카드의 비봉투 행 + B-01 결과. pre-commit `--staged` 0 failed; 푸시 전 fetch/merge; Stop 훅이 묻는다 | SMA `microscope_agent/src/`, `tests/`, `rulings.jsonl`, `findings/` | SMA autofocus 좌석 | G-01, G-02, G-04, G-05a, D-01, D-02, D-03, D-07; **R-04 는 약한 선행**(아니면 헤더가 아직 못 읽는 저장소를 가리킨다; URL 형식과 날짜로 완화) — G-07 은 **불필요** | **진행 증거**: D-02 ast 테스트와 D-03 토큰 규칙 통과; G-01 행이 첫 복사 커밋의 부모에 있음; `git var GIT_COMMITTER_IDENT` 가 좌석; `core.hooksPath` 설정; 복사 파일에 장비를 움직일 수 있는 호출 자리 없음(D-00 불변). **완료**: validate.py 0 failed, `--expect-fail` N/N; check 13/16/41/81/82 PASS; 네 unittest 가 `.pixi/envs/mic` 에서 PYTHONUTF8=1 로 통과(개발 PC; 현미경 PC 실행은 C-11/B-02 로); `git log --format=%ce` 가 좌석; dino D-03 표류 검사 "표류 없음"; 판정 행 수 = 검토 항목 수 | M | 중간: 공유 인덱스, autocrlf. 중단 기준 2, 3, 4 |
+| **U-02** | 결정 묶음 B (B-01 뒤 약 45 분): OD-9, 11, 14, 17, 21, 22 **[사용자]** — 침지 렌즈별 봉투 Z 값(바닥/천장, 후퇴 위치, 스텝 최대, 읽기 허용; 40x WI 는 0.17 작동 거리를 쟀을 때만), 건식 렌즈의 더 넓은 값, 첫 초점 = 100x oil, PFS 해제 경로, 네 충돌(40x WI WD 170; Kinetix_red 12 대 16 비트; 4x 픽셀 출처; 605 nm 경로 이름), 복사 전 20 장, 등급 대신 출처 규칙, 트랩 z 와 카메라 바디 | 구두 → D-09 기록, SMA findings(person_statement) | 사용자 | B-01, L-01 | 항목마다 답; 봉투 값은 어떻게 정했는지와 함께 | S | 노력은 작고 결과는 큼(P0 값) |
+| **G-07** | 봉투 스키마 키 커밋(1주차 초안); 공유 표면이므로 메시지로 먼저 선점 | SMA `contracts/schemas/envelope_safety.schema.json`, examples, validate.py | SMA manager-microscope | U-01 (OD-8); G-06 과 병렬 | 키 유무 모두 0 failed; fixture 거부 | S | 낮음 |
+| **U-03** | `safety.json` 에 Z 한계 쓰기 **[사용자]**: 100x oil 먼저(60x oil 은 간극이 알려지면; 40x WI 는 B-01 측정 뒤), **건식 렌즈도 행을 쓴다**(사람이 고른 더 넓은 값), 한계마다 확인 기록 `{kind, by, on, how}`; `policy_version` 올림; dino 의 2800–3200 / 0 / 10 / 0.25 는 참고일 뿐 복사하지 않음; 커밋은 `GIT_COMMITTER_EMAIL=human@seat.invalid`(author 는 사람; 미등록 커미터는 검사를 받지 않는다) | SMA `microscope_agent/envelope/safety.json` | 사용자 | G-07, U-02 | **진행 증거**: B-01 의 100x oil 간극 읽기가 `how` 와 함께 있음; G-07 들어감; 이 키를 읽는 plan 이 아직 없음(G-09 전엔 아무것도 못 움직임). **완료**: check 1, 5, 57 PASS | S | 중간: 100x 바닥이 틀리면 023 이 말한 충돌. 중단 기준 7 |
+| **L-02** | 라이브러리언 입력·공개: manager-librarian 카드(040/037 양식); 라이브러리언은 findings 가 인용한 경로를 지정 커밋에서만 읽음 — dino 경로는 **G-02 (e) 의 열기** 또는 R-04 이후에만; 문서 사실 E3 이하, 사람 진술 E5, 미측정은 gap(`objective_40x_wd_at_170um` 은 B-01 이 쟀을 때만 닫힘), 비트 깊이·605 nm 는 `conflict_with`; 진행 중인 kb_version 고정 확인; 공개; 가이드 재생성; 현미경 좌석이 `envelope/snapshot.json` 갱신 | SMA `librarian_agent/tasks/04x`, `kb/`, `envelope/snapshot.json` | SMA 라이브러리언(+manager-librarian) | G-06, U-02, **R-04 또는 G-02 (e)** | `kb_index --check`, `export_snapshot --check`, `safety_guides --check` 깨끗; check 25/26/61/87 PASS; 보고서에 입력/보류/제외 | L | 중간: 다른 좌석이 고정한 kb_version 이동 |
+| **L-04** | 등급이 아니라 출처: `focus_run_log.py` docstring(더 이상 "provisional" 아님)과 `docs/records-privacy.md` 에 "console.* 과 판정 이벤트는 출처만 싣고 등급은 싣지 않는다; 등급은 SMA 쪽이 유도한다; 합병 전 dino 값은 `prior_run:dino-autofocus@<sha>`; 모델 값은 `signals` 아래 등급 없이" | dino `microscope_agent/src/focus_run_log.py`, `docs/records-privacy.md` | dino 핵심 세션 | U-02 (OD-17); D-07 과 같은 커밋이면 D-03 전 | 두 파일에 문장; 해시 갱신 | S | 낮음 |
+| **R-04** | **공개 — 완료(2026-10-03, 사용자).** 남은 확인만: 원격에 `main` 외 브랜치가 없는지(`git ls-remote`), push protection(비밀값 푸시 차단) 켜짐, 공개 시점 해시를 `internal/public-release-audit.md` 에 고정, 현미경 PC 클론의 저장소별 `user.name/user.email` | GitHub 설정; dino 클론 | 사용자 | — | `git ls-remote` 에 main(+태그)만; 감사 문서에 공개 해시 | S | 낮음(끝남) |
+| **R-05** | 레거시 벤치 스크립트 정리: `scripts/{scan_4x,focus_100x,change_objective,lights_off,find_particle_z,edge_track,mm_grab,live_focus,launcher,run_logged,focus_servo}.py` 삭제(이력에 남음; focus_servo 는 OD-16), Launcher.cs Shift-클릭 고전 경로 삭제; 모델 제작 스크립트 유지; K4 메모는 mm_real 문서로; `PLAN.md:241-245,308`, `first-bench-motion.md`, `setup-new-pc.md:17`, `operations-spec.md`("원본: scripts/..." 9 곳은 "(R-05 에서 삭제; 이력에 있음)" 표시로 유지), `microscope-pc-checklist.md:81`. `docs/runs/*` 는 그날 실행한 기록이라 **건드리지 않음** | dino `scripts/`, `tools/launcher/Launcher.cs`, docs | dino 콘솔 세션 | U-01 (OD-16) | pytest·web 빌드 녹색; `git grep 'scripts/' docs` 가 모델 제작 스크립트·`docs/runs/*`·"원본:" 표시줄만; exe 가 서버 시작 | S | 낮음 |
+| **C-01** | S4a: `server/auth/assistant/agents` → `console/sma_console/{.,auth,assistant,store}`; `python -m sma_console`; 절대 참조 약 140 줄 / 약 55 파일과 상대 엔진 import 약 20 개를 임시로 절대 `dino_autofocus.engine...` 로(C-04 가 제거); pyproject(hatch, ruff, pytest testpaths); `web/scripts/gen-api.mjs`; `.claude/launch.json`(5 항목); `Launcher.cs:196,461`; 문서. 시작 때 다시 센다 | dino 전역 | dino 콘솔 세션 | R-02 (R-04 는 끝남), R-05 와 같은 커밋 계열 | `--dump-openapi -` 가 전후 동일(제목 제외); `npm run gen:api` 무변경; 콘솔 테스트 녹색; `grep -rn 'dino_autofocus\.\(server\|auth\|assistant\|agents\)' console/` 비어 있음; D-00 녹색 | L | 중간: 큰 기계적 이동; 한 브랜치, 한 번에 병합 |
+| **C-02** | S4b: `web` → `console/web`, `tools/launcher` → `console/launcher`, `tests/{server,auth,assistant,agents}` 와 e2e 의 **서버 단계만** → `console/tests`(pytest 유지); **`tests/e2e/test_e2e_safety.py` 와 `test_e2e_m1_day.py` 는 엔진 테스트에 남음**(D-00 묶음); vite/tsconfig, `build.ps1`, `static.mount_web` 기본 `<repo>/console/web/dist`, 아이콘, `test_no_conftest_imports.py` 루트 | dino 전역 | dino 콘솔 세션 | C-01 | 빌드·테스트 녹색; exe 가 콘솔 시작; e2e mock 녹색 | M | 낮음 |
+| **C-03** | SMA 저장소 연결(읽기 전용): `--store mock\|sma`, `--sma-root`(기본 `DINO_AF_SMA_ROOT`); `SmaFiles.list_approvals()`(utf-8-sig), `get_run_log()`(run_log 스키마: events, approval, `no_plan_because`); plan 별 승인 유무(id·revision·hash); **`simulation_agent/questions` 와 `runs/` 도 읽음**(gsd 는 서버 그룹 의존성, SMA 에 안 들어감); `agents/mock_data` 는 baf6f1e 고정 유지(재복사는 날짜 카드로) | dino `console/sma_console/{__main__,app}.py`, `store/{sma_files,approvals}.py`, web | dino 콘솔 세션 | C-01 | `--store sma` 로 복사한 SMA 트리에서 questions/runs/inbox/approvals/simulation 을 나열하고 **파일 감시기가 쓰기 0 건**; plan 없는 run 은 `no_plan_because`; 계산한 plan_hash 가 기존 승인과 일치 | M | 낮음 |
+| **D-06** | 복사 뒤 거울 헤더 전환: dino `microscope_agent/` 헤더를 `# origin: soft-matter-agents <sha> ...` 로; 9절에 "SMA 가 원본, dino 거울은 읽기 전용, 날짜 카드로만 SMA 에서 갱신"; D-03 표류 검사가 강제 | dino `microscope_agent/**`, `tests/test_sma_shape.py`, `docs/integration-sma.md` | dino 핵심 세션 | G-06, U-01 (OD-3) | SMA 사본과 표류 없음; 헤더가 SMA sha | S | 낮음 |
+
+### 3.3 3단계 — 3주차 (10-19..23): 기한 여유; 포트 시작
+
+| ID | 일 | 어디 | 누가 | 선행 | 완료 조건 | 크기 | 위험 |
+|---|---|---|---|---|---|---|---|
+| **C-04** | S5 `hw_port.py` 한 이음새: `HwPort` 프로토콜과 콘솔 소유 Command/Event(dataclass): submit, check, snapshot, subscribe, latest_frames, plan_preview, set_experiment_session, set_current_sample, shutdown, plan_draft, drafts, runs, approvals. **`LocalEnginePort` 는 `src/dino_autofocus/console_port.py` 에 두고** 콘솔은 모듈 경로 문자열(`--engine dino_autofocus.console_port:LocalEnginePort`, importlib)로만 적재 — 그래서 `console/` 에는 프로토콜·`SmaFilesPort`·로더만 남는다. `SmaFilesPort`: snapshot = 마지막 run_log 이벤트와 시각; subscribe = runs/·초안 폴더 폴링; submit 은 plan_draft 외 거부; 프레임은 G-14 전까지 없음. 라우터가 쓰던 순수 도우미(read_cfg, 패턴 검증, 샘플 보기, 대물렌즈 상수)는 포트 뒤로 또는 콘솔 표시 코드로. `set_local_viewers`(D14)는 LocalEnginePort 뒤에만. **코어 배타 규칙**(OD-13): 콘솔 mm_real 은 SMA operator/orchestrator 가 벤치에서 돌고 있지 않을 때만; 실행기는 SMA 잠금/pid 파일이 있으면 `--backend mm-real` 거부 | dino `console/sma_console/{hw_port,api/*,ws,app,schemas/contract}.py`, `src/dino_autofocus/console_port.py` | dino 콘솔 세션 | C-01, C-03 | **진행 증거**: LocalEnginePort 가 기존 server/e2e 묶음 통과; SmaFilesPort 쓰기 0 건; D-00 녹색. **완료**: `grep -rn 'dino_autofocus' console/` 비어 있음; LocalEnginePort 에서 OpenAPI 불변; SmaFilesPort 로 앱을 띄운 테스트에서 plan 초안 외 모든 쓰기 라우트가 SMA 를 이름 지어 409/403; 웹 타입용 snapshot 모양 불변 | XL | 높음: 10 파일 35 import 안팎, 보조 Sources, 프레임 다리. 중단 기준 12 |
+| **C-05** | dino 작업용 plan 초안 쓰기: `goto_xy/focus_100x` → `operation` 초안(`z_drive`/`motor_stage`; 오늘 SMA 가 거부하는 것으로 표시), `objective_change` → 수동 시트 단계 + 보류; 한계 키 없으면 초안 거부(operator 와 같음); 숫자마다 `source: person\|envelope`, dino 상수 없음; **보조가 제안한 숫자는 `numbers[]` 에 못 들어가고 사람이 필드별로 입력/수락**(제안은 "추측" 으로 표시); `author: human`; `<config_dir>/plans/drafts/<draft_id>.json`, `status: DRAFT`, `drafted_by`; 콘솔 jsonschema 검사는 `console/sma_console/contracts/plan.schema.json`(출처 헤더로 SMA 커밋 고정, 날짜 카드로만 갱신, D-03 표류 검사 포함) 에 대해 "schema-valid (console check)" 라벨(OD-15); 경로 표시; SMA 체크아웃에는 절대 쓰지 않음 | dino `console/sma_console/plan_draft.py`, api/{map,objective}, web | dino 콘솔 세션 | C-04, U-01 (OD-5, OD-6), C-07 | **갈라진 완료**: Z/XY 초안은 콘솔 검사 통과이고, 사람이 복사해 SMA validate.py 를 돌리면 check 86 이 "no operation plan may command it / missing limit" 으로 **FAIL 하는 것이 기대값**(G-09/G-17 전까지; 그 메시지 단언); 압전/광집게 초안(P-03)만 validate.py 통과를 요구; 한계 없는 초안은 키 이름을 대며 거부; 모델 좌표의 `propose_goto_xy` 는 `numbers[]` 빈 초안 | L | 중간: 스키마는 manager 것이고 바뀔 수 있음(G-12) |
+| **C-06** | 승인 보기, 쓰기 없음: 제출된 plan 의 plan_hash(status 제외 sha256) 계산; **plan 카드 본문을 해시 옆에 보여 주고**, common_head 전 필드(author:human, qid, thread, round, revision, created_at, numbers, degraded) 를 채우되 `note` 는 사람이 직접 쓰도록 비움; 대상 경로 `approvals/appr-<qid>-r<N>.json`; 클립보드 복사만; 라벨 "이 파일은 사람이 저장한다; 콘솔은 못 한다"; "승인 있음" 은 id+revision+hash 일치일 때만, 아니면 "미확인; operator 가 판단" | dino `store/approvals.py`, web | dino 콘솔 세션 | C-03, C-07 | 기존 승인 파일과 해시 일치; 쓰기 버튼 없음 | S | 낮음 |
+| **C-07** | 사람 id·outbox·내보내기·run 연결: `people.json`(`^[a-z][a-z0-9-]{1,31}$`, 승인 이름과 같은 id); 설정 `export_out_dir`(기본 `D:\AutoFocus\outbox`); 세션 화면 "내보내기"(run id 는 C-04 가 `sma_run_id` 를 채울 때까지 손으로); `sma_runs: []`; `console.export.json` 에 `runs`, `session_hash`; 거부는 그대로 표시(파일/위치/종류, 값 없음); 초안에 `drafted_by: <person_id>`, 이메일 절대 없음 | dino `auth/people.py`, `records/{session,export}.py`, api/sessions, web, `docs/records-privacy.md` 5절 | dino 콘솔 세션; 사용자가 id 결정 | R-03, U-01 (OD-6, OD-7) | 닫힌 벤치 세션이 UI 에서 `<outbox>/<run_id>/console.*` 로 이메일·홈 경로·미치환 이름 없이 나감(아니면 RedactionRefused); 같은 run 두 번째 내보내기 거부; 이름이 validate.py `runs/` 정규식과 일치 | M | 중간. 중단 기준 5 |
+| **C-08** | SMA 모드의 정직한 UI: 비활성 이유를 사람 말로("XY 재물대: soft-matter-agents 에서 소프트웨어가 명령하지 않음", "트랩 위치: 명령만, 읽기 되돌림 없음", "위치: <시각> 의 마지막 run log 이벤트 기준", "축척: KB 의 <값> µm/px (<등급>) \| 가정", "중단: 장비 앞 또는 operator 터미널에서"); 상태 표시줄 모드 배지(local engine \| soft-matter-agents files); SMA run 의 Abort/confirm 은 G-13 까지 비활성; 실행기 종료 메시지가 SMA run 에 조명 끄기를 약속하지 않음; 트랩 오버레이 "camera unverified"(OD-11 까지) | dino `console/web/src/{app/StatusBar.tsx,features/*}`, `docs/ui-spec.md` 7.0 | dino 콘솔 세션 | C-04 | SMA 모드에서 어떤 버튼도 포트가 못 하는 모션·읽기·정지를 약속하지 않음; vitest 스냅샷 갱신 | M | 낮음 |
+| **C-13** | 화면 문서 재인용: `docs/screens/*.md` 46 줄과 `docs/ui-spec.md` 41 줄의 엔진 이벤트 이름을 hw_port 이벤트로 | dino docs | dino 콘솔 세션 | C-04 | `git grep` 으로 옛 이벤트 이름 0 건(LocalEnginePort 설명 제외) | S | 낮음 |
+| **C-09** | FocusPanel 점수를 ws.py 밖으로: `focus_score`/`focus_metric` 은 LocalEnginePort 의 프레임 메타(엔진 stream/runner 가 비닝 프레임에서 계산); ws.py 는 `dino_autofocus.focus` 를 import 하지 않음; 라벨 "live metric, not a sweep score" 유지 | dino `console/sma_console/ws.py`, `engine/stream.py` 또는 `runner.publish_frame` | dino 콘솔 세션 | C-04 | 프레임 테스트가 포트 점수로 통과; mock 에서 패널 동일 | S | 낮음 |
+| **C-10** | 보조 분리(Q6): Sources 는 hw_port 로; `propose_*` 는 C-05 초안으로(숫자는 사람 입력만); "confirm" → "초안 파일 쓰기"; 제공자 기본 fake, anthropic 은 옵트인, `microscope_agent/` 안에는 절대 없음; MCP 노출은 뒤의 SMA architecture 카드(읽기 전용)로 기록(OD-18); **Q6 후반(화면의 Claude 통합을 SMA 에이전트 쪽으로)은 G-13/G-14 뒤 날짜 카드 자리만 둠** | dino `assistant/{tools,runner}.py`, api/assistant, web | dino 콘솔 세션 | C-04, C-05 | SmaFilesPort 에서 `propose_goto_xy` 가 `numbers[]` 빈 DRAFT 파일로 끝나고 카드가 "draft, not approved"; 보조에서 장치로 가는 경로 없음 | M | 낮음 |
+| **C-11** | 실행기와 두 환경 runbook: Launcher.cs 가 `console/sma_console/__main__.py` 확인, `uv run python -m sma_console --port N --backend X --store sma --sma-root P`(`-Backend`, `-SmaRoot` 는 build.ps1 이 치환), `-Bench` 게이트 유지, pixi 절대 안 부름, SMA 잠금/pid 있으면 mm-real 거부; runbook: 콘솔은 uv, SMA operator 와 평탄 파일은 pixi `mic`, `python`/PYTHONUTF8/CRLF, 동일 pymmcore 고정(0.18.1 / 12.5.0.75.0), 시스템 Python pip 세트는 R-05 로 은퇴, 점검표에 사용자 경로 없음, 코어 배타 규칙 **[벤치 검증]** | dino `console/launcher/*`, `docs/runbooks/launcher.md`, `docs/setup-new-pc.md`, `docs/microscope-pc-checklist.md` | dino 콘솔 세션 | C-02, C-03, R-05 | 현미경 PC 에서 클릭으로 SMA 모드 콘솔 시작, Ctrl-클릭으로 종료; 헤드리스 테스트가 새 플래그; `.pixi/envs/mic/python -m unittest microscope_agent/tests/test_focus_core.py` 가 거기서 실행 | M | 중간: 현미경 PC 에서만 검증 |
+| **G-08** | `console.*` 을 `runs/` 에 넣는 SMA 카드: 좌석이 `<outbox>/<run_id>/console.*` 과 `console.export.json` 을 받아 sha256 확인, `runs/<run_id>/log.json` 옆에(평탄 이름, 덮어쓰기 금지, run 먼저 존재), 파일마다 이름 지어 커밋; 라이브러리언은 `log.json` 있고 `bench: true` 인 run 만; 선택적 보고용 check(내보내기 해시 일치) | SMA `microscope_agent/tasks/<new>.md`, `librarian_agent/tasks/<new>.md`, `runs/<run_id>/` | manager-microscope(카드), 현미경 좌석(파일 넣기) | C-07, G-06, G-02b | 실제 벤치 세션 하나가 끝까지; validate.py 0 failed; check 15 PASS; KB 항목이 세션 id 아닌 run_id 인용 | M | 중간: 공개 `runs/` 에 콘솔 기록이 처음 |
+| **G-16** | DINO 그림자 모드 위치: 콘솔 전용 점수(권고; FocusPanel 읽기 전용, 넘어가는 것 없음) 대 평탄 `focus_dino.py`(numpy 헤드, torch 는 pixi `ml` 기능 뒤, E6 은 `signals` 에만). `docs/integration-sma.md:68`("option b + ml extra" 는 Q2 와 모순) 수정 | dino docs; (b) 면 SMA `pyproject.toml` | SMA architecture + 사용자 | G-06 | 두 설계 문서에 한 문장; pixi 선언 없이 SMA 에 torch import 없음 | S | 낮음 |
+| **G-13** | 라이브 이벤트와 **정지 전송로**: `Orchestrator.record` 가 이벤트를 `runs/<run_id>/events.jsonl` 에도 즉시 추가(log.json 불변); `run()` 이 dispatch 사이에 정지 요청을 확인. **전송로는 orchestrator 프로세스가 여는 루프백 소켓**(또는 SMA 트리 밖 콘솔 폴더의 파일을 orchestrator 가 폴링); **정지만** — `hold_for_person` 답은 콘솔이 보내지 않고 operator 터미널에서 사람이; "콘솔은 SMA 루트 아래에 아무것도 쓰지 않는다" 를 완료 조건에(파일 감시기). C-08 의 Abort 재활성 | SMA `tasks/0NN`(manager-microscope), `src/{orchestrator,operator}.py`·tests(**현미경/autofocus 좌석**) | manager-microscope(카드), 현미경/autofocus 좌석(코드) | G-02b | mock run 이 실행 중 events.jsonl 을 흘림; 정지 요청이 정상 fan-out 으로 중단되고 log 에 누가 요청했는지; `SmaFilesPort` 가 진행을 보여 주고 mock run 을 멈추되 SMA 트리 쓰기 0 건; 커미터는 좌석 | M | 중간: 실행 계층 |
+
+### 3.4 4단계 — 10-23 뒤: Z 이동 사슬, 라이브 탭, 미룬 모양
+
+| ID | 일 | 어디 | 누가 | 선행 | 완료 조건 | 크기 | 위험 |
+|---|---|---|---|---|---|---|---|
+| **G-18** | **plan.md 11-21 수정**(architecture): z_drive operation plan 에 approach/return/retract 역할과 이동 시점의 간극 비교를 허용; 지금 11-21 은 커버슬립 접근을 operation plan 에서 제외한다. G-09 의 선행 | SMA `plan.md` 11-21, 2.1 인터락 3(스윕 사례; rulings.jsonl:24 가 제기) | SMA architecture | B-01(ZDrive 부호), U-02 | validate.py 0 failed; 단락 날짜 | S | 낮음 |
+| **G-10** | PFS 해제를 발행 가능·검증된 동작으로. 1단계(벤치 무관): orchestrator 인터락 `check_z_motion_allowed`(`pfs` 가 읽기 되돌림과 함께 `_completed` 에 없으면 z_drive 명령 없음; 터릿 검사와 같은 모양). 2단계(B-01 이 속성을 찾은 뒤): PFS 속성 하나를 `SOFTWARE_MAY_COMMAND` 에 읽기 되돌림과 함께; `enableContinuousFocus` 는 계속 거부; 믿을 속성이 없으면 수동 시트 단계("사람이 PFS 를 끈다") | SMA `src/orchestrator.py`, `devices/micromanager.py`, tests(**좌석**); 카드(manager-microscope); 2.1 문구(architecture) | manager-microscope(카드) → 현미경/autofocus 좌석(코드) | B-01, U-02 (OD-9), G-18 | pfs 해제 뒤 z_drive 스텝 plan 이 mock 통과; pfs 없는 같은 plan 거부; 속성 이름 벤치 확인. **2단계 진행 증거**: B-01 의 "켜짐→꺼짐" 읽기; 허용 줄 추가 전 실패하는 테스트를 봄. 중단 기준 1 | M | 중간 |
+| **G-09** | **z_drive operation 이동 = Z 해제**(카드 040 의 z_drive 판): (1) `devices/micromanager.py` 에 z_drive 전용 적용 경로 — 보호된 코어의 getPosition/setPosition, 전후 읽기 되돌림, 명령 허용치와 수치 비교(장치는 정책 없음); (2) orchestrator 의 세 번째 구조 예외(`operation.device == "z_drive"`, `operation.moves[]` 에서, 승인+유도 일치+유도점의 `z_drive_position_min/max` 검사); (3) `_OPERATION_LIMIT_PREFIX` 에 z_drive, check 86 에 z_drive 가지(approach/return/retract 역할, Z 는 주기 운동 금지, 모든 목표가 쌍 안, `z_drive_step_max`, 이동 수 상한; **"오름차순 = 샘플 쪽" 은 B-01 의 ZDrive 부호 KB 항목이 있을 때만**, 압전 가지와 같은 방식); (4) 카드 041 의 빈칸 1–2(MM 라벨을 레지스트리 필드로; `derive_commands` 가 `params.settings` 생성); (5) **실제 P0 편집**: ZDrive 를 `SOFTWARE_MAY_COMMAND` 에 넣고 `REFUSED_CALLS` 의 `setPosition` 에 element z_drive 전용·예외 안에서만의 예외를 둔다(`NAMED_REFUSALS` 는 기록일 뿐 권한을 바꾸지 않는다); 봉투 키가 있고 확인됐을 때만; manager 가 원하면 둘째 카드로 분리; (6) 각각 실패를 본 테스트; (7) 첫 z_drive plan 은 run-20260923-001 의 후퇴(PFS 꺼짐, `z_drive_retract_position` 으로 한 `step`) | SMA `devices/micromanager.py`, `src/{orchestrator,operator}.py`, tests(**좌석**); `validate.py` check 86(manager-microscope) | manager-microscope(설계·check 86) → 현미경/autofocus 좌석(코드) | G-07, U-03, G-10 1단계, G-18, G-04 | **진행 증거(모두)**: D-00 이 dino `BENCH_MOTION` LOCKED 를 보임(둘째 경로 없음); B-02 의 장비 거부 시연; U-03 값과 확인 기록; G-10 PFS 경로 검증; 사람이 첫 plan(Tier 1) 을 `approvals/` 에 승인; 좌석 창에서 벤치 인계. **완료**: 승인 없는 수제 z_drive 명령은 통째로 거부; 승인된 plan 의 스텝이 mock 에서 읽기 되돌림 검증과 함께 dispatch 되고 허용치 벗어나면 run 중단; 후퇴 plan 이 mock 끝까지; validate.py 0 failed; 커미터는 좌석 | XL | 높음: 벤치의 첫 소프트웨어 Z. 중단 기준 1, 8, 9 |
+| **B-02** | **벤치 방문 2: 거부를 보고, 첫 후퇴 [벤치][사용자]**. **사람이 승인한, 유일한 스텝이 ZDrive 명령인 plan** 을 장비의 체크아웃에서 돌려 `log.json` 에 plan_id·approval·dispatch 전 `software_motion_refused` 가 남는 것을 본다(승인 없는 plan 은 `authorise()` 에서 먼저 거부되어 ZDrive 거부까지 못 간다; "준비 run" 표현은 쓰지 않음); 023 1·2 항의 거부도 장비에서; 그 뒤 첫 승인 z_drive plan: PFS 꺼짐, `z_drive_retract_position` 으로 읽기 되돌림과 함께 후퇴(dino runbook 2a) | 현미경 PC; SMA `runs/` | 벤치(사용자가 plan 마다 승인; 현미경 좌석 실행) | G-09, G-10, U-03, G-05b | log.json 에 거부, 그 뒤 `verification: readback` 의 후퇴; check 15 PASS | L | 높음: 첫 소프트웨어 Z; 후퇴만, 샘플 반대쪽. 중단 기준 8 |
+| **G-12** | 초점 탐색 plan 가지와 operator 루프(026 단계, 고전만): 가지(`focus_search` 또는 z_drive `operation` 확장; 후자 권고)에 `focus_search.sweep_z` 가 미리 열거한 오름차순 스텝, 문턱과 범위는 **plan 숫자**(조용한 기본값 없음, 026 9절; OD-14) — Q5 의 잠정 문턱(MAX_SIGMA_DOF, MIN_CURVE_CONTRAST, MIN_DYNAMIC_RANGE_ADU)은 `assumed:<rationale_id>` **E5** 로 `assumptions` 에 근거를 적고(check 4: 가정은 근거가 있어야 한다는 검사) plan 당 근거 7 개 상한에 센다; 스텝 크기·범위·이동 수 상한은 사람의 결정; B-03 뒤 측정값으로 교체 — ; 스텝마다 `micromanager.snap` 프레임, 엔코더 읽기에 `focus_verdict.from_sweep`, `in_focus` 에서 조기 정지, 천장 안 climb-past-top 은 둘째 승인 가지, `focus_verdict` 이벤트는 `to_run_log_event`(출처 포함); operator 는 한 스텝씩 dispatch(관찰 훅으론 안 됨). 026 재발행 | SMA `plan.schema.json`(manager), `src/operator.py`·복사된 `focus_*.py`(좌석), `tasks/026` | architecture(모양) → manager-microscope(카드·스키마·check) → autofocus 좌석(코드) | G-09, G-10, G-06, L-02, B-02, D-07 | mock 에서 N 스텝 스윕, z 출처 `measured:<run_id>` 의 `focus_verdict` 이벤트, in_focus 정지, 천장 안 넘음, 문턱 하나라도 없으면 거부; validate.py 0 failed. **진행 증거**: B-02 의 후퇴가 벤치에서 됨; DINO 제외; plan 마다 사람 승인. 중단 기준 9 | XL | 높음: 첫 자율 Z 루프 |
+| **B-03** | **벤치 방문 3: 100x oil 첫 초점 대 수동 초점 [벤치][사용자]**. 13.2 6항대로 성공 기준을 시작 전에 선언; 사람의 수동 초점과 비교; 일치/불일치를 결과 카드로 | 현미경 PC; SMA runs/ | 벤치 | G-12, B-02 | 판정 이벤트가 있는 run log; 사람 진술 기록 | L | 높음: 커버슬립 쪽 이동; 간극 바닥과 봉투 쌍 작동. 중단 기준 8 |
+| **G-14** | 프레임 탭(라이브 프레임): 준비 작업(아무것도 안 움직임, 11-21): orchestrator 프로세스가 비닝 프레임+메타(t, 카메라 라벨, ImageNumber, ElapsedTime-ms, KB 의 pixel_um 과 등급, 압전/재물대 z 읽기)를 `runs/<run_id>/raw/` 링 또는 루프백 소켓에 발행(`live_view_20260925.py` 에서 출발); 누가 촬영을 시작·정지하는지; 두 Kinetix 의 `exclusive_with optical_tweezers_gui` 존중; 콘솔 `SmaFilesPort` 가 `/ws/frames` 로 읽고 코어는 절대 안 엶 | SMA `src/live_view_20260925.py`, `devices/micromanager.py`, `orchestrator.py`(좌석), tasks(manager-microscope), plan.md 7(architecture) | architecture(설계) → manager-microscope(카드) → 현미경 좌석(코드) | B-01(렌즈별 pixel_um KB), L-02, G-02b | 벤치 라이브 보기가 SMA 프레임을 pixel_um 과 출처와 함께 보여 줌; 둘째 코어 없음. **진행 증거**: architecture 와 manager-microscope 가 받아들인 설계문; 벤치 보유자의 지시. 그 전엔 벤치 라이브 보기 없음(OD-13) | L | 높음: 장비 위의 새 실행 계층 코드 |
+| **C-12** | 벤치의 FocusPanel: 압전 Z 는 SMA 프로세스의 `python_serial.read()` 가 채우는 hw_port 상태 필드로; 자막 "height = stage z + piezo z; piezo z sign unmeasured"(B-01 의 압전 방향이 KB 에 들어갈 때까지); 콘솔은 COM4 를 열지도 `mm_real.piezo_read` 를 프레임마다 부르지도 않음 | dino `FocusPanel.tsx`, hw_port 상태 | dino 콘솔 세션 | G-14 | 상태 필드 전엔 압전 z 가 null 이고 자막이 그렇게 말함; 콘솔이 COM 포트 안 엶 | S | 낮음 |
+| **P-02** | 콘솔의 봉투 유래 한계: `PIEZO_RANGE_UM`/`TRAP_RANGE_UM`/`TRAP_TOL_UM` 을 기록의 검사에서 제거; 패턴은 시작 때 받은 한계 객체로 검사(mock: "mock 이동 범위" 표시; 벤치: `envelope/safety.json` 읽기 전용, 렌즈별, 없는 한계는 SMA 문구로 거부); 웹 `model.ts RANGE_UM` 은 `/api/state` 에서 같은 객체; 트랩 z 모델에서 제거(OD-11) | dino `engine/patterns.py`, `engine/guards.py:643-772`, `web/src/app/patterns/model.ts`, `features/tweezers/index.tsx` | dino 콘솔 세션 | U-01 (OD-10); guards.py 잠금(D-01, D-04 뒤) | patterns.py/model.ts 에 안전 숫자 없음; 트랩 x=50 µm 가 mock 에서 허용, 봉투 적재 100x 에선 거부; 없는 한계 거부 | M | 중간: guards.py 공유 |
+| **P-03** | 패턴·광집게의 "SMA plan 초안": 압전 한 축 트랙 → operation plan(접근 스텝, 램프 구간 또는 한 축 사인, 복귀 스텝, `position_readback_error` 는 사람 몫); 광집게 트랙 → **`.tpf` 패턴 파일**(`write_pattern` 모양: 점마다 x, y, 세기, 트랩 기준 상대) + 그것을 싣는 plan(`trap_steps` 또는 새 kind 는 manager-microscope 의 스키마 결정; 그 전까지는 `trap_steps` 스텝 열거: 첫 점에서 생성, ≤1 µm 스텝 ≤10 Hz, "on" 전 보류, objective 필드); 두 축 동시·Z 트랙·반복·트랩 z·장치 혼합은 이유를 달아 거부; 초안 전 스텝 수 표시; 벤치에선 Run 버튼 대신 이것 + "벤치에서는 실행 불가: plan 은 soft-matter-agents 가 승인·실행" | dino `PatternRunControls.tsx`, `features/tweezers/index.tsx`, `plan_draft.py` | dino 콘솔 세션 | C-05, P-02, OD-10 | 한 축 X 램프가 `plan_operation_piezo_x_step.json` 모양의 plan 으로 나와 plan.schema 통과; 원은 "simultaneous X and Y not expressible" 로 거부; 5 µm 트랩 선은 ≥5 스텝 + 보류 | L | 중간 |
+| **P-04** | 스키마 카드(조건부): 사용자가 뒤에 동시 XY 나 연속 트랩 운동, 또는 plan 이 `.tpf` 를 싣는 것을 원할 때만 — `trajectory` 이동 종류(정수 인덱스에서 절대 다축 점, dt, 점마다 봉투 검사, 첫 점으로 램프, Z 제외), 시간 있는 `trap_track` 또는 `pattern_file` 참조, 두 장치가 한 plan 을 공유해도 되는지; dino 는 `docs/screens/patterns.md` 1절을 질문 카드로 | SMA `plan.schema.json`·check 86(manager-microscope), `operator.py`·`python_serial.py`·`python_tcp.py`(좌석) | manager-microscope(스키마) + 좌석(코드); architecture 선언 | OD-10 보류; B-03 뒤 재결정 | fixture 가 실패하는 것을 본 카드 수용 또는 이유 기록된 거부; P-03 조정 | XL | 높음: 모든 좌석이 쓰는 plan 계약 변경 |
+| **L-03** | 남은 질문 카드 약 70 장 + L-01 의 새 행: 20 장씩 묶어 답(보냄/안 보냄/먼저 측정); 라이브러리언이 입력 또는 gap | dino `docs/librarian-handoff.md`; SMA findings/, 라이브러리언 tasks | 사용자(답), 라이브러리언(입력) | L-02 | 카드마다 결정 | L | 중간: 몇 값은 벤치 필요 |
+| **B-04** | 벤치: 승인된 plan 아래 트랩 보정 확인과 축 부호: 렌즈별로 알려진 진폭을 주고 프레임에서 측정(KB 의 보정 검사); `trap_steps` plan 에서 y 부호; 압전 채널 매핑과 Z 방향(점검표 3a/3c) | 현미경 PC; SMA 결과 카드; dino docs/runs 거울 | 벤치 | L-03, G-14 | run_id 있는 SMA findings/결과 카드; dino 오버레이 부호와 카메라 라벨 갱신 | M | 중간 |
+| **D-04** | **Q4 가드 카드**(dino; 합병 단계가 아니라 별도 카드, 달력에 묶지 않음): `guards.approach_ceiling_um` 과 `OBJECTIVE_LIMITS` 가 건식 렌즈(4x/10x/20x)를 해제(long_xy 문턱 없음, 상한 = 창 위)하고 40x WI / 60x Oil / 100x Oil 은 SMA 모양(작동 거리에서 간극, 범위의 가까운 끝)으로 유지; 미지 렌즈는 가장 엄격; 40x WI 는 0.17 작동 거리 측정 전까지 가장 엄격; `operations-spec.md` 4.2 와 대물렌즈 화면 이유. `BENCH_MOTION` 은 건드리지 않음 — 그래서 **벤치 효과는 사용자가 모션 잠금을 풀기 전까지 0** 이고 D-05 가 경로 자체를 지운다 | dino `engine/{guards,gates}.py`, `docs/operations-spec.md`, `tests/engine` | 사용자(표 결정·편집; 에이전트는 거부됨) + dino 세션 | D-01, U-02 | 카드에 렌즈별 표(해제/유지 + 출처); 건식 1·침지 1 테스트; D-00 갱신·녹색; `BENCH_MOTION` 여전히 LOCKED. 중단 기준 1 | S | 중간 |
+| **D-05** | SMA 가 벤치 모션을 소유한 뒤 dino 삭제 목록: `engine/backends/tweez300.py` 삭제; `mm_real` 모션 메서드와 `BENCH_MOTION` 제거(cfg 적재/AutoShutter/sha256/UnsafeConfig/탐색/조명/읽기는 OD-13 대로 유지); PiezoAxis/TrapAxis 를 장치 경로에서 제거(MockPiezo/MockTweezers 는 mock 전용); 모션 작업은 mock/replay/mm-demo 만; D-00 을 "부재" 단언으로 재작성; `PLAN.md` 5절과 `integration-sma.md` 9절 표 갱신; `exec12/T-036-unlock` 보류 해제(대체됨) | dino `engine/backends/{tweez300,mm_real}.py`, `engine/{guards,piezo,tweezers,patterns}.py`, `operations/*`, `tests/engine/test_safety_baseline.py`, docs | dino 세션 | C-04 가 벤치에서 사용 중, G-09, B-02 | `is_bench` 백엔드에 `move_*`/`set_nosepiece` 없음; 모션 작업 테스트 mock 만; 표류 검사 녹색. **진행 증거**: C-04 로 실제 plan 왕복 1 회 이상; 사용자가 "콘솔은 더 이상 벤치 모션이 필요 없다" 고 말함 | M | 중간: 유일한 독립 벤치 모션 경로 제거 |
+| **G-17 (뒤 절반)** | XY 설계(SMA): XY operation 모양(`motor_stage`, 스텝만), `motor_stage_{x,y}_position_min/max`, 인터락 "침지 렌즈에서 `xy_move_without_retract_max` 보다 긴 이동 전 후퇴 검증" | SMA plan.md 11-21(architecture), 스키마·check(manager-microscope), 코드(좌석) | architecture → manager-microscope → 좌석 → 사람 | B-03 | 카드 또는 plan.md 11-21 의 보류 기록 | XL | 높음 |
+| **C-14** | Q6 후반 자리: 화면의 Claude 통합(보조)을 SMA 에이전트 쪽으로 옮기는 날짜 카드; 읽기 전용 MCP 서버를 SMA architecture 가 등록하는 모양(OD-18 재방문) | dino docs 6절 자리; SMA 뒤 카드 | 사용자 + SMA architecture | G-13, G-14 | 날짜 카드 또는 보류 기록 | — | — |
+
+---
+
+## 4. 순서와 임계 경로
+
+### 4.1 복사(2주차)까지
+
+```
+R-08 결정지(주말) -> U-01 묶음 A(월 10-05) -> G-02 plan.md 기록(+G-02b) -> G-01 좌석 행 -> G-04 복사 카드
+                                                                                            |
+D-00 기준선 -> D-01 단계 규칙 --+                                                             v
+D-02 숫자 제거 -> D-07 P2 계약 --+-> D-03 헤더+해시 -> 검토·병합·푸시(금 10-09) --------> G-06 복사(화~수 10-13/14)
+G-05a 데스크톱 사본 훅 --------------------------------------------------------------------+     |
+                                                                                                   v
+B-01 벤치 1(목 10-08; 예비 금 또는 월 10-12) -> U-02 묶음 B --------------------------------> L-02 라이브러리언
+R-04 공개(목표 10-09, 늦어도 10-16) ---- G-06 의 약한 선행(헤더 인용), L-02 의 선행(또는 G-02 (e) 열기) --^
+```
+
+SMA 사슬은 짧은 세션 넷(G-02 → G-01 → G-04 → G-06)이고 U-01 이 월요일에 되어야 1주차에 들어간다. 복사는 ALLOWED_PATHS·pixi·validate.py 수정이 **필요 없고** G-07 도 선행이 아니므로 9절이 가정한 것보다 짧다. plan.md 기록이 좌석 행보다 먼저라는 SMA 측 입장을 따랐다.
+
+### 4.2 공개(10-23)까지
+
+공개(R-04)는 2026-10-03 에 끝났다. 남은 것은 사후 위생 `R-07 훑기(바로) -> R-02 정리 -> R-03 기록 가드 -> D-08`. R-01 도 끝났다. SMA 사슬·S4 와 독립. S4(C-01)는 R-02 뒤(같은 파일).
+
+### 4.3 첫 소프트웨어 Z 이동(10-23 뒤)까지
+
+`U-01 (OD-8) -> G-07 스키마 키 -> (B-01 -> U-02) -> U-03 봉투 값 -> G-18 plan.md 11-21 -> G-10 PFS 인터락 -> G-09 Z 해제 -> B-02 거부 보기 + 후퇴 -> G-12 초점 plan -> B-03 첫 초점`. 사용자가 다섯 번 등장(U-01, U-02, U-03, B-02/B-03 의 plan 승인), 벤치 세 번.
+
+### 4.4 막힘표
+
+| 막힘 | 원인 | 이유 |
+|---|---|---|
+| C-01 (S4) | R-02 | 같은 파일을 건드린다(R-04 는 끝남) |
+| D-01, D-04, P-02 | D-00; guards.py 잠금 한 번에 하나 | D-01(위임) → D-04(U-02 뒤) → P-02(마지막) |
+| G-06 | D-01, D-02, D-03, D-07, G-01, G-02, G-04, G-05a | 벤치 숫자·dino 경로가 넘어가지 않음; 행이 첫 커밋 전; 훅 있는 사본; 읽을 수 있는 인용 |
+| L-02 | G-06, U-02, G-02 (e) | 라이브러리언은 지정 커밋의 인용 경로만 읽음 |
+| U-03 | G-07, U-02 | 키가 있어야; 값이 측정돼야 |
+| G-09 | G-07, U-03, G-10 1단계, G-18, G-04 | 봉투, PFS, 11-21 수정, 좌석 카드 |
+| B-02 | G-09, G-10, U-03, G-05b | 장비에서 거부를 먼저 봄 |
+| G-12 | G-09, G-10, G-06, L-02, B-02, D-07 | 첫 모션은 후퇴; 문턱은 plan 숫자; 계약 |
+| D-05 | C-04 사용 중, G-09, B-02 | 대체가 작동하기 전에 유일한 벤치 경로를 지우지 않음 |
+| C-05 (Z 초안) | C-04, OD-5/6, C-07; (XY) G-17 보류; (패턴) OD-10 | 모양이 있어야 |
+| C-12, 벤치 라이브 보기 | G-14 | 코어 하나, COM 하나 |
+| C-08 Abort(SMA 모드) | G-13 | 정지 통로 없음 |
+| G-08 | C-07, log.json 있는 SMA run, G-02b | check 15 |
+
+### 4.5 병렬 트랙과 사용자 병목
+
+| 트랙 | 1주차 | 2주차 | 3주차 | 뒤 |
+|---|---|---|---|---|
+| SMA 거버넌스 | G-02, G-02b, G-01, G-04, G-05a/b, G-15, G-11, G-07 초안 | G-06, G-07 | G-08 카드, G-13 시작, G-16 | G-18, G-10, G-09, G-12, G-14, P-04?, G-17 뒤 |
+| dino 핵심 세션 | D-00, D-01, D-02, D-07, D-03, L-01, G-17 기록, D-09 | D-06, L-04 | — | D-04(사용자 때), D-05(늦게) |
+| dino 공개 세션 | R-08, R-02, R-03, D-08, R-07, R-06, P-01 | — | — | — |
+| dino 콘솔 세션 | — | R-05, C-01, C-02, C-03 | C-04 시작, C-06, C-07, C-08, C-13 | C-04 마무리, C-05, C-09, C-10, C-11, C-12, P-02, P-03 |
+| 검토 세션 | 매일 해시 검토 → 병합 → 푸시(3 묶음 규칙) | 같음 | 같음 | 같음 |
+| 라이브러리언 | L-01(dino 쪽) | L-02 | L-02 | L-03 |
+| 벤치 | B-01(목/금) | B-01 예비 | — | B-02, B-03, B-04 |
+| **사용자** | U-01 60 분, B-01 반나절 | U-02 45 분, U-03 30 분+커밋 | 승인 | plan 승인, L-03 3×40 분, D-04 15 분 |
+
+세션 규칙: 묶음마다 한 번 묻고 항목마다 묻지 않는다. SMA 규칙이 이미 답을 정한 것(한계는 넘어가지 않음, E6 은 아무 데도 안 들어감, 승인은 사람만, plan 당 장치 하나)은 권고대로 진행하고 기록한다. 보류 결정은 Slack 이 연결되면 그리로 보낸다.
+
+### 4.6 주차 그림
+
+**1주차 (10-05..09)**
+
+| 날 | 사용자 / 벤치 | SMA 세션 | dino 핵심 | dino 공개 | 검토 |
+|---|---|---|---|---|---|
+| 월 10-05 | **U-01 묶음 A** | G-02 (U-01 뒤) | D-00 | R-06, R-02 시작 | D-00 |
+| 화 10-06 | — | G-02b, G-01, G-05a | D-01 (guards.py 잠금 알림) | R-02, R-03 | R-06 |
+| 수 10-07 | — | G-04, G-15 | D-02 | P-01, D-08 (사용자 네 값) | D-01, R-02 |
+| 목 10-08 | **B-01 벤치 1** (+G-05b) | G-11, G-07 초안 | D-07, D-03 | R-07 (R-02/R-03/D-08 병합 뒤) | D-02, R-03, P-01 |
+| 금 10-09 | B-01 이 목요일이었으면 U-02 | B-01 findings 준비(커밋은 G-01+G-05 뒤) | L-01, G-17 기록, D-09 | — | D-07, D-03 → `origin/main` |
+
+1주차 끝: R-07 사후 훑기 결과 기록; D-03 해시 확정·푸시; G-04 카드; 데스크톱 SMA 사본에 훅.
+
+**2주차 (10-12..16)**
+
+| 날 | 사용자 / 벤치 | SMA 세션 | dino |
+|---|---|---|---|
+| 월 10-12 | B-01 예비; **U-02 묶음 B** | G-07 커밋 | R-05 + C-01 시작; D-09 (U-02 기록) |
+| 화 10-13 | — | **G-06 복사** | C-01; L-04 |
+| 수 10-14 | **U-03 봉투 Z 값** (G-07 뒤) | G-06 판정·findings; L-02 카드 | D-06; C-02 |
+| 목 10-15 | — | L-02 시작 | C-03 |
+| 금 10-16 | — | L-02; G-13 카드 초안 | C-01/C-02/C-03 한 번에 병합 |
+
+2주차 끝: 평탄 파일이 좌석 이름으로 `feature/autofocus-ui` 에; dino 거울 읽기 전용; `console/` 존재.
+
+**3주차 (10-19..23)**
+
+| 날 | 사용자 / 벤치 | SMA 세션 | dino |
+|---|---|---|---|
+| 월 10-19 | 요청 시 승인 | L-02 공개 + snapshot; G-08 카드 | C-04 시작 |
+| 화 10-20 | — | G-13 (카드 → 좌석 코드) | C-04; C-06 |
+| 수 10-21 | — | G-16 (architecture + 사용자) | C-07 |
+| 목 10-22 | — | — | C-08, C-13, C-09 |
+| 금 10-23 | (원래 공개 기한; 10-03 에 이미 공개) | — | C-04 는 다음 주로 이어져도 됨(기한 항목 아님) |
+
+10-23 뒤(달력 없음): G-18 → G-10 → G-09 → **B-02** → G-12 → **B-03**; 병렬로 C-05, C-10, C-11, P-02, P-03, G-14 → C-12, L-03 묶음, B-04, D-04(사용자 때), D-05 마지막, P-04·G-17 설계는 요청 시.
+
+---
+
+## 5. 사용자 결정이 필요한 것 (각각 권고 포함)
+
+묶음 A = U-01(월 10-05), 묶음 B = U-02(B-01 뒤). 아래는 평문이고, 괄호 안이 SMA 쪽 표기다.
+
+| 번호 | 묶음 | 질문 | 권고 |
+|---|---|---|---|
+| OD-1 | A | SMA 에 등록할 autofocus 좌석의 이름과 번호 | `microscope-<YYYYMMDD>-<n>` 형식, 기존 `microscope-20261001-1` 행을 코드로 복사, 소유 `['microscope_agent']`; 카드가 "autofocus 좌석" 이라 부름. 새 역할 문자열은 이름표일 뿐 검사(check 84: 커미터가 등록된 좌석인지)에서 얻는 게 없다. 첫 커밋 전에 등록 |
+| OD-2 | A | dino-autofocus 를 SMA 설계문서의 "참고해도 되는 이전 저장소"(plan.md 10.2)로 여는가, 어떤 조건으로 | 예. 2026-09-17 조건(그대로 가져오지 않음, 과장은 낮춤, 안전 한계는 넘어오지 않음), architecture 의 날짜 단락으로. "우리 코드" 로 취급하면 전수 판정(10.2.1)을 건너뛰게 되어 권하지 않음 |
+| OD-3 | A | **기록된 문장을 바꾸는 결정.** 지금 `integration-sma.md` 는 "이 저장소가 원본이고 커밋 해시를 그쪽 파일에 적는다"(옵션 a) 이고 Q2 는 "옮긴다" 다. 복사 뒤 어느 쪽이 원본이며 dino 의 `microscope_agent/` 거울을 남길지 | 승인 요청: (i) 복사 뒤 **SMA 가 원본**, (ii) dino 는 해시로 고정한 **읽기 전용 거울**을 남겨(표류는 테스트 실패) 엔진과 콘솔 테스트가 계속 쓰고, 삭제는 뒤의 날짜 카드. 대안: 기록대로 dino 가 원본이고 SMA 가 날짜 카드로 dino 에서 갱신. 어느 쪽이든 D-09 가 5·9절 문장을 같은 커밋에서 고침 |
+| OD-4 | 해소 | 공개를 `console/` 이동(S4) 전에 하는가 뒤에 하는가 | **해소: 2026-10-03 에 이미 공개됐다.** 폴더 이동(S4)이 공개 이력에 나중에 보여도 비용 없음 |
+| OD-5 | A | 콘솔 plan 초안은 어디 두고 누가 SMA 에 넣는가 | 콘솔 설정 폴더 `<config_dir>/plans/drafts/<draft_id>.json`(패턴 폴더와 같은 선례); autofocus 좌석이 자기 이름으로 `questions/<qid>/` 에 복사; SMA 에 새 폴더 없음. 초안의 `author` 는 `human`; 좌석이 커밋해도 내용의 책임은 초안을 쓴 사람 |
+| OD-6 | A | 초안·공개 기록의 사람 id; 고른 손잡이가 공개 `runs/` 에 나와도 되는가 | 승인 이름과 같은 손잡이(`kyuhwan`), 그 외는 무작위 `p-xxxxxx`; 초안·내보내기는 id 만, 이메일 절대 없음; 감사 기록은 지역; 손잡이가 `runs/` 에 나오는 것은 예 |
+| OD-7 | A | 기록 조정: 지역 기록 git 대 SMA `runs/`; 내보내기 시점·outbox·여러 run 에 걸친 세션; **그리고 "기록은 모두 그쪽 runs/ 로" 의 범위** | 지역 `D:\AutoFocus\records` git 이 비공개 전체 보존 원본(푸시 안 함, D10); SMA `runs/` 는 좌석이 넣은 비식별화 `console.*`; 세션 닫은 뒤 세션 화면에서 수동 내보내기; outbox `D:\AutoFocus\outbox`; 여러 run 이면 첫 run 옆에 한 번, `runs: [...]` 나열. **SMA run 이 생기기 전의 벤치 세션(09-30, 10-02)은 SMA run 으로 넣을 수 없다**(operator 의 log 없는 run 폴더는 검증기가 거부). 그것들은 findings 로(경로+해시 인용). "모두" 를 이렇게 읽어도 되는지 확인 |
+| OD-8 | A | SMA 에서 침지 렌즈의 Z 를 무엇이 묶는가: 봉투의 고정 키, 026 의 동적 간극 바닥, 둘 다; 렌즈별인가 | 둘 다, 순서대로: 먼저 봉투 키 `z_drive_position_min/max` + 후퇴 + 스텝 최대 + 읽기 허용(렌즈별 조회형; **건식 렌즈의 "해제" 는 사람이 쓴 더 넓은 값이지 없는 키가 아니다** — SMA 에서 없는 한계는 거부), 동적 간극 바닥은 026/G-12 와 함께. dino 의 2800–3200 창은 참고(L-014) |
+| OD-9 | B | PFS 해제 경로: 인터락, 읽기 되돌림 있는 허용 속성 하나, 수동 시트 | 인터락 지금(G-10 1단계); 허용 속성은 B-01 이 어느 속성이 서보를 멈추는지 보인 뒤; `enableContinuousFocus` 는 계속 거부; 믿을 속성이 없으면 수동 시트 |
+| OD-10 | A | 벤치의 패턴: 표현 가능한 부분집합만, 아니면 궤적/트랩 트랙 스키마 카드를 지금 | 부분집합만(압전 한 축 구간·한 축 사인; 트랩은 `.tpf` 패턴 파일 또는 ≤1 µm ≤10 Hz 스텝 열거와 보류). P-04 는 첫 초점이 된 뒤 원·나선이 필요할 때만. 반복과 Z 주기 운동은 어떤 경우에도 거부 |
+| OD-11 | B | Tweez300 에 트랩 Z 제어가 있는가; GUI 가 쥔 카메라 바디와 트랩 면을 찍는 MM 라벨 | 확인 전까지 모델에서 트랩 `z_um` 제거(SMA 어디에도 Z 가 있다는 말이 없음); 카메라 바디는 질문 카드 + B-01 관찰; 그 전까지 오버레이 "camera unverified" |
+| OD-12 | A | `trap_move/trap_set/pattern_run` 을 합친 뒤 mock 데모 작업으로 남기는가 | 남김, operations-spec 에 "mock 데모" 표시; mock 도 plan 초안을 만드는 한 경로로 합치는 건 뒤의 단순화 |
+| OD-13 | A | S5 뒤 콘솔의 직접 하드웨어와 벤치의 프레임 출처; **코어 배타 규칙** | 콘솔은 G-14 가 프레임을 낼 때까지 mm_real 의 cfg 적재·읽기·조명(모션 없음)을 유지하고 그 뒤 파일만; G-14 전 벤치 라이브 보기 없음(한 Micro-Manager 에 코어 둘은 알려진 실패); SMA run 의 끝 조명 끄기는 plan 동작. **콘솔 mm_real 은 SMA operator/orchestrator 가 돌고 있지 않을 때만**; 실행기가 SMA 잠금/pid 파일을 보면 mm-real 거부(없으면 사람이 선언); runbook 과 점검표에 적음 |
+| OD-14 | B | 판정 문턱과 스윕 범위는 SMA 어디에: run 마다 승인하는 plan 숫자, 아니면 KB | plan 숫자(026 9절; 13.2 6항 "성공 기준을 먼저 선언"). 잠정 문턱은 근거를 적은 **가정값(E5)** 으로 들어가 plan 당 근거 7 개 상한에 센다; 스텝·범위·이동 수 상한은 사용자의 결정; B-03 뒤 측정값으로 교체. KB 는 벤치 사실용이지 튜닝용이 아님. Q5 는 dino 에서 잠정 유지 |
+| OD-15 | A | 콘솔이 초안을 검증해도 되는가, 어떻게 | 콘솔 안의 jsonschema 검사만(`plan.schema.json` 읽기 전용 사본, 출처 헤더로 고정, "schema-valid (console check)" 라벨); SMA 의 `validate.py` 는 넣은 뒤 사람 또는 좌석이 pixi 에서; 다른 저장소의 manager 스크립트를 서브프로세스로 부르지 않음 |
+| OD-16 | A | `scripts/focus_servo.py` | R-05 에서 삭제(이력에 남음); SMA 는 Z 주기 운동 금지; 유한한 방향 찾기 루프는 G-12 의 일 |
+| OD-17 | B | `console.*` 기록의 등급 | 등급을 싣지 않고 **출처**만: SMA run 안 측정값은 `measured:<run_id>`, 합병 전 dino 값은 `prior_run:dino-autofocus@<sha>`(문서 인용 E3 상한), 모델 값은 `signals` 아래 등급 없이. 등급은 SMA 쪽이 출처에서 유도(자기 신고 금지) |
+| OD-18 | A | 콘솔 도구의 MCP 노출 | 이번 계획에서 제외; 좌석이 디스크에서 초안·기록을 읽음; 뒤에 SMA architecture 가 등록하는 읽기 전용 서버로 재방문(C-14) |
+| OD-19 | A | `/api/commands` 뒤의 독립 dino 엔진을 계속 두는가 | 예, `LocalEnginePort` 로 mock/replay/mm-demo(콘솔의 데모 엔진·핵심 개발대); 벤치 모션은 D-05 에서 제거; `/api/commands` 은퇴 안 함 |
+| OD-20 | A | 이번 합병의 XY 이동 | 전부 보류; 보류를 지금 기록(G-17); scan_4x/sample_map/edge_trace/비켜서기는 B-03 뒤 XY 카드까지 mock/replay |
+| OD-21 | B | 첫 초점 목표 렌즈와 렌즈별 Z 한계값 | 100x oil 만 먼저; 60x oil 은 간극 확인 뒤; 40x WI 는 0.17 칼라 작동 거리를 B-01 에서 잴 때까지 발행 불가 |
+| OD-22 | B | 복사 전에 답할 질문 카드와 네 출처 충돌 | 평탄 파일을 떠나는 숫자의 16 장(L-032, L-033, L-057, L-077..L-089) + 충돌 4 장(L-005 40x WI 작동 거리, L-031 4x 픽셀 출처, L-052 Kinetix_red 비트 깊이, L-056 605 nm 경로 이름; 값 하나를 말하고 두 수를 합치지 않음) = 20 장; 나머지 약 70 장은 10-23 뒤 20 장씩 |
+| OD-23 | A | 정지 통로가 생기기 전 SMA 모드의 Abort/confirm | 정직한 이유와 함께 비활성("장비 앞 또는 operator 터미널에서") — G-13 뒤 재활성; UI 약속 "Abort 는 항상 켜짐" 은 "지역 엔진에 한해" 로 |
+| OD-24 | G-06 뒤 | DINO 그림자 모드 위치 | 당분간 콘솔 전용 점수; `integration-sma.md:68` 수정; torch 는 뒤의 architecture 결정으로만 pixi 에(G-16) |
+| OD-25 | A | **`D:\AutoFocus\data`(프레임·스택·모자이크 원본, git 밖)·`D:\AutoFocus\samples`(sample.json, map.json, 스캔 폴더)·하드웨어 프로필의 운명과 비공개 기록 git 의 백업** | 원시 프레임은 기본 지역 보관(SMA `runs/<run_id>/raw/` 로의 복사는 좌석이 run 마다 결정); 샘플 폴더·하드웨어 프로필 내보내기는 보류하되 `scan_4x.py:567`(사람 필드에 사람 아닌 값) 수정을 먼저 카드로; `D:\AutoFocus\records` 는 유일한 전체 보존 사본이므로 둘째 지역 디스크 또는 암호화 사본 하나 |
+| OD-26 | A | 시뮬레이션 화면(`features/simulation`, `agents/simulation.py`, `mock_sim.py`, `api/simulation.py`)과 PLAN 10 절 F6/F7(WSL 시뮬레이션 기록 위치, 진행 파일) | 화면은 콘솔에 남고 `SmaFilesPort` 가 `simulation_agent/questions`·`runs/` 를 읽음(C-03); gsd 는 서버 그룹 의존성; F6/F7 은 "통합 때 정한다" 를 "SMA 쪽 simulation 좌석과 뒤에 정한다" 로 보류 기록 |
+| OD-27 | A | 콘솔 제목 "Takatori Lab Console"(`web/index.html:6`, `Shell.tsx:118`)과 `docs/runs/2026-09-30_substrate-scan.md:6` 의 "(Takatori lab)" 을 공개 트리에 남기는가 | 제목은 중립("Autofocus Console") 권고, 문서의 랩 이름은 결정 P3 대로 유지 |
+| OD-28 | A | 공개 트리의 언어: 설계 문서가 모두 한국어(PLAN, integration-sma, operations-spec, ui-spec, screens, records-privacy, librarian-handoff, runbooks) | 공개는 됐고 한국어 문서 그대로, README 에 영어 한 단락(이미 있음)과 "설계 문서는 한국어" 표시; SMA 독자용 영어 요약은 `docs/integration-sma.md` 의 영어 요약 절 하나로 뒤에(기한 항목 아님); 코드 docstring 은 D-03 에서 영어 |
+
+---
+
+## 6. 위험과 중단 기준
+
+### 6.1 위험 목록
+
+| 위험 | 담는 방법 |
+|---|---|
+| 둘째 소프트웨어 모션 경로(dino `mm_real` 이 SMA 를 우회, 또는 복사 파일이 코어를 부름) | D-00 기준선; G-06 은 순수 함수만; D-05 는 C-04 가 작동한 뒤에만; 코어 배타 규칙(OD-13); 좌석 카드가 plan.md 7.2 4항·2.1 9항 인용 |
+| SMA 사슬이 2주차를 넘김 | 사슬 최소(plan.md 단락, 좌석 행, 카드); U-01 월요일; ALLOWED_PATHS·pixi·validate.py 수정 불필요(검증); G-07 은 복사 경로 밖 |
+| 훅 없는 사본에서 커밋이 게이트를 건너뜀 | G-05a 가 G-06 의 선행; 현미경 PC 사본은 상태 미확인이므로 G-05b 전엔 거기서 커밋 금지; 파일 하나씩; `--staged` 검증 |
+| 미등록 커미터(check 35/41) | G-01 이 G-06 보다 먼저; `git var GIT_COMMITTER_IDENT`; U-03 은 `human@seat.invalid` |
+| 좌석 경계 위반(manager 가 src 를 씀) | 2.5 소유 규칙; G-10/G-11/G-13/P-04 는 카드와 코드로 분리; 완료 조건에 커미터 확인 |
+| dino 한계 숫자가 SMA 코드·봉투로 들어감(10.3), 또는 전수 판정이 자리를 못 대어 거부됨(10.2.1) | D-02 ast 허용 목록; D-03 토큰 규칙; **G-02 가 자리를 먼저 지정하고 22 행을 한정**; G-06 판정 행마다 인용; U-03 은 사람 손 |
+| 라이브러리언이 dino 경로를 읽지 못함 | G-02 (e) 의 열기 기록 또는 R-04 뒤; 출처 `prior_run:dino-autofocus@<sha>` |
+| 100x 바닥이 틀림(023 의 충돌) | U-03 값은 B-01 과 `how`; G-09 유도점 검사 + 읽기 되돌림; 첫 plan 은 후퇴; B-02 가 거부를 먼저 봄 |
+| ZDrive "오름차순" 부호가 추정 | B-01 이 엔코더 부호를 손으로 측정; check 86 z_drive 가지는 KB 항목 조건부 |
+| 스윕 중 PFS 서보 | G-10 인터락이 z_drive 명령보다 먼저; 벤치에서 속성 확인; B-01 은 패널에서 손으로만 |
+| 사본 둘이 조용히 갈라짐 | D-03 헤더+본문 해시+표류 검사; OD-3; D-06; 날짜 카드로만 갱신; 스키마 사본(C-05)도 같은 검사 |
+| 공개가 P5 훑기(R-07) 전에 이뤄짐 | R-07 을 1주차 첫날로; 발견 즉시 사용자에게 알리고 공개 쪽 작업을 멈춤(이력 재작성·force push·캐시 정리·비밀값 교체는 사용자 결정) |
+| 공개 유출(이메일, 홈 경로, people.json, 기록) | R-07 전체 이력; 비식별화는 세션 통째 거부; 계정·감사·사람 파일은 `%LOCALAPPDATA%`; `main` 만 푸시 |
+| mock 세션이 공개 `runs/` 에 | R-03 이 `bench is True` 아니면 거부; G-08 은 log.json + bench true; run-id 정규식 일치 |
+| 모델 숫자가 plan 에 세탁됨(E6) | C-05/C-10: 보조 제안은 `numbers[]` 에 못 들어가고 사람이 입력; 테스트 |
+| 콘솔이 SMA 가 못 하는 것을 약속(중단, 읽기 되돌림, 실시간 위치, 축척) | C-08; Abort 는 G-13 까지 비활성; "명령만, 되돌림 없음"; 합성 보기 "소프트웨어 시간, 표시 전용"(P-01) |
+| 콘솔이 SMA 트리에 씀(초안, 내보내기, 정지 파일) | 초안·outbox 는 콘솔 폴더; G-13 은 루프백 소켓; C-03/C-04/G-13 완료 조건에 파일 감시기 0 건 |
+| 압전+광집게 혼합 plan 이 광집게를 조용히 버림 | G-15; P-03 거부 |
+| 병렬 테스트로 데스크톱 충돌 | R-06: 3 묶음; 계획 세션은 테스트를 돌리지 않음 |
+| 라이브러리언 공개가 고정된 좌석의 kb_version 을 옮김 | L-02 가 진행 중 고정 확인 |
+| guards.py 를 여러 카드가 편집 | 잠금 한 번에 하나: D-01 → D-04 → P-02 |
+| 계획에 없는 SMA 스키마·check 변경이 필요해짐 | 중단 기준 9 |
+| 공유 폴더가 다른 세션의 브랜치에 있음 | 각 세션은 자기 워크트리; 공유 HEAD 를 리셋하지 않음 |
+
+### 6.2 중단 기준 — 멈추고 사용자에게 묻는다
+
+1. `BENCH_MOTION` 전환, `BENCH_APPROACH` 확대, `SOFTWARE_MAY_COMMAND` 에 장치 추가, `REFUSED_CALLS`/`NAMED_REFUSALS` 에서 이름 제거가 필요해질 때 — dino 잠금은 사용자만, SMA 거부 해제는 사람 승인이 있는 카드(G-09 조건)만. D-05 이외 이유로 D-00 이 깨지면 중단.
+2. 복사할 파일이 stdlib+numpy 밖을 import 하거나, D-02 허용 목록 밖 숫자 리터럴을 갖거나, dino 경로를 참조하면 — G-06 전 중단.
+3. seats.json 행이 첫 커밋의 부모에 없거나, `git var GIT_COMMITTER_IDENT` 가 좌석이 아니거나, 사본에 `core.hooksPath` 가 없으면 — SMA 커밋 전 중단.
+4. `python contracts/validate.py` 가 FAIL 로 끝나거나 `--expect-fail` 이 fixture 를 잃으면 — 중단; `--no-verify` 절대 금지.
+5. 비식별화가 거부하거나 내보내기 대상이 이미 있으면 — 중단; 덮어쓰기·손 이름 바꾸기 금지.
+6. R-07 이 공개된 이력에서 수용되지 않은 개인 정보를 찾거나 `git ls-remote` 에 `main` 외가 보이면 — 즉시 사용자에게 알리고 공개 쪽 작업을 멈춘다(제거 방법은 사용자 결정).
+7. 라이브러리언 충돌(40x WI 작동 거리, 비트 깊이, 4x 픽셀, 605 nm)에 값을 골라야 하면 — 사용자가 말한다; 두 수를 합치지 않는다.
+8. G-09 의 증거 목록이 완성되기 전에 벤치 단계가 소프트웨어로 Z 를 움직이거나 터릿을 돌리거나 레이저를 켜려 하면 — 중단; 손 동작만(B-01).
+9. 계획에 없는 SMA 스키마·check 변경(새 plan 가지, 새 봉투 키, 새 폴더)이 필요하면 — 중단; manager/architecture 카드와 사람의 승인 사슬이지 dino 편집이 아니다.
+10. (해소: R-01 은 병합됨) 다른 세션의 진행 중 카드 파일을 어떤 항목이 건드리면 — 중단.
+11. (해소: 공개 완료) 복사 주차와 다른 큰 일이 같은 주를 다투면 — 어느 쪽을 미루든 먼저 묻는다.
+12. dino 프로세스가 `D:/codes/github/soft-matter-agents`(또는 현미경 PC 의 SMA 사본) 안에 쓰려 하면(초안, 내보내기, validate 실행, 정지 파일) — 중단; dino 는 SMA 에 쓰지 않는다.
+13. manager 좌석이 `microscope_agent/src/`·`tests/`·`rulings.jsonl`·`findings/` 를, 또는 좌석이 `envelope/safety.json`·`approvals/` 를 쓰려 하면 — 중단(2.5).
+
+---
+
+## 7. 합칠 때 일부러 하지 않는 것
+
+- **SMA 에 소프트웨어 Z·XY·터릿 이동 없음**(G-09/G-10/G-12 와 B-02/B-03 은 10-23 뒤). 합병은 순수 수학을 복사한다. P0 거부를 푸는 데는 사람이 아직 안 쓴 봉투 키, PFS 속성과 바닥을 위한 벤치 방문, plan.md 11-21 수정, 장비에서 본 023 거부가 필요하다. 026 설계는 유지되고 plan 가지로 재발행된다.
+- **XY plan 모양·봉투 키 없음**(G-17 보류, 지금 기록). scan_4x/sample_map/edge_trace/비켜서기는 dino 의 mock/replay.
+- **둘째 Micro-Manager 래퍼·압전 어댑터·Tweez300 어댑터 없음.** `mm_real` 모션, `tweez300.py`, `PiezoAxis`, `TrapAxis` 는 hw_port 가 작동한 뒤 삭제(D-05); SMA 의 `micromanager.py`, `python_serial.py`, `python_tcp.py` 가 유일한 장치 경로. T-036b 프리셋 거부 아이디어만 판정으로 넘어감(G-11).
+- **dino 가드 숫자는 하나도 넘어가지 않음.** SAMPLE_Z_WINDOW, 후퇴/복귀 높이, 0.4×WD 상한, Z/XY 허용, +Y 15 mm 탈출, 긴 XY 표, FREE_WD_UM, 트랩/압전 범위, 0.05 µm 허용: 경계에서 폐기(G-06 판정); 사람이 벤치 측정으로 봉투 키를 쓴다(U-03).
+- **dino 이벤트는 run_log 이벤트가 되지 않음.** `from`, `plan_id`, `t_mono` 가 없다; 비식별화된 `console.*` 사이드카로 SMA run 의 `log.json` 옆에(C-07/G-08), 이벤트로 합성하지 않음. 등급도 싣지 않음(출처만).
+- **패턴 궤적/트랩 트랙/`.tpf` 참조 스키마 없음**(P-04 조건부). 첫 초점이 될 때까지 표현 가능한 부분집합으로 충분; plan.schema 변경은 모든 좌석에 닿는다.
+- **라이브 프레임 탭과 벤치 FocusPanel 압전 Z 없음**(G-14, C-12). orchestrator 프로세스의 새 실행 계층 코드가 필요; 콘솔은 둘째 코어나 COM4 를 절대 열지 않음.
+- **events.jsonl / 정지 전송로 아직 없음**(G-13). 그 전엔 콘솔이 "마지막 run log 기준" 을 보여 주고 SMA 모드 Abort 비활성.
+- **SMA 에 콘솔 코드·서버·실행기·웹 없음.** 콘솔은 dino `console/`(사용자 결정); SMA 새 폴더 없음; ALLOWED_PATHS 변경 없음. **콘솔은 SMA 에 쓰지 않음**: 초안·내보내기·정지 요청은 콘솔 소유 위치; 좌석이 복사.
+- **S4·S5 는 합병 선행이 아님.** 복사(G-06)와 공개(R-04)는 `console/` 이나 `hw_port` 에 의존하지 않음; 둘 다 2–3 주차에 시작해 기한 뒤로 이어짐.
+- **mm_real 모션·tweez300.py·PiezoAxis/TrapAxis 삭제(D-05)는 SMA 경로가 벤치에서 쓰이는 뒤.** 먼저 지우면 벤치를 돌릴 길이 없다.
+- **dino 의 `microscope_agent/` 거울은 삭제하지 않음**; 해시로 고정한 읽기 전용 vendored 사본(D-06); 표류는 테스트 실패.
+- **DINO 점수는 콘솔에 남음**(G-16); 모델 숫자는 E6, pixi mic 에 torch 없음, 벤치 데이터 없음(Q5).
+- **질문 카드 약 70 장은 10-23 뒤**; 평탄 파일을 떠나는 숫자 16 장과 충돌 4 장만 복사 전.
+- **콘솔 도구의 MCP 노출 제외**; 뒤에 필요하면 읽기 전용, SMA architecture 등록(C-14).
+- **Q4 가드 전환(D-04)은 합병 단계가 아니라 별도 카드**; 벤치 효과는 모션 잠금을 풀기 전까지 0.
+- **합병 전 dino 벤치 세션(09-30, 10-02)은 SMA `runs/` 로 내보내지 않음**(check 15/85); findings(document_fact, 경로+sha256)로만. OD-7 에서 확인.
+- **`web/e2e` 는 만들지 않음**(T-107 브라우저 걸어보기는 카드 없음, 합병 비필수); **`agents/mock_data` 는 baf6f1e 고정**(재복사는 날짜 카드).
+- **문서 번역 없음**(OD-28): 한국어 설계 문서 그대로 공개; 영어 요약은 뒤에.
+- **CI 없음, 계획 세션에서 테스트 묶음 실행 없음, 고전 핵심을 위한 pixi 변경 없음**; torch 는 뒤의 architecture 결정으로만.
+- **Q1–Q7 과 9절 추가 결정을 다시 열지 않음.** OD-3 은 재개가 아니라 기록 문장의 수정 승인이다.
+
+---
+
+## 8. 기능 누락 점검표 (요약)
+
+기능 하나하나의 표는 별도 감사에서 나와 부록 C 로 붙는다. 여기서는 묶음 단위다. "일부" 나 "삭제" 행은 근거가 되는 사용자 결정 또는 SMA 규칙을 적었다.
+
+| 묶음 | 지금 위치 | 합친 뒤 위치 | 그대로 살아남나 | 바뀌는 것과 그 근거 | 누락 방지 장치 |
+|---|---|---|---|---|---|
+| 화면 12 영역(라이브, 패턴, 광집게, 맵, 대물렌즈, 세션, 콘솔, 시뮬레이션, 하드웨어, 로그인, 보조, 상태 표시줄) | `web/src` | `console/web/src` | **예** | 벤치에서 모션 버튼은 "SMA plan 초안" 으로(9절 "동작은 plan 으로만"); 비활성 이유는 사람 말로(C-08); 시뮬레이션은 `simulation_agent` 읽기(OD-26) | C-02 빌드·테스트 녹색; vitest 스냅샷; C-13 문서 재인용; 부록 C |
+| 엔진 작업(focus_100x, scan_4x, sample_map/goto_xy, edge_trace, objective_change, pattern_run, trap_move/set, 조명) | `engine/operations` | `src/dino_autofocus/engine/operations`(mock/replay/mm-demo); 벤치 실행은 SMA plan | **일부** | 벤치에서는 콘솔이 실행하지 않음(Q1, 9절); Z 작업은 G-09/G-12 뒤 SMA plan 으로; XY 는 보류(OD-20); 패턴/트랩은 부분집합 초안(OD-10); `focus_servo` 삭제(OD-16; SMA Z 주기 운동 금지) | OD-19 로 `/api/commands` 유지; D-05 전까지 mm_real 경로 유지; 2.4 표; 부록 C |
+| 가드와 벤치 규칙(FocusAxis/XYAxis, 렌즈별 상한, 창, 허용, 후퇴 표, BENCH_APPROACH) | `engine/guards.py`, `gates.py` | 순수 규칙은 SMA `focus_step_rules.py`(D-01); 숫자는 dino `guards.py` 에만; SMA 값은 사람이 봉투에 | **일부** | 숫자는 넘어가지 않음(SMA 10.3; Q3 Q4); 건식 렌즈 해제(Q4, D-04 별도 카드); 40x WI 는 측정까지 가장 엄격 | D-00 기준선 테스트; D-02 ast 허용 목록; G-06 판정 행(폐기 사유); 질문 카드 L-014 등 |
+| 백엔드와 장치(mock, mock_world, replay, stacks, mm_demo*, mm_real, tweez300 스텁, MockPiezo, MockTweezers) | `engine/backends`, `piezo.py`, `tweezers.py` | mock 류는 dino [C]; `mm_real` 은 cfg 적재·읽기·조명만(OD-13); 모션·`tweez300.py`·장치 경로로서의 PiezoAxis/TrapAxis 는 D-05 삭제 | **일부** | SMA `devices/` 만 장비를 움직임(Q1; SMA 4.6.8 단일 진입점); T-036b 는 판정으로(G-11); 허브 조회 금지 학습은 findings 로 | D-00 → D-05 "부재" 단언; 2.4 표; 코어 배타 규칙 |
+| 기록과 로그(세션 폴더, 작업별 jsonl, 등급 문자열, 라이브러리언 mock, 내보내기) | `records/`, `D:\AutoFocus\records` | 지역 git 원본 유지; SMA `runs/<run_id>/console.*`(비식별화) | **일부** | 등급 대신 출처(SMA 5.3 등급은 유도됨; OD-17); 합병 전 세션은 findings 로(check 15; OD-7); 데이터·샘플 폴더는 지역(OD-25) | R-03 가드; C-07 내보내기; G-08 카드; `records-privacy.md`; 백업 한 줄 |
+| 로그인·역할·감사(계정, 잠금, 지역 전용 가입, 감사 로그) | `auth/`, `server/api/auth.py`, `web/.../login` | `console/sma_console/auth`; 데이터는 `%LOCALAPPDATA%` | **예** | 사람 id(`people.json`)가 공개 기록용으로 추가(OD-6); 이메일은 어디에도 안 나감(관리자 계정 메모) | 0f7a881 테스트; R-02 헤더·scrypt; R-07 훑기 |
+| Claude 보조(Sources, propose_*, confirm, 제공자) | `assistant/`, `api/assistant.py` | `console/sma_console/assistant`(Q6: 통합 뒤 SMA 에이전트 쪽으로 옮기는 자리 C-14) | **일부** | 제안은 plan 초안으로만, 숫자는 사람 입력(SMA E6 규칙); confirm → 초안 쓰기; MCP 는 제외(OD-18) | C-10 테스트(`numbers[]` 빈 초안); C-05 |
+| 패턴·광집게·압전·이중 카메라·라이브 스트림·초점 패널+게이지 | `engine/patterns.py`, `stream.py`, `web/.../patterns`, `live`, `features/tweezers` | 콘솔(설계기·오버레이·보기); 벤치 실행은 SMA `.tpf`/plan; 벤치 라이브는 G-14 뒤 | **일부** | 범위 숫자는 봉투에서(P-02; SMA 10.3); 트랙은 부분집합·`.tpf`(SMA `python_tcp.py`); 트랩 z 제거(OD-11); 합성 보기 소프트웨어 시간 표시(P-01); 벤치 스트림은 코어 하나 규칙 | 2.4 표; P-03 거부 이유; G-15; C-12 자막 |
+| 데이터·모델·레거시 스크립트·실행기(models/heads npz, configs, synth, docs/runs, scripts, Launcher.cs) | 저장소 루트 각 폴더 | 모델·configs·synth·`docs/runs`·`docs/synthetic-results.md`·`integration-notes.md`(Cell-DINO 라이선스 메모)·`runbooks/train-focus-head.md` 는 **그대로**(dino [C]); 벤치 스크립트 11 개는 R-05 삭제(이력 보존); 실행기는 `console/launcher`, pixi 절대 안 부름 | **일부** | 스크립트 삭제(OD-16; S4 로 대체); 모델 제작 스크립트 유지; 평탄 파일 거울은 읽기 전용(OD-3) | R-05 완료 조건(docs/runs 불변); D-06 표류 검사; C-11 벤치 검증; R-06 runbook |
+
+---
+
+## 9. 진행 기록
+
+| 날짜 | 한 일 | 위치 / 근거 |
+|---|---|---|
+| 2026-10-03 | 두 저장소 정찰(dino `main`/`origin/main`/`pattern-run`, SMA baf6f1e 체크아웃과 b346c02 원격 fetch). 읽기 5 → 계획 2 → 종합 → 검증 3(지적 53 건) → 한국어 문서 워크플로 실행; 서브에이전트 사용 한도로 두 번 재개 | 이 문서; 워크플로 `sma-merge-workplan` |
+| 2026-10-03 | SMA 측 주도 세션과 메시지 교환: 7·9절을 계약으로 합의, `feature/autofocus-ui` 를 받는 브랜치로, 둘째 UI 없음, plan.md 기록이 좌석 행보다 먼저, G-05 문구 정정, 023 1·2 항 커밋(5e6a8eb, e35e24c) 확인 | 세션 간 메시지 |
+| 2026-10-03 | dino 저장소 공개 확인(PUBLIC); SMA 데스크톱 사본 게이트 상태 확인(hooksPath 미설정, 좌석 신원 없음) | `gh repo view`; `git config` 읽기 |
+| 2026-10-03 | 이 문서 작성·커밋: worktree `D:\codes\github\dino-autofocus-wt\mergeplan`, 브랜치 `merge-plan/sma-workplan`(origin/main 56fc588 에서 분기); 공유 폴더 `docs/` 에 미추적 사본. push·병합 안 함(검토 세션 몫) | 브랜치 `merge-plan/sma-workplan` |
+| 2026-10-03 | 기능 누락 점검(부록 C) 감사 워크플로 진행 중; 끝나면 같은 브랜치에 추가 커밋 | 워크플로 `dino-feature-no-loss-audit` |
+
+## 부록 A. 검증에서 나온 지적과 처리
+
+| # | 출처 | 지적 | 처리 |
+|---|---|---|---|
+| 1 | sma-rules, completeness (블로커) | G-10/G-11/G-13/P-04 가 manager-microscope 에게 `src/`·`rulings.jsonl` 편집을 맡김; check 41 이 거부 | 반영: 2.5 소유 규칙; 네 항목을 카드/check/스키마(manager) 와 코드/행(좌석) 으로 분리; 완료 조건에 커미터 확인; 중단 기준 13 |
+| 2 | sma-rules (블로커) | G-13 정지 요청이 SMA 트리의 파일이면 dino 가 SMA 에 쓰는 셈; `hold_for_person` 답은 위조된 사람 진술 | 반영: 루프백 소켓(또는 SMA 밖 콘솔 폴더), 정지만, 완료 조건에 "SMA 루트 쓰기 0 건" |
+| 3 | sma-rules (주요) | 10.2.1 자리 지정 없이 G-06 전수 판정은 거부 가능; 22 행 충돌 | 반영: G-02 (b) 가 자리 두 곳을 지정하고 22 행을 `FocusAxis` 제어 경로에 한정; G-06 이 인용 |
+| 4 | sma-rules (주요) | 라이브러리언은 지정 커밋의 인용 경로만 읽음; dino 는 비공개 | 반영: G-02 (e) 열기; `prior_run:dino-autofocus@<sha>`; L-02 선행에 R-04 또는 열기 |
+| 5 | sma-rules, completeness, decision-fidelity (주요/소) | D-02 grep 이 많은 숫자를 놓침(행렬, 0.001, 0.02, 0.2, 40/2/3/0.2, 1.625, 주석) | 반영: 전수 목록과 구조 상수 허용 목록; ast 기반 테스트 |
+| 6 | sma-rules (주요) | G-09(5) `NAMED_REFUSALS` 해제는 아무것도 풀지 않음; 11-21 수정 미기재; "오름차순" 부호 미측정 | 반영: 실제 P0 편집(`SOFTWARE_MAY_COMMAND` + `setPosition` 예외) 명시; G-18 신설; B-01 에 ZDrive 부호; check 86 가지는 KB 항목 조건부 |
+| 7 | sma-rules (주요) | 침지 렌즈만 행이면 건식 렌즈는 "해제" 가 아니라 거부 | 반영: G-07/U-03/OD-8 — 건식 렌즈도 더 넓은 값으로 행을 씀 |
+| 8 | sma-rules (주요) | 보조가 고른 숫자에 `source: person` 을 찍는 것은 E6 세탁 | 반영: C-05/C-10 — 모델 제안은 `numbers[]` 에 못 들어감; 테스트 |
+| 9 | sma-rules (주요) | Z/XY 초안은 check 86 에서 FAIL 하므로 validate.py 통과 완료 조건 불가 | 반영: C-05 완료 조건 분리; 기대 FAIL 메시지 단언; `author: human` |
+| 10 | sma-rules (소) | CLAUDE.md "이전 저장소" 단락과 7절 runs/ 줄 수정 누락 | 반영: G-02b |
+| 11 | sma-rules (소) | 자기 신고 등급(E1) | 반영: L-04/D-07 — 출처만 |
+| 12 | sma-rules (소) | 잠정 문턱은 `assumed:` E5, 근거 7 개 상한 | 반영: G-12, OD-14 |
+| 13 | sma-rules (소) | B-02 "준비 run" 은 plan_id 와 충돌; 승인 없는 plan 은 다른 이유로 먼저 거부 | 반영: 사람이 승인한 ZDrive 한 스텝 plan 으로 시연 |
+| 14 | sma-rules (소) | U-03 커미터 | 반영: `human@seat.invalid` |
+| 15 | sma-rules, decision-fidelity (소/주요) | 결정 질문이 내부 코드·영어 | 반영: 5절을 한국어 평문으로; R-08 결정지; 코드는 괄호 안에 풀어 씀 |
+| 16 | sma-rules (소) | C-06 승인 미리 채움은 "일괄 도장" | 반영: 본문 옆 해시, `note` 비움, common_head 전 필드, 라벨 |
+| 17 | sma-rules (소) | 헤더가 비공개 저장소 sha 인용; G-06 이 R-04 보다 뒤일 수 있음 | 반영: URL 형식 헤더와 날짜; R-04 를 G-06 의 약한 선행 |
+| 18 | sma-rules, completeness (소) | R-01 은 이미 origin/main 의 조상 | 반영·재검증(56fc588): R-01 끝남; 중단 기준 10 은 해소 표시; C-01 선행은 R-02·R-04 |
+| 19 | completeness (주요) | D-00 "mm_real 만" 은 오늘 거짓(mm_demo_core, scripts) | 반영: 세 묶음 목록 |
+| 20 | completeness, decision-fidelity (주요) | 검증한 SMA 사본은 개발 데스크톱; 현미경 PC 사본은 미확인; 훅 설치는 manager 의 일; `sh`·credential helper | 반영·재검증(데스크톱 사본은 이제 b346c02, `feature/autofocus-ui`, 훅 미설정): G-05a/G-05b 분리; G-06 은 데스크톱(또는 MacBook)에서; 현미경 PC unittest 는 C-11/B-02 로 |
+| 21 | completeness (주요) | `D:\AutoFocus\data`·`samples`·하드웨어 프로필·백업 미기재 | 반영: OD-25 |
+| 22 | completeness (주요) | 시뮬레이션 화면·F6/F7 누락 | 반영: C-03, OD-26 |
+| 23 | completeness, decision-fidelity (주요) | P2 판정 계약 누락 | 반영: D-07 |
+| 24 | completeness (주요) | 질문 카드 file:line 재고정, snapshot 뒤처짐, 내부 불일치, 20 대 15 | 반영: L-01 확장, D-08 위생 카드, 20 장으로 통일 |
+| 25 | completeness (주요) | `tests/e2e/test_e2e_safety.py` 를 콘솔 테스트로 옮기면 안전 묶음에서 빠짐 | 반영: C-02 — 엔진 테스트에 남김, D-00 묶음 |
+| 26 | completeness (소) | R-05 완료 조건이 docs/runs·"원본:" 인용과 충돌 | 반영: 예외와 표시 |
+| 27 | completeness, decision-fidelity (소) | R-02 줄 번호(121, 136–137), 콘솔 제목, `--remote-view` | 반영: R-02, OD-27 |
+| 28 | completeness (소) | 워크트리·브랜치·`live-focus-gauge`·`exec12/T-036-unlock` | 반영·재검증: `live-focus-gauge` 는 이미 병합(56fc588); 나머지는 R-07 |
+| 29 | completeness (소) | R-06 에 `tests/test_live.py`, `live.py` 는 ml extra | 반영 |
+| 30 | completeness (소) | B-01 findings 커밋은 G-01 도 필요; 후속 세 사실 | 반영 |
+| 31 | completeness (소) | `tasks/000` 갱신; dino 카드 위치 | 반영: G-04; 3절 머리말 |
+| 32 | completeness (소) | SMA README 형제 저장소 표 | 반영: G-02b |
+| 33 | completeness (소) | R-01 병합·푸시는 검토 세션 | 반영(이미 끝남); 3절 머리말에 검토 세션 규칙 |
+| 34 | completeness (소) | D-02 에 `DEFAULT_UM_PER_PX`, 주석 인용 | 반영 |
+| 35 | completeness (누락) | 공개 트리 언어 결정 | 반영: OD-28 |
+| 36 | completeness (누락) | docs/configs/models/synth 의 명시적 운명 | 반영: 8절 마지막 행 |
+| 37 | completeness (누락) | `web/e2e` 미생성, `agents/mock_data` 고정 규칙 | 반영: 7절, C-03 |
+| 38 | completeness (누락) | screens/ui-spec 의 엔진 이벤트 재인용 | 반영: C-13 |
+| 39 | completeness (누락) | 좌석 세션 실무(`microscope_agent/` 안에서 열기, `sh`, `python`, credential helper, snapshot 뒤처짐) | 반영: 2.5, G-05b, L-01 |
+| 40 | decision-fidelity (주요) | C-04 완료 조건(`console/` 에 `dino_autofocus` 없음)과 LocalEnginePort 위치 모순 | 반영: `src/dino_autofocus/console_port.py` + 모듈 경로 문자열 적재 |
+| 41 | decision-fidelity (주요) | 코어 둘 문제; 콘솔 mm_real 과 SMA 의 배타 규칙 없음 | 반영: OD-13, C-04, C-11 |
+| 42 | decision-fidelity (주요) | U-01 "열넷" 이 열다섯이고 OD-8/OD-23 누락; "item N" 번호 불일치 | 반영: 묶음 A 에 OD-8, 23, 25–28 포함; 모든 참조를 OD 번호로 |
+| 43 | decision-fidelity (주요) | OD-3 이 기록된 옵션 a 문장과 Q2 "옮긴다" 를 바꾸는데 재개가 아닌 듯 적음 | 반영: OD-3 을 "기록 문장 수정 승인" 으로; D-09 가 같은 커밋에서 문서 수정 |
+| 44 | decision-fidelity (주요) | 합병 전 세션 제외가 "기록은 모두" 를 조용히 좁힘 | 반영: OD-7 에 확인 질문 |
+| 45 | decision-fidelity (주요) | 1주차 dino 한 열에 12 항목; 검토·병합·푸시 단계 없음 | 반영: 핵심/공개/콘솔/검토 세션으로 분리; 공개 목표 10-09, 현실적 10-13, 늦어도 10-16 |
+| 46 | decision-fidelity (주요) | G-04 가 아직 없는 dino SHA 를 적음 | 반영: "복사 시점의 origin/main, D-03 헤더 포함"; 실제 SHA 는 G-06 커밋 |
+| 47 | decision-fidelity (소) | 10-02 는 금요일 | 반영 |
+| 48 | decision-fidelity (소) | B-01 PFS 끄기가 소프트웨어면 거부 장치 명령 | 반영: Ti2 패널에서 손으로 |
+| 49 | decision-fidelity (소) | plan.schema 사본 위치·고정 | 반영: `console/sma_console/contracts/plan.schema.json`, 출처 헤더, 표류 검사 |
+| 50 | decision-fidelity (소) | 별칭표의 독자 OD 번호 충돌 | 반영: 별칭표를 이 문서에서 제외 |
+| 51 | decision-fidelity (소) | G-03 한 문장을 위해 좌석 하나 | 반영: G-04 카드 본문으로 접음 |
+| 52 | decision-fidelity (소) | `_flat.py` 설명이 S5 와 모순 | 반영: "[C] 와 C-04 전까지의 콘솔 테스트" |
+| 53 | decision-fidelity (소) | C-01 수치 | 반영: "약 140 줄 / 약 55 파일", 시작 때 재집계 |
+| 54 | decision-fidelity (누락) | OD 답을 dino 문서에 적을 담당 없음 | 반영: D-09 |
+| 55 | decision-fidelity (누락) | Q6 후반 일정 | 반영: C-14 자리 |
+| 56 | decision-fidelity (누락) | D-04 의 2주차 배치 근거 부족 | 반영: 달력에서 빼고 "사용자 때" 별도 카드로 |
+| 57 | decision-fidelity (누락) | T-038d, T-107 | 반영: R-06, 7절 |
+| 58 | decision-fidelity (누락) | 한국어 결정지와 Slack | 반영: R-08, 4.5 |
+| 59 | 오케스트레이터 사실 | 023 의 1·2 항은 들어감; 026 "막힘" 문장 교체 | 반영: 1.2, G-04 |
+| 60 | 오케스트레이터 사실 | plan.md 기록이 좌석 행보다 먼저 | 반영: G-02 를 G-01 앞에 |
+| 61 | 오케스트레이터 사실 | 봉투 스키마 키는 `targets[].limits` 아래 | 반영: G-07 |
+| 62 | 오케스트레이터 사실 | Tweez300 트랙은 `.tpf` 패턴 파일 | 반영: 2.4, P-03, P-04 |
+| 63 | 오케스트레이터 사실 | 받는 브랜치 `feature/autofocus-ui`; SMA 측 세션은 아직 아무것도 안 씀 | 반영: 1.2, G-06 |
+
+| 64 | 오케스트레이터 사실(문서 작성 뒤 확인) | dino 저장소가 2026-10-03 에 이미 공개됨 | 반영: 머리말, 0, 1.1, 1.3, 2.1, 2.3, 3.1/3.2 제목, R-04 완료, R-07 사후 위생, R-05/C-01 선행, OD-4 해소, OD-28, 4.2, 4.4, 4.5, 4.6, 6.1, 6.2 #6·#11 |
+| 65 | SMA 측 주도 세션의 정정 | G-05 는 사람 결정 + manager 의 지켜보는 훅 설치 + 좌석별 신원; 어떤 세션도 동료 말로 실행하지 않음 | 반영: G-05a |
+| 66 | 오케스트레이터 | SMA 측 상대 세션의 이름과 계약 수락 | 반영: 1.2 |
+
+**받아들이지 않은 지적 (각 한 줄).**
+- sma-rules "G-03 manager 확인" 을 별도 좌석으로 유지하라는 뜻은 없었으나 decision-fidelity 와 상충할 여지가 있어 G-04 로 접었다; validate.py 0 failed 가 기계적 증거다.
+- completeness 의 "15 장 상한 유지 또는 20 장" 중 20 장을 택했다(숫자가 떠나는 카드를 줄일 수 없다).
+- decision-fidelity 의 "공개 목표를 10-13 으로 옮기기" 는 그대로 택하지 않고 10-09 목표·10-13 현실적·10-16 최종으로 적었다(R-01 이 끝나 R 사슬이 짧아졌다).
+
+## 부록 B. 근거 파일 목록
+
+dino-autofocus (`D:/codes/github/dino-autofocus`, `origin/main` 56fc588; 공유 작업 폴더는 `security-auth` 0f7a881):
+- `docs/integration-sma.md` (1–9절; 7절 결정표, 9절 추가 결정·대응표·S0–S6), `docs/librarian-handoff.md` (89 장; 1–4절), `docs/records-privacy.md` (5절), `docs/PLAN.md` (5절 "SMA 에 쓰지 않음", 6절 규칙 1–12, 결정 D1–D16, 10절 F6/F7, 224–227·241–247·308·370–376 줄), `docs/operations-spec.md` (4.2; "원본:" 인용 9 곳), `docs/ui-spec.md` (7.0), `docs/screens/{tweezers,patterns,map,objective,login}.md`, `docs/runbooks/{launcher,tests}.md`, `docs/microscope-pc-checklist.md` (81, 121, 136–137), `docs/runs/2026-10-02_bench-properties.json` (18), `docs/runs/2026-09-30_substrate-scan.md`, `docs/synthetic-results.md`, `docs/integration-notes.md`, `README.md` (4c5af3b)
+- `microscope_agent/src/{focus_classical,focus_verdict,focus_run_log,focus_search,map_edge,map_geometry,map_mosaic,map_tiles}.py`, `microscope_agent/tests/*.py`, `src/dino_autofocus/_flat.py`, `tests/test_sma_shape.py`, `tests/test_core_dependencies.py`
+- `src/dino_autofocus/engine/backends/mm_real.py` (88, 142–218), `engine/guards.py` (61, 84, 121, 643–772), `engine/backends/mm_demo_core.py` (251, 270), `engine/backends/tweez300.py` (473–503), `engine/{patterns,piezo,tweezers,stream,mosaic}.py`, `engine/operations/*`, `records/{session,export,redact,librarian_mock,layout}.py` (export.py:37; session.py:78; layout.py:25–26), `focus/head.py`, `live.py` (19), `backbone.py`, `auth/*`, `server/{app,static,ws,__main__}.py` (411), `server/api/*`, `server/schemas/common.py`, `agents/{simulation,mock_sim,sma_files}.py`, `agents/mock_data/SOURCE.md`
+- `web/src/app/live/{FocusPanel,MergedView,LiveView}.tsx`, `web/src/app/patterns/{model.ts,PatternRunControls.tsx}`, `web/src/features/{tweezers,simulation,hardware,console}`, `web/index.html` (6), `web/src/app/Shell.tsx` (118), `web/scripts/gen-api.mjs`
+- `scripts/*.py` (11 개 벤치 스크립트), `tools/launcher/{Launcher.cs,build.ps1}` (196, 461), `pyproject.toml`, `.claude/launch.json`, `configs/ti2_40x.yaml` (23), `tests/e2e/{test_e2e_safety,test_e2e_m1_day}.py`, `tests/test_backbone.py`, `tests/test_live.py`
+- git: `origin/main` 로그(56fc588, 0b371c4, 62aac32, 3bf2540, 4c5af3b, 1131fb7, 8a8c532, e7667e0, 69bb49f, f4ea9ba, fc776ac, 0f7a881, 4066e10), `git branch --no-merged origin/main`(없음), 워크트리 33, 지역 브랜치 약 126
+
+dino-autofocus-internal (`D:/codes/github/dino-autofocus-internal`): `tasks/BACKLOG.md` (HANDOVER; T-035d, T-036 보류 ebfff88, T-038d, T-106b/c, T-107, T-029d; "2026-10-02 벤치 결과"; 126–128 줄 검토 규칙), `tasks/T-*.md`, `sessions.md` (검토 세션만 병합·푸시), `public-release-audit.md` (K1, K2, K4, L3, L4, P3, P4, P6, S4, S5, S6, S8, S10, S11)
+
+soft-matter-agents (`D:/codes/github/soft-matter-agents`, 체크아웃 b346c02 = `origin/main`, 브랜치 `feature/autofocus-ui`):
+- `plan.md` (2.1, 4.6, 4.6.5, 4.6.8, 5.3 1284–1301, 6/6.2 1903–1915, 7 2322–2330, 7.1 2466–2480, 7.2 2535, 8, 10.2/10.2.1/10.3 3447–3478, 3493, 11–21 3601, 13.2 3858–3869, 13.3 3871–3875), `CLAUDE.md` (55, 57, 443–458, 485–503), `ARCHITECT.md` (92–97), `README.md` (105–122), `.claude/settings.json`
+- `contracts/validate.py` (570–586, 766, 1570–1626 ALLOWED_PATHS, 1750–1752, 2881–2897, 4206–4234, 7554–7566, 7753, 7769–7816), `contracts/seats.json` (manager-microscope-20260924-1/-20261001-1, microscope-20261001-1, human, unknown_committer), `contracts/schemas/{plan,run_log,envelope_safety,findings,common}.schema.json`, `contracts/capabilities/microscope.json`, `contracts/examples/`
+- `microscope_agent/{CLAUDE.md,README.md}`, `microscope_agent/.claude/settings.json`, `microscope_agent/tasks/{000,023,026,033,037,040,041,049,051–053}`, `microscope_agent/src/{operator,orchestrator,plan_card,live_view_20260925}.py` (operator.py 149–165, 397–414, 911–914; orchestrator.py 545), `microscope_agent/src/devices/{micromanager,python_tcp,python_serial,mock,manual,lunf}.py` (micromanager.py 106–124, 137–153, 174–179, 205–210), `microscope_agent/envelope/{safety,snapshot}.json`, `microscope_agent/rulings.jsonl` (1, 22–24), `microscope_agent/approvals/appr-mic-20260924-002-r1.json`, `microscope_agent/runs/run-20260923-001/`
+- `librarian_agent/kb/` (kbv-70754d3df50b; `tweez300_load_pattern_name_first`, `tweez300_pattern_runs_on_assignment`, `PIEZO_Z_DIRECTION_ENTRY`), `librarian_agent/tasks/037–042`
+- git: 5e6a8eb, e35e24c, 48e40f5 (023 1–3 항), 9594fc1, b346c02; `git config core.hooksPath` (미설정), `git rev-list --count HEAD..origin/main` (0)
+
+이 기계(개발 데스크톱, 호스트 "Office"): SMA 사본 상태 확인에만 쓰였고 현미경 PC 사본(`D:\soft-matter-agents`)은 확인하지 않았다.
