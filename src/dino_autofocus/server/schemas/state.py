@@ -122,6 +122,23 @@ class TweezersState(_Open):
     error: str | None = None
 
 
+class PiezoPositionOut(_Open):
+    x_um: float
+    y_um: float
+    z_um: float
+
+
+class PiezoStateOut(_Open):
+    """`snapshot()["piezo"]` (engine/piezo.py `piezo_state_of`): the piezo patterns may move;
+    null on the stand (read only until M5)."""
+
+    kind: str
+    travel_um: dict[str, list[float]] = Field(default_factory=dict)
+    bench: bool = True
+    position: PiezoPositionOut | None = None
+    error: str | None = None
+
+
 class Snapshot(_Open):
     """The engine's current state."""
 
@@ -136,6 +153,7 @@ class Snapshot(_Open):
     sample: SampleRef | None = None
     last_shutdown_lights: dict[str, Any] | None = None
     tweezers: TweezersState | None = None
+    piezo: PiezoStateOut | None = None
     unclean_shutdown: dict[str, Any] | None = None
     hardware: HardwareState | None = None
     stream: dict[str, Any] | None = None

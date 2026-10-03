@@ -4,8 +4,8 @@
 // points. Shapes (line, circle, raster, spiral, hold; z ramps from z0 to z1) fill a track; the
 // points can be edited by hand as CSV. The preview draws every track coloured by time, gray at
 // the start to dark green at the end, with a time slider. "Show on live view" opens the live
-// view with this pattern over the camera frames. Designing moves nothing; running a pattern is
-// a later operation.
+// view with this pattern over the camera frames. Designing moves nothing; a saved pattern can be
+// run (`pattern_run`: the piezo and the traps, behind the engine's guards and rule 12).
 //
 // Route rest forms: "" (a new pattern) or "<pattern_id>" (that saved pattern).
 
@@ -21,6 +21,7 @@ import {
   patternDuration,
   PatternCanvas,
   PatternReadout,
+  PatternRunControls,
   PatternScrubber,
   type ShapeKind,
   type ShapeParams,
@@ -393,6 +394,7 @@ export default function PatternsScreen() {
           />
           <PatternScrubber duration={duration} t={Math.min(t, duration)} onTime={setT} loop={draft.loop} />
           <PatternReadout tracks={draft.tracks} t={Math.min(t, duration)} />
+          {isSaved && <PatternRunControls patternId={draft.id} onTime={setT} />}
         </div>
       </div>
     </section>

@@ -63,13 +63,14 @@ def test_placeholder_engine_moves_nothing():
         unsubscribe()
 
 
-def test_simulated_backends_get_mock_tweezers_and_only_the_mock_a_stream():
+def test_simulated_backends_get_mock_tweezers_and_piezo_and_only_the_mock_a_stream():
     from dino_autofocus.engine.backends.mock import MockBackend
 
     mock = MockBackend(seed=1)
     mock.open()
-    tw, stream = simulated_extras("mock", mock, bench=False)
-    assert tw.info().kind == "mock" and stream is not None and not stream.running()
-    tw, stream = simulated_extras("mm-demo", mock, bench=False)
-    assert tw is not None and stream is None
-    assert simulated_extras("mm-real", mock, bench=True) == (None, None)
+    tw, piezo, stream = simulated_extras("mock", mock, bench=False)
+    assert tw.info().kind == "mock" and piezo.info().bench is False
+    assert stream is not None and not stream.running()
+    tw, piezo, stream = simulated_extras("mm-demo", mock, bench=False)
+    assert tw is not None and piezo is not None and stream is None
+    assert simulated_extras("mm-real", mock, bench=True) == (None, None, None)

@@ -220,6 +220,7 @@ GATES: tuple[Gate, ...] = (
     # there are tweezers at all is the operation's preflight
     Gate("trap_move", ("camera",)),
     Gate("trap_set", ("camera",)),
+    Gate("pattern_run", ("camera",)),  # which targets exist is the operation's preflight
 )
 
 #: never gated: stops, the scan that makes the profile, and operations on records only

@@ -23,6 +23,7 @@ MODULES = (
     "objective_change",
     "z_retract",
     "trap",
+    "pattern_run",
     "hardware_scan",  # defines the hardware ops; the server registers them (register_hardware)
     "sample_ops",
     "sample_map",

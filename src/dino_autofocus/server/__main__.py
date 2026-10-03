@@ -40,6 +40,7 @@ from typing import Any
 import numpy as np
 
 from .api import AuthSeat, SessionSeat
+from .api.patterns import PatternStore
 from .app import build_runner, create_app, session_records
 from .schemas import Command, Event
 
@@ -217,22 +218,24 @@ def open_backend(kind: str, *, mm_config: str | None = None,
     return backend, info
 
 
-def simulated_extras(kind: str, backend: Any, bench: bool) -> tuple[Any, Any]:
-    """`(tweezers, live stream)` for this backend. Simulated backends get mock tweezers; only
-    the mock gets a live stream (its frames, the traps drawn in, and a second camera with the
-    trap laser spots). The bench gets neither: the Tweez300 adapter is not wired yet, and the
-    stand's live stream is a separate decision (card T-20261002-2205)."""
+def simulated_extras(kind: str, backend: Any, bench: bool) -> tuple[Any, Any, Any]:
+    """`(tweezers, piezo, live stream)` for this backend. Simulated backends get mock tweezers
+    and a mock XYZ piezo; only the mock gets a live stream (its frames shifted by the piezo, the
+    traps drawn in, and a second camera with the trap laser spots). The bench gets none: the
+    Tweez300 adapter is not wired yet, the stand's piezo is read only until M5, and the stand's
+    live stream is a separate decision (card T-20261002-2205)."""
     if bench:
-        return None, None
+        return None, None, None
+    from ..engine.piezo import MockPiezo
     from ..engine.stream import BackendStream
     from ..engine.tweezers import MockTweezers, mock_views
 
-    tweezers = MockTweezers()
+    tweezers, piezo = MockTweezers(), MockPiezo()
     if kind != "mock":
-        return tweezers, None
-    stream = BackendStream.for_backend(backend, decorate=mock_views(tweezers),
+        return tweezers, piezo, None
+    stream = BackendStream.for_backend(backend, decorate=mock_views(tweezers, piezo=piezo),
                                        pixel_um=lambda: backend.info().pixel_um)
-    return tweezers, stream
+    return tweezers, piezo, stream
 
 
 def record_roots(records_root: Path | None, bench: bool) -> tuple[Path, Path, Path]:
@@ -330,7 +333,7 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
     runner = None
     try:
         bench = is_bench(info)
-        tweezers, stream = simulated_extras(args.backend, backend, bench)
+        tweezers, piezo, stream = simulated_extras(args.backend, backend, bench)
         records, data, samples = roots = record_roots(args.records_root, bench)
         cfg = RecordsConfig(records_root=records, data_root=data)
         if shutil.which("git"):
@@ -343,7 +346,8 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
         runner, hardware = build_runner(
             backend, records_root=records, auth=auth, state_dir=state_dir,
             records=session_records(sessions, data / "engine_records"), config=RunnerConfig(),
-            tweezers=tweezers, stream=stream)
+            tweezers=tweezers, piezo=piezo, stream=stream,
+            patterns=PatternStore(common["patterns_root"]).get)
         runner.start()
         app = create_app(runner, auth=auth, records=store, committer=AutoCommitter(store),
                          samples_root=samples, hardware=hardware, sessions=sessions,
