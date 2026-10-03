@@ -155,10 +155,9 @@ def latest_scan_box(sample: Sample) -> dict | None:
         hole = rec.get("hole") or {}
         if hole.get("centre_um") and hole.get("diameter_mm"):
             c = (float(hole["centre_um"][0]), float(hole["centre_um"][1]))
-            half = float(hole["diameter_mm"]) * 500 + float(rec.get("margin_um", 500.0))
+            half = scan_4x.half_side_um(hole["diameter_mm"], float(rec.get("margin_um", 500.0)))
             box = XYBox.around(c, half, XY_BOX_MARGIN_UM)
-            return {"result_id": folder.name,
-                    "scan_box_um": [c[0] - half, c[0] + half, c[1] - half, c[1] + half],
+            return {"result_id": folder.name, "scan_box_um": scan_4x.square_box_um(c, half),
                     "allowed_box_um": [box.x_min, box.x_max, box.y_min, box.y_max]}
     return None
 

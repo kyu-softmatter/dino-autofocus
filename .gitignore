@@ -12,5 +12,6 @@ outputs/
 *.tif
 *.tiff
 
-# per-session token usage logs
-.agent/usage/
+# Claude Code session state (task cards, usage logs, local settings); never published
+.agent/
+.claude/
