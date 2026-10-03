@@ -29,7 +29,7 @@ export type Permissions = Record<string, Permission>;
 export interface ConfigChoice {
   path: string;
   name: string;
-  source: "scanned" | "server" | "repo" | string;
+  source: "scanned" | "scanned-copy" | "server" | "repo" | string;
 }
 export interface ConfigDevice {
   label: string;

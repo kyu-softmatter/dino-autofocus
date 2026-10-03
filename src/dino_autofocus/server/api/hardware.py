@@ -16,6 +16,7 @@ the last scan loaded, the cfg mm-real would load (`mm_real.config_path()`), and 
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -142,7 +143,9 @@ class StatusResultOut(BaseModel):
 class ConfigChoice(BaseModel):
     path: str
     name: str
-    source: str  # "scanned" (the last scan loaded it) | "server" (mm-real's choice) | "repo"
+    #: "scanned" (the last scan loaded it) | "scanned-copy" (not here, same sha256 as the
+    #: scanned one) | "server" (mm-real's choice) | "repo"
+    source: str
 
 
 class ConfigDevice(BaseModel):
@@ -279,12 +282,24 @@ def _same(a: Path, b: Path) -> bool:
         return str(a) == str(b)
 
 
+def _sha256(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 def config_choices(hw: dict[str, Any]) -> list[ConfigChoice]:
-    """The cfg files `/config` may read, best first, each once, existing files only."""
+    """The cfg files `/config` may read, best first, each once, existing files only.
+
+    When the scanned cfg is not on this machine (a desktop or remote viewer), a listed file
+    with the same sha256 as the scan's `config.sha256` takes its place first, as
+    `scanned-copy`: it is byte for byte the file the scan loaded."""
     found: list[tuple[Path, str]] = []
     raw = hw.get("profile")
     cfg = raw.get("config") if isinstance(raw, dict) else None
     scanned = cfg.get("path") if isinstance(cfg, dict) else None
+    scanned_sha = cfg.get("sha256") if isinstance(cfg, dict) else None
     if isinstance(scanned, str) and scanned.lower().endswith(".cfg"):
         found.append((Path(scanned), "scanned"))
     try:
@@ -302,6 +317,11 @@ def config_choices(hw: dict[str, Any]) -> list[ConfigChoice]:
             continue
         kept.append(path)
         out.append(ConfigChoice(path=str(path), name=path.name, source=source))
+    if isinstance(scanned_sha, str) and not any(c.source == "scanned" for c in out):
+        copy = next((c for c in out if _sha256(Path(c.path)) == scanned_sha), None)
+        if copy is not None:
+            out.remove(copy)
+            out.insert(0, copy.model_copy(update={"source": "scanned-copy"}))
     return out
 
 

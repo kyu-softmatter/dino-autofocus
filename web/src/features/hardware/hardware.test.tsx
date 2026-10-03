@@ -47,6 +47,7 @@ const CONFIG: ConfigTreeOut = {
     DEV("CSUW1-Hub", "CSUW1", "CSUW1-Hub", { parent: "COM10", link: "port", port: "COM10" }),
     DEV("CSUW1-Port", "CSUW1", "CSUW1-Port", { parent: "CSUW1-Hub", link: "inferred",
         state_labels: { "0": "blue_only", "1": "blue_red", "2": "red_only" } }),
+    DEV("CSUW1-Shutter", "CSUW1", "CSUW1-Shutter", { parent: "CSUW1-Hub", link: "inferred" }),
     DEV("Kinetix_red", "PVCAM", "Camera-2", { roles: ["Camera"] }),
   ],
   startup: [],
@@ -374,19 +375,22 @@ describe("hardware screen", () => {
       expect(hub.textContent).toContain("Not loaded");
       expect(hub.textContent).toContain("2 parts · 1 with problems");
       const summary = screen.getByLabelText("Connection summary").textContent ?? "";
-      expect(summary).toContain("7 devices · 2 connected");
+      expect(summary).toContain("8 devices · 2 connected");
       expect(summary).toContain("1 read failed");
-      expect(summary).toContain("4 not loaded");
+      expect(summary).toContain("5 not loaded");
     });
 
     it("expands a closed hub on request and shows a device's details", async () => {
       setup({ profile: SCANNED });
       const t = await tree();
-      // COM10's subtree is all "not loaded", a problem too, so it starts open; close and reopen it
-      fireEvent.click(await t.findByRole("button", { name: "Collapse COM10" }));
-      expect(t.queryByRole("button", { name: "CSUW1-Hub" })).toBeNull();
-      fireEvent.click(t.getByRole("button", { name: "Expand COM10" }));
-      expect(t.getByRole("button", { name: "Collapse CSUW1-Hub" })).toBeTruthy(); // a problem below
+      // COM10 has one dependent: shown directly, no fold
+      expect(await t.findByRole("button", { name: "CSUW1-Hub" })).toBeTruthy();
+      expect(t.queryByRole("button", { name: /(Expand|Collapse) COM10/ })).toBeNull();
+      expect(t.getByRole("button", { name: "COM10" }).closest(".hw-cfg-row")!.textContent).not.toContain("part");
+      // CSUW1-Port is "not loaded", so CSUW1-Hub starts open; close and reopen it
+      fireEvent.click(t.getByRole("button", { name: "Collapse CSUW1-Hub" }));
+      expect(t.queryByRole("button", { name: "CSUW1-Port" })).toBeNull();
+      fireEvent.click(t.getByRole("button", { name: "Expand CSUW1-Hub" }));
       fireEvent.click(t.getByRole("button", { name: "CSUW1-Port" }));
       const node = t.getByRole("button", { name: "CSUW1-Port" }).closest("li")!;
       expect(node.textContent).toContain("0: blue_only · 1: blue_red · 2: red_only");
@@ -397,7 +401,7 @@ describe("hardware screen", () => {
     it("says nothing was checked before the first scan, and the check runs the scan", async () => {
       const s = setup({ profile: { profile: null, path: null, sha256: null } });
       const t = await tree();
-      expect(t.getAllByText("Not checked")).toHaveLength(3); // the roots; with no problems known, hubs start closed
+      expect(t.getAllByText("Not checked")).toHaveLength(4); // 3 roots + COM10's single dependent; with no problems known, hubs start closed
       expect(screen.getByText(/Not checked yet/)).toBeTruthy();
       const check = button("Check connections");
       await waitFor(() => expect(isDisabled(check)).toBe(false));

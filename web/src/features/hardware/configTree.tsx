@@ -27,6 +27,7 @@ const LINK_TEXT: Record<string, string> = {
 
 const SOURCE_TEXT: Record<string, string> = {
   scanned: "loaded by the last scan",
+  "scanned-copy": "same file as the last scan loaded",
   server: "the config mm-real would load",
   repo: "repository copy",
 };
@@ -49,6 +50,8 @@ interface Node {
   children: Node[];
   problems: number; // problem devices in this subtree, itself excluded
 }
+
+const foldable = (n: Node) => n.children.length > 1;
 
 /** Hub tree in config order; a parent the file does not declare puts the device at the top. */
 export function buildTree(devices: ConfigDevice[], scanned: Map<string, DeviceRow> | null): Node[] {
@@ -101,12 +104,14 @@ function TreeRow({ node, depth, scanned, open, toggle, detail, setDetail, select
 }) {
   const d = node.device;
   const hasKids = node.children.length > 0;
-  const expanded = open.has(d.label);
+  // a single dependent (COM10 -> CSUW1-Hub, NIDAQHub -> LUNF-Blanking) is always shown, no fold
+  const foldable = node.children.length > 1;
+  const expanded = !foldable || open.has(d.label);
   const showDetail = detail === d.label;
   return (
     <li className="hw-cfg-node" data-problem={isProblem(node.state) ? "true" : undefined}>
       <div className="hw-cfg-row" style={{ paddingLeft: `${depth * 1.2}rem` }} aria-selected={selected === d.label}>
-        {hasKids ? (
+        {foldable ? (
           <button type="button" className="hw-cfg-toggle" aria-expanded={expanded}
                   aria-label={`${expanded ? "Collapse" : "Expand"} ${d.label}`} onClick={() => toggle(d.label)}>
             {expanded ? "▾" : "▸"}
@@ -118,7 +123,7 @@ function TreeRow({ node, depth, scanned, open, toggle, detail, setDetail, select
         </button>
         <Badge state={node.state} />
         <span className="muted">{d.adapter}{d.roles && d.roles.length > 0 ? ` · ${d.roles.join(", ")}` : ""}</span>
-        {hasKids ? (
+        {foldable ? (
           <span className={node.problems > 0 ? "hw-cfg-rollup hw-warn" : "hw-cfg-rollup muted"}>
             {node.children.length} part{node.children.length === 1 ? "" : "s"}
             {node.problems > 0 ? ` · ${node.problems} with problems` : ""}
@@ -189,11 +194,14 @@ export function ConfigTreePanel({ tree, profile, loadError, checkBlocked, onChec
   const scannedSha = typeof p?.config?.sha256 === "string" ? p.config.sha256 : null;
   const scannedPath = typeof p?.config?.path === "string" ? p.config.path : null;
   const otherConfig = p && tree?.sha256 && scannedSha !== tree.sha256;
-  const allOpen = roots.filter((r) => r.children.length > 0).every((r) => open.has(r.device.label));
+  const folds: Node[] = [];
+  const collect = (n: Node) => { if (foldable(n)) folds.push(n); n.children.forEach(collect); };
+  roots.forEach(collect);
+  const allOpen = folds.every((n) => open.has(n.device.label));
   const setAll = (wantOpen: boolean) => {
     const t = new Set<string>();
     const walk = (n: Node) => {
-      if (n.children.length > 0 && (n.problems > 0) !== wantOpen) t.add(n.device.label);
+      if (foldable(n) && (n.problems > 0) !== wantOpen) t.add(n.device.label);
       n.children.forEach(walk);
     };
     roots.forEach(walk);
@@ -239,10 +247,14 @@ export function ConfigTreePanel({ tree, profile, loadError, checkBlocked, onChec
             {counts.read_failed > 0 ? ` · ${counts.read_failed} read failed` : ""}
             {counts.missing > 0 ? ` · ${counts.missing} not loaded` : ""}
             {p ? ` · checked ${p.detected_at}` : ""}
-            {" "}
-            <button type="button" className="hw-link" onClick={() => setAll(!allOpen)}>
-              {allOpen ? "Collapse all" : "Expand all"}
-            </button>
+            {folds.length > 0 ? (
+              <>
+                {" "}
+                <button type="button" className="hw-link" onClick={() => setAll(!allOpen)}>
+                  {allOpen ? "Collapse all" : "Expand all"}
+                </button>
+              </>
+            ) : null}
           </p>
           <ul className="hw-cfg-tree" aria-label="Config devices">
             {roots.map((n) => (

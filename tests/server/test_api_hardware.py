@@ -465,3 +465,20 @@ def test_config_says_when_no_file_is_found(make_client, with_hardware, no_server
 def test_config_is_open_to_a_remote_viewer(make_client, hw_engine):
     r = make_client(hw_engine, remote=True, login=VIEWER).get("/api/hardware/config")
     assert r.status_code == 200
+
+
+def test_config_prefers_a_byte_identical_copy_of_a_scanned_cfg_not_on_this_machine(
+        make_client, with_hardware):
+    """The bench scan loaded C:/agentic_microscope/...; this desktop has the repo copy."""
+    import hashlib
+
+    from dino_autofocus.server.api.hardware import REPO_MM_CONFIGS
+
+    single = REPO_MM_CONFIGS / "single_cam_red_noDMD_nocom10.cfg"
+    sha = hashlib.sha256(single.read_bytes()).hexdigest()
+    block = t028_block(profile=t028_profile(config={
+        "path": "C:/no-such-bench-folder/single_cam_red_noDMD_nocom10.cfg", "sha256": sha}))
+    body = make_client(with_hardware(block)).get("/api/hardware/config").json()
+    assert (body["source"], body["sha256"]) == ("scanned-copy", sha)
+    assert body["path"] == str(single)
+    assert [c["source"] for c in body["available"]].count("scanned-copy") == 1
