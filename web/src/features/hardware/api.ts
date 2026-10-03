@@ -21,6 +21,39 @@ export type StatusResultOut = Schemas["StatusResultOut"];
 export type Permission = Schemas["PermissionOut"];
 export type Permissions = Record<string, Permission>;
 
+/**
+ * `GET /api/hardware/config` (server/api/hardware.py `ConfigTreeOut`): the devices a
+ * Micro-Manager `.cfg` declares and the hub each hangs under. Written by hand until the next
+ * gen:api run (src/api/schema.ts is behind main); keep it equal to the pydantic models.
+ */
+export interface ConfigChoice {
+  path: string;
+  name: string;
+  source: "scanned" | "scanned-copy" | "server" | "repo" | string;
+}
+export interface ConfigDevice {
+  label: string;
+  library: string;
+  adapter: string;
+  parent?: string | null;
+  link?: "parent" | "port" | "inferred" | string | null;
+  port?: string | null;
+  roles?: string[];
+  state_labels?: Record<string, string>;
+  preinit?: Record<string, string>;
+  line?: number;
+}
+export interface ConfigTreeOut {
+  path: string | null;
+  sha256?: string | null;
+  source?: string | null;
+  available?: ConfigChoice[];
+  devices?: ConfigDevice[];
+  startup?: string[];
+  warnings?: string[];
+  error?: string | null;
+}
+
 /** The gate key for `light_set` in one mode (T-028: one row per mode). */
 export const lightGateKey = (mode: "brightfield" | "aura" | "off") => `light_set:${mode}`;
 
@@ -49,6 +82,8 @@ export const PATHS = {
   profile: "/api/hardware/profile",
   gates: "/api/hardware/gates",
   status: "/api/hardware/status",
+  config: (path?: string | null) =>
+    path ? `/api/hardware/config?path=${encodeURIComponent(path)}` : "/api/hardware/config",
   permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`,
 };
 
@@ -78,3 +113,5 @@ export async function readPermissions(client: Client, ops: readonly string[]): P
 export const readProfile = (client: Client) => client.get<HardwareProfileOut>(PATHS.profile);
 export const readGates = (client: Client) => client.get<GateRow[]>(PATHS.gates);
 export const readStatus = (client: Client) => client.get<StatusResultOut | null>(PATHS.status);
+export const readConfig = (client: Client, path?: string | null) =>
+  client.get<ConfigTreeOut>(PATHS.config(path));

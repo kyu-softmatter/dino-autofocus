@@ -10,9 +10,11 @@ import { type CommandIn, CommandRefused, type EventOut, useClient, useEngineEven
 import { useScreenContext } from "../../app/screenContext";
 import { useEngineStatus } from "../../app/status";
 import {
+  type ConfigTreeOut,
   type GateRow,
   type HardwareProfileOut,
   type Permissions,
+  readConfig,
   readGates,
   readPermissions,
   readProfile,
@@ -34,6 +36,7 @@ import {
   Reason,
   SummaryPanel,
 } from "./panels";
+import { ConfigTreePanel } from "./configTree";
 import "./hardware.css";
 
 type NoticeKey = "scan" | "confirm" | "status" | "lights";
@@ -74,6 +77,9 @@ export default function HardwareScreen() {
   const [gate, setGate] = useState<string | null>(null);
   const [includeProperties, setIncludeProperties] = useState(true);
   const [piezoPort, setPiezoPort] = useState(""); // "" skips the piezo (contract G10)
+  const [cfgTree, setCfgTree] = useState<ConfigTreeOut | null>(null);
+  const [cfgPath, setCfgPath] = useState<string | null>(null); // null = the server's first choice
+  const [cfgError, setCfgError] = useState<string | null>(null);
 
   const reloadProfile = useCallback(async () => {
     try {
@@ -85,6 +91,15 @@ export default function HardwareScreen() {
       setLoadError(e instanceof Error ? e.message : String(e));
     }
   }, [client]);
+
+  const reloadConfig = useCallback(async () => {
+    try {
+      setCfgTree(await readConfig(client, cfgPath));
+      setCfgError(null);
+    } catch (e) {
+      setCfgError(e instanceof Error ? e.message : String(e));
+    }
+  }, [client, cfgPath]);
 
   const reloadStatus = useCallback(async () => {
     try {
@@ -104,6 +119,10 @@ export default function HardwareScreen() {
     void reloadStatus();
     void reloadPermissions();
   }, [reloadProfile, reloadStatus, reloadPermissions, connected]);
+
+  useEffect(() => {
+    void reloadConfig();
+  }, [reloadConfig, connected]);
 
   const onEvent = useCallback(
     (ev: EventOut) => {
@@ -126,8 +145,10 @@ export default function HardwareScreen() {
         setNotices((n) => ({ ...n, [key]: text }));
       }
       if (op === "hardware_scan" || op === "hardware_confirm") void reloadProfile();
+      // a scan may load another cfg, which then becomes the server's first choice
+      if (op === "hardware_scan" && ev.kind === "finished") void reloadConfig();
     },
-    [reloadPermissions, reloadProfile],
+    [reloadPermissions, reloadProfile, reloadConfig],
   );
   useEngineEvents(onEvent);
 
@@ -167,6 +188,7 @@ export default function HardwareScreen() {
   const offBlocked = blockedBy(readOnly, permissions, "lights_off");
   const start = (op: string, args: Record<string, unknown> = {}): CommandIn =>
     ({ kind: "start", op, op_id: "", args });
+  const runScan = () => send("scan", start("hardware_scan", { include_properties: includeProperties, piezo_port: piezoPort }));
 
   return (
     <div className="hw-screen">
@@ -176,7 +198,7 @@ export default function HardwareScreen() {
       <section aria-label="Scan">
         <div className="hw-row">
           <button type="button" disabled={scanBlocked !== null}
-                  onClick={() => send("scan", start("hardware_scan", { include_properties: includeProperties, piezo_port: piezoPort }))}>
+                  onClick={runScan}>
             Scan hardware
           </button>
           <label>
@@ -190,6 +212,9 @@ export default function HardwareScreen() {
         </div>
         <Reason text={notices.scan ?? null} />
       </section>
+
+      <ConfigTreePanel tree={cfgTree} profile={profile} loadError={cfgError} checkBlocked={scanBlocked}
+                       onCheck={runScan} onPick={setCfgPath} selected={device} onSelect={setDevice} />
 
       <div className="hw-grid">
         <SummaryPanel out={profile} />

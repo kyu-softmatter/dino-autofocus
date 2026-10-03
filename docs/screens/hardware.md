@@ -12,7 +12,7 @@ Names checked against: main b164e97 `engine/events.py`, T-002 stage 2 `engine/ga
 ## 1. Read endpoints (`server/api/hardware.py`, mounted at `/api/hardware`)
 
 All are `GET`, open to remote viewers and every role (`Action.VIEW`). None of them reaches the backend:
-they read the last profile and gate verdict that the engine already holds.
+they read the last profile and gate verdict that the engine already holds. `/config` reads a file instead (one of a fixed list), never the backend.
 
 | Path | Response model | Body |
 |---|---|---|
@@ -20,6 +20,7 @@ they read the last profile and gate verdict that the engine already holds.
 | `/api/hardware/gates` | `list[GateRow]` | One row per gate key, off rows first, then by key. `light_set` has one row per mode: `light_set:brightfield`, `light_set:aura`, `light_set:off` |
 | `/api/hardware/gates/{op}` | `GateRow` | By gate key. 404 `{code: "unknown_gate"}` for an unknown key (plain `light_set` included) |
 | `/api/hardware/status` | `StatusResultOut` | Last `finished(status)`: `{"op_id", "t", "user_id", "summary"}` or `null` if `status` has not run since the server started |
+| `/api/hardware/config?path=` | `ConfigTreeOut` | The devices a Micro-Manager `.cfg` declares, parsed from the file text (`engine/mm_config_tree.py`, no core): `{path, sha256, source, available: [{path, name, source}], devices: [{label, library, adapter, parent, link, port, roles, state_labels, preinit, line}], startup, warnings, error}`. `available` is a fixed list, best first: the cfg the last scan loaded (`scanned`), the cfg mm-real would load (`server`, `mm_real.config_path()`), the repo's `configs/micromanager/*.cfg` (`repo`). When the scanned path is not on this machine, a listed file with the scan's `config.sha256` comes first as `scanned-copy`. `path` must be one of them (else 404 `unknown_config`); without it the first is read. `link`: `parent` (a `Parent` line), `port` (pre-init `Port` naming a loaded SerialManager device), `inferred` (no line; the adapter library's only `*Hub` device) |
 
 Source: `snapshot()["hardware"]`, which is T-028 `operations/hardware_scan.HardwareState` (55d88c2):
 `{profile, profile_path, sha256, previous, gates, objective_options}`, plus the runner's `last_status` and
@@ -160,3 +161,17 @@ Where each gap went (manager, main 176b4c3):
   G7 define them (pytest `TestClient`). vitest covers: off gates show their reasons, problem devices sort
   first, the confirm form is read only for remote/viewer, and the lights panel shows readback. No browser
   or desktop windows; any server started in a test is stopped.
+
+## "Configured hardware" panel (2026-10-02)
+
+Below the Scan row. The `.cfg` from `/api/hardware/config` drawn as a hub tree: hubs (`Ti2-E__0`,
+`NIDAQHub`, the serial port `COM10` → `CSUW1-Hub` → CSU-W1 parts) fold open with ▸/▾; a hub with a
+problem below it starts open. Each device's state is the last scan's device list joined by label:
+`Connected` (read back), `Loaded, no read-back`, `Loaded, read failed`, `Not loaded` (in the cfg, not in
+the scan), `Not checked` (never scanned). Clicking a label shows adapter, dependency and how it was
+found, port, Core role, state labels, pre-init settings and the cfg line. "Check connections" sends the
+same read-only `hardware_scan` as "Scan hardware" (its block reason is a tooltip; the text is on the Scan
+row). When the scan's `config.sha256` differs from the file shown, the panel says so. Devices the scan
+loaded that the cfg lacks are listed under the tree. The types are hand-written in `api.ts` until the
+next gen:api run.
+

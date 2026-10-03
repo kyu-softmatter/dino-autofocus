@@ -193,6 +193,7 @@ def test_router_is_mounted_read_only(make_client, hw_engine):
         "/api/hardware/gates",
         "/api/hardware/gates/{op}",
         "/api/hardware/status",
+        "/api/hardware/config",
     }
     assert all(set(methods) == {"get"} for methods in mine.values())
     assert c.post("/api/hardware/profile", json={}).status_code == 405
@@ -394,3 +395,90 @@ def test_router_never_writes_to_the_engine(make_client, hw_engine):
     ):
         c.get(path)
     assert hw_engine.commands == []
+
+
+# -- /config: the Micro-Manager cfg's device tree -------------------------------------------
+
+MINI_CFG = """\
+Property,Core,Initialize,0
+Device,Ti2-E__0,NikonTi2,Ti2-E__0
+Device,ZDrive,NikonTi2,ZDrive
+Parent,ZDrive,Ti2-E__0
+Property,Core,Initialize,1
+Property,Core,Focus,ZDrive
+"""
+
+
+@pytest.fixture
+def no_server_or_repo_cfg(monkeypatch, tmp_path):
+    """Only the scanned cfg is listed: mm-real's choice and the repo folder point nowhere."""
+    from dino_autofocus.engine.backends import mm_real
+    from dino_autofocus.server.api import hardware
+
+    monkeypatch.setattr(mm_real, "config_path", lambda override=None: tmp_path / "absent.cfg")
+    monkeypatch.setattr(hardware, "REPO_MM_CONFIGS", tmp_path / "no-repo-configs")
+
+
+def scanned_cfg_block(path) -> dict[str, Any]:
+    return t028_block(profile=t028_profile(config={"path": str(path), "sha256": "cd" * 32}))
+
+
+def test_config_defaults_to_the_cfg_the_scan_loaded(make_client, with_hardware, tmp_path,
+                                                     no_server_or_repo_cfg):
+    cfg = tmp_path / "bench.cfg"
+    cfg.write_text(MINI_CFG, encoding="utf-8")
+    r = make_client(with_hardware(scanned_cfg_block(cfg))).get("/api/hardware/config")
+    assert r.status_code == 200
+    body = r.json()
+    assert (body["path"], body["source"], body["error"]) == (str(cfg), "scanned", None)
+    assert [c["source"] for c in body["available"]] == ["scanned"]
+    assert len(body["sha256"]) == 64
+    z = next(d for d in body["devices"] if d["label"] == "ZDrive")
+    assert (z["parent"], z["link"], z["roles"]) == ("Ti2-E__0", "parent", ["Focus"])
+
+
+def test_config_lists_the_repo_cfgs_and_picks_one_by_path(make_client, hw_engine):
+    c = make_client(hw_engine)
+    body = c.get("/api/hardware/config").json()
+    repo = [a for a in body["available"] if a["source"] == "repo"]
+    assert {a["name"] for a in repo} >= {"DMD_dualcam_LUNF.cfg", "single_cam_red_noDMD_nocom10.cfg"}
+    dual = next(a for a in repo if a["name"] == "DMD_dualcam_LUNF.cfg")
+    picked = c.get("/api/hardware/config", params={"path": dual["path"]}).json()
+    assert picked["path"] == dual["path"]
+    assert any(d["label"] == "CSUW1-Hub" and d["parent"] == "COM10" for d in picked["devices"])
+
+
+def test_config_reads_only_listed_files(make_client, hw_engine, tmp_path):
+    secret = tmp_path / "other.cfg"
+    secret.write_text(MINI_CFG, encoding="utf-8")
+    r = make_client(hw_engine).get("/api/hardware/config", params={"path": str(secret)})
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "unknown_config"
+
+
+def test_config_says_when_no_file_is_found(make_client, with_hardware, no_server_or_repo_cfg):
+    body = make_client(with_hardware(t028_block())).get("/api/hardware/config").json()
+    assert body["path"] is None and body["devices"] == []
+    assert body["error"] == "no Micro-Manager config found"
+
+
+def test_config_is_open_to_a_remote_viewer(make_client, hw_engine):
+    r = make_client(hw_engine, remote=True, login=VIEWER).get("/api/hardware/config")
+    assert r.status_code == 200
+
+
+def test_config_prefers_a_byte_identical_copy_of_a_scanned_cfg_not_on_this_machine(
+        make_client, with_hardware):
+    """The bench scan loaded C:/agentic_microscope/...; this desktop has the repo copy."""
+    import hashlib
+
+    from dino_autofocus.server.api.hardware import REPO_MM_CONFIGS
+
+    single = REPO_MM_CONFIGS / "single_cam_red_noDMD_nocom10.cfg"
+    sha = hashlib.sha256(single.read_bytes()).hexdigest()
+    block = t028_block(profile=t028_profile(config={
+        "path": "C:/no-such-bench-folder/single_cam_red_noDMD_nocom10.cfg", "sha256": sha}))
+    body = make_client(with_hardware(block)).get("/api/hardware/config").json()
+    assert (body["source"], body["sha256"]) == ("scanned-copy", sha)
+    assert body["path"] == str(single)
+    assert [c["source"] for c in body["available"]].count("scanned-copy") == 1
