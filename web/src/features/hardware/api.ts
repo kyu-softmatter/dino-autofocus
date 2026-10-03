@@ -22,37 +22,22 @@ export type Permission = Schemas["PermissionOut"];
 export type Permissions = Record<string, Permission>;
 
 /**
- * `GET /api/hardware/config` (server/api/hardware.py `ConfigTreeOut`): the devices a
- * Micro-Manager `.cfg` declares and the hub each hangs under. Written by hand until the next
- * gen:api run (src/api/schema.ts is behind main); keep it equal to the pydantic models.
+ * Micro-Manager `.cfg` reads (server/api/hardware.py): `/config` the device tree, `/config/match`
+ * every listed cfg against the last scan, `/config/draft` a cfg drafted from the scan.
+ * `ConfigChoice.source`: "scanned" | "scanned-copy" | "server" | "repo" | "saved";
+ * `ConfigDevice.link`: "parent" | "port" | "inferred" | null.
  */
-export interface ConfigChoice {
-  path: string;
-  name: string;
-  source: "scanned" | "scanned-copy" | "server" | "repo" | string;
-}
-export interface ConfigDevice {
-  label: string;
-  library: string;
-  adapter: string;
-  parent?: string | null;
-  link?: "parent" | "port" | "inferred" | string | null;
-  port?: string | null;
-  roles?: string[];
-  state_labels?: Record<string, string>;
-  preinit?: Record<string, string>;
-  line?: number;
-}
-export interface ConfigTreeOut {
-  path: string | null;
-  sha256?: string | null;
-  source?: string | null;
-  available?: ConfigChoice[];
-  devices?: ConfigDevice[];
-  startup?: string[];
-  warnings?: string[];
-  error?: string | null;
-}
+export type ConfigChoice = Schemas["ConfigChoice"];
+export type ConfigDevice = Schemas["ConfigDevice"];
+export type ConfigTreeOut = Schemas["ConfigTreeOut"];
+export type ConfigMatchRow = Schemas["ConfigMatchRow"];
+export type ConfigMatchOut = Schemas["ConfigMatchOut"];
+export type ConfigDraftOut = Schemas["ConfigDraftOut"];
+export type ConfigSaveIn = Schemas["ConfigSaveIn"];
+export type ConfigSavedOut = Schemas["ConfigSavedOut"];
+
+/** The draft base meaning "from the scan alone" (`no_base=true`). */
+export const NO_BASE = "__scan_only__";
 
 /** The gate key for `light_set` in one mode (T-028: one row per mode). */
 export const lightGateKey = (mode: "brightfield" | "aura" | "off") => `light_set:${mode}`;
@@ -84,6 +69,10 @@ export const PATHS = {
   status: "/api/hardware/status",
   config: (path?: string | null) =>
     path ? `/api/hardware/config?path=${encodeURIComponent(path)}` : "/api/hardware/config",
+  configMatch: "/api/hardware/config/match",
+  configDraft: (base?: string | null) =>
+    base === NO_BASE ? "/api/hardware/config/draft?no_base=true"
+      : base ? `/api/hardware/config/draft?base=${encodeURIComponent(base)}` : "/api/hardware/config/draft",
   permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`,
 };
 
@@ -115,3 +104,12 @@ export const readGates = (client: Client) => client.get<GateRow[]>(PATHS.gates);
 export const readStatus = (client: Client) => client.get<StatusResultOut | null>(PATHS.status);
 export const readConfig = (client: Client, path?: string | null) =>
   client.get<ConfigTreeOut>(PATHS.config(path));
+export const readConfigMatch = (client: Client) => client.get<ConfigMatchOut>(PATHS.configMatch);
+export const readConfigDraft = (client: Client, base?: string | null) =>
+  client.get<ConfigDraftOut>(PATHS.configDraft(base));
+export const saveConfigDraft = (client: Client, name: string, base?: string | null) => {
+  const body: ConfigSaveIn = base === NO_BASE
+    ? { name, base: null, no_base: true }
+    : { name, base: base ?? null, no_base: false };
+  return client.post<ConfigSavedOut>(PATHS.configDraft(), body);
+};

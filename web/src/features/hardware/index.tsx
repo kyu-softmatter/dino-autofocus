@@ -36,6 +36,7 @@ import {
   Reason,
   SummaryPanel,
 } from "./panels";
+import { ConfigFinderPanel } from "./configFinder";
 import { ConfigTreePanel } from "./configTree";
 import "./hardware.css";
 
@@ -215,6 +216,8 @@ export default function HardwareScreen() {
 
       <ConfigTreePanel tree={cfgTree} profile={profile} loadError={cfgError} checkBlocked={scanBlocked}
                        onCheck={runScan} onPick={setCfgPath} selected={device} onSelect={setDevice} />
+      <ConfigFinderPanel client={client} scanned={profile.profile !== null} readOnly={readOnly}
+                         available={cfgTree?.available ?? []} onShow={setCfgPath} onSaved={setCfgPath} />
 
       <div className="hw-grid">
         <SummaryPanel out={profile} />

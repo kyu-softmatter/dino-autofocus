@@ -21,6 +21,9 @@ they read the last profile and gate verdict that the engine already holds. `/con
 | `/api/hardware/gates/{op}` | `GateRow` | By gate key. 404 `{code: "unknown_gate"}` for an unknown key (plain `light_set` included) |
 | `/api/hardware/status` | `StatusResultOut` | Last `finished(status)`: `{"op_id", "t", "user_id", "summary"}` or `null` if `status` has not run since the server started |
 | `/api/hardware/config?path=` | `ConfigTreeOut` | The devices a Micro-Manager `.cfg` declares, parsed from the file text (`engine/mm_config_tree.py`, no core): `{path, sha256, source, available: [{path, name, source}], devices: [{label, library, adapter, parent, link, port, roles, state_labels, preinit, line}], startup, warnings, error}`. `available` is a fixed list, best first: the cfg the last scan loaded (`scanned`), the cfg mm-real would load (`server`, `mm_real.config_path()`), the repo's `configs/micromanager/*.cfg` (`repo`). When the scanned path is not on this machine, a listed file with the scan's `config.sha256` comes first as `scanned-copy`. `path` must be one of them (else 404 `unknown_config`); without it the first is read. `link`: `parent` (a `Parent` line), `port` (pre-init `Port` naming a loaded SerialManager device), `inferred` (no line; the adapter library's only `*Hub` device) |
+| `/api/hardware/config/match` | `ConfigMatchOut` | Every listed cfg against the last scan's loaded devices (Core left out), best first: `{detected_at, rows: [{path, name, source, score, exact, matched, differs, missing, extra}], error}`. `score` = matched / labels in either; `differs` = same label, other library or adapter name. `error` before the first scan |
+| `/api/hardware/config/draft?base=&no_base=` | `ConfigDraftOut` | A new cfg drafted from the last scan (`engine/mm_config_from_scan.py`): Device, pre-init Property, Parent, Core role and Label lines; no post-init settings, groups or Startup preset. Details the scan did not report come from `base` (a listed path), the best match without it, or nowhere with `no_base=true`. Hub peripherals reported installed but not loaded are commented out. `load_check` is mm-real's load check with the bench device names (null = it would load). 409 `not_scanned` before a scan |
+| `POST /api/hardware/config/draft` | `ConfigSavedOut` | Body `{name, base, no_base}`. Writes the same draft to `<settings folder>/micromanager/<name>.cfg` (then listed as `saved`). Local operator only (`server_action_why`, 403 `role` / `remote_view` / `foreign_origin`), 422 `bad_name`, 409 `exists` (never overwrites). The active config (`mm_config` setting) does not change |
 
 Source: `snapshot()["hardware"]`, which is T-028 `operations/hardware_scan.HardwareState` (55d88c2):
 `{profile, profile_path, sha256, previous, gates, objective_options}`, plus the runner's `last_status` and
@@ -172,6 +175,21 @@ the scan), `Not checked` (never scanned). Clicking a label shows adapter, depend
 found, port, Core role, state labels, pre-init settings and the cfg line. "Check connections" sends the
 same read-only `hardware_scan` as "Scan hardware" (its block reason is a tooltip; the text is on the Scan
 row). When the scan's `config.sha256` differs from the file shown, the panel says so. Devices the scan
-loaded that the cfg lacks are listed under the tree. The types are hand-written in `api.ts` until the
-next gen:api run.
+loaded that the cfg lacks are listed under the tree. The types are the generated `ConfigTreeOut` & co.
+(`src/api/schema.ts`, aliased in `api.ts`).
+
+## "Find or make a config" panel (2026-10-02)
+
+Under "Configured hardware". "Find matching config" shows `/config/match` (verdict, then a table with
+Show buttons that pick the cfg in the tree). "Draft config from scan" shows `/config/draft`: base selector
+(best match / any listed cfg / none: from the scan only), notes (base items used, load check, unknown
+adapters, hub-reported peripherals), the text, a file name, "Save as new file" and "Download".
+
+Since 2026-10-02 the scan also records per device (`DeviceRow`): `adapter` (Micro-Manager device name),
+`parent` (hub label), `preinit` (pre-init property values) and, for hubs, `installed` (the hub's own
+`getInstalledDevices`). Reads only (`backend.read_wiring`). The hub query asks the hub's adapter and may reach
+the hardware, so it is off on mm-real (`mm_real.READ_HUB_PERIPHERALS = False`, user 2026-10-02) until checked on
+the microscope PC (`USER_CHECKS`); mm-demo keeps it.
+Profiles written earlier lack them, which is why a draft takes adapters from a base cfg. Checked on the
+Micro-Manager demo core: a scan-only draft loads back in a fresh core with the same 13 devices and roles.
 

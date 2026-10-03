@@ -24,6 +24,7 @@ implementation follows:
 
 from __future__ import annotations
 
+import contextlib
 import time
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -167,6 +168,38 @@ class DeviceInfo:
     read_back: bool
     write_verified: bool | None = None
     properties: dict[str, PropertyInfo] = field(default_factory=dict)
+    #: how the config loads it (what a `.cfg` needs to load it again): the adapter's device
+    #: name, the parent hub label, the pre-init property values. None/empty = not reported
+    adapter: str | None = None
+    parent: str | None = None
+    preinit: dict[str, str] = field(default_factory=dict)
+    #: hubs only: the peripheral device names the hub reports as installed (its own
+    #: detection, loaded or not); None = not a hub or not read
+    installed: list[str] | None = None
+
+
+def read_wiring(core: Any, label: str, type_name: str, *,
+                hub_peripherals: bool = True) -> dict[str, Any]:
+    """`DeviceInfo` wiring fields from a Micro-Manager core: reads only. Each read that fails
+    leaves its field unreported instead of failing the description. The adapter, parent and
+    pre-init reads use the core's own state; `hub_peripherals` adds `getInstalledDevices` on a
+    hub, which asks the hub's adapter (its DetectInstalledDevices) and may query hardware."""
+    out: dict[str, Any] = {}
+    unreported = contextlib.suppress(Exception)  # a failed read is an unreported field
+    with unreported:
+        out["adapter"] = str(core.getDeviceName(label)) or None
+    with unreported:
+        out["parent"] = str(core.getParentLabel(label)) or None
+    pre: dict[str, str] = {}
+    with unreported:
+        for name in core.getDevicePropertyNames(label):
+            if core.isPropertyPreInit(label, name):
+                pre[str(name)] = str(core.getProperty(label, name))
+    out["preinit"] = pre
+    if hub_peripherals and type_name == "HubDevice":
+        with unreported:
+            out["installed"] = [str(n) for n in core.getInstalledDevices(label)]
+    return out
 
 
 @dataclass

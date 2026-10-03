@@ -698,6 +698,21 @@ def test_latest_frames_keeps_the_newest_of_each_camera(make):
     assert r.latest_frame()[1]["t_read"] == 4.0  # the newest of any camera
 
 
+def test_frame_meta_carries_the_piezo_z(make):
+    from dino_autofocus.engine.piezo import MockPiezo
+
+    img = np.zeros((4, 4), np.uint16)
+    r, _ = make()
+    r.publish_frame(Frame(img, 1.0, 10.0, z_um=1200.0))
+    assert r.latest_frame()[1]["piezo_z_um"] is None  # no piezo
+    pz = MockPiezo()
+    r2, _ = make(piezo=pz)
+    pz.move(100, 100, 62.5, token=GUARD_TOKEN)
+    r2.publish_frame(Frame(img, 1.0, 10.0, z_um=1200.0))
+    meta = r2.latest_frame()[1]
+    assert (meta["z_um"], meta["piezo_z_um"]) == (1200.0, 62.5)
+
+
 def test_latest_frame_keeps_only_the_newest_and_events_carry_no_pixels(make):
     r, sink = make()
     assert r.latest_frame() is None

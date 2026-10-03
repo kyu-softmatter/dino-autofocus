@@ -169,6 +169,11 @@ class WsFrame(BaseModel):
     #: the camera label (e.g. "Kinetix_blue"); null when the engine names none. With two
     #: cameras both arrive on the same socket, told apart by this field.
     camera: str | None = None
+    #: a live focus score of this frame (`focus_metric`, scale invariant), computed on the
+    #: binned frame sent here, so it follows the focus but is not a sweep score; null when
+    #: it could not be computed
+    focus_score: float | None = None
+    focus_metric: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 
 

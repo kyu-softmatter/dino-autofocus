@@ -3,8 +3,9 @@
 사용자 결정 (2026-10-02, integration-sma.md 9절): **실험 기록은 모두 soft-matter-agents 의
 `microscope_agent/runs/<run_id>/` 로 간다.** 그 저장소는 공개이므로 이메일·이름 같은 개인 정보는 넘기기 전에
 빼거나 바꾼다. 관리자 이메일은 지금처럼 git 밖 (설정 폴더, 환경 변수) 에만 있다. 이 문서는 무엇이 남고 무엇이
-건너가는지, 사람을 어떤 id 로 바꾸는지, 내보내기 단계의 모양을 정한다. 구현된 것은
-`src/dino_autofocus/records/redact.py` (순수 함수, 표준 라이브러리) 뿐이고, 기록을 쓰는 방식은 바꾸지 않았다.
+건너가는지, 사람을 어떤 id 로 바꾸는지, 내보내기 단계의 모양을 정한다. 구현:
+`src/dino_autofocus/records/redact.py` (바꾸기와 검사) 와 `records/export.py` (내보내기, 6절의 결정대로). 둘 다 표준
+라이브러리만 쓰고, 기록을 쓰는 방식은 바꾸지 않았다.
 근거: 이 저장소 `1302694`, soft-matter-agents `baf6f1e` (읽기만).
 
 ## 1. 지금 쓰는 기록과 개인 정보 (목록)
@@ -67,7 +68,7 @@ IP 주소는 어디에도 쓰지 않는다 (loopback 판정에만 쓰고 버림,
 
 한계: 대응표에 없는 이름이나 별명이 메모에 있으면 찾지 못한다. 그래서 자유 글을 넘길지가 질문 2 다.
 
-## 5. 내보내기 단계 (설계, 아직 구현 안 함)
+## 5. 내보내기 단계 (`records/export.py`, 2026-10-02 구현)
 
 ```
   closed 세션 + people.json --redact_session--> 바뀐 사본 (메모리) --> runs/<run_id>/console.*
@@ -85,14 +86,18 @@ IP 주소는 어디에도 쓰지 않는다 (loopback 판정에만 쓰고 버림,
    (`scan.json` 의 `light_off.by` 처럼 사람이 아닌 값이 사람 필드에 들어간 곳이 있어 먼저 고쳐야 한다,
    `engine/operations/scan_4x.py:567`).
 
-## 6. 사용자에게 묻는 것
+## 6. 사용자 결정 (2026-10-02, 모두 권고안)
 
-1. **person id**: 그쪽 승인 카드처럼 사람이 정한 짧은 이름 (예 `kyuhwan`) 을 쓸까, 무작위 `p-xxxx` 를 쓸까?
-   권고: 정한 이름, 없으면 무작위. 실명의 일부라도 공개되어도 되는지 사람마다 정해야 한다.
-2. **자유 글** (`close_note`, 수동 단계 메모, flag 이름·메모, `note` 이벤트): 검사 후 넘길까, 빼고 넘길까?
-   권고: 넘긴다 (실험 내용이다). 대응표에 없는 이름은 못 찾는다는 한계를 안고.
-3. **어시스턴트 대화 글**: 로컬에만 둘까? 권고: 로컬에만. 공개 쪽에는 작업 기록의 `proposal_id`,
-   `conversation_id`, `confirmed_by` 만 남는다.
-4. **세션과 run 의 대응**: 세션 하나를 run 폴더 하나로 (id 는 그쪽 `run-YYYYMMDD-NNN`) 만들까, 세션 안에서
-   그쪽이 실행한 plan 의 run 폴더 (`log.json` 이 있는 곳) 옆에 `console.*` 로 붙일까? 권고: 뒤쪽.
-   `log.json` 없는 run 폴더는 그쪽 check 15 에서 PENDING 으로 남는다.
+1. **person id**: 사람이 정한 짧은 이름 (그쪽 승인 카드와 같은 것, 예 `kyuhwan`). 정하지 않은 계정은
+   `assign_person_ids` 가 무작위 `p-xxxxxx` 를 한 번 만들어 `people.json` 에 저장하고, 이미 준 id 는 바꾸지 않는다.
+   실명의 일부를 id 로 쓸지는 사람마다 정한다 (`people.json` 을 고쳐서).
+2. **자유 글**: 검사 뒤 넘긴다. 대응표에 없는 이름은 찾지 못한다는 한계를 안고.
+3. **어시스턴트 대화 글**: 로컬에만. 세션 폴더에 `assistant.jsonl` 이 있어도 읽지 않는다 (`redact.LOCAL_ONLY`,
+   결과의 `kept_local` 에 이름만 남는다).
+4. **세션과 run**: 그쪽 run 폴더 (`log.json` 이 있는 곳) 옆에 `console.*` 로 붙인다. `export_session` 은
+   `session.json` 의 `sma_run_id` (또는 인자 `run_id`) 를 쓰고, 없으면 거부한다. 이 저장소는 그쪽에 쓰지 않으므로
+   로컬 준비 폴더 `<out_dir>/<run_id>/console.*` 와 `console.export.json` (파일별 sha256) 을 만들고, 그쪽이 복사한다.
+   열린 세션, `bench: false` 세션, 이미 파일이 있는 run 은 거부하고, 거부하면 아무것도 쓰지 않는다.
+
+남은 일: `session.json` 에 `bench` 를 넣는 것 (T-106b, 지금은 값이 없으면 내보낸다), 세션에 `sma_run_id` 를 붙이는
+때 (통합 뒤, 그쪽 plan 이 실행될 때), 샘플 폴더·하드웨어 프로필·세션 밖 작업 기록 (5절 5).

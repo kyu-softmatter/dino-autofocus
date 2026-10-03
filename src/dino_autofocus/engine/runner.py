@@ -804,14 +804,27 @@ class Runner:
 
     def publish_frame(self, frame: Frame, source_op: str = "", op_id: str = "") -> int:
         """Called by operations (`ctx.publish_frame`) and the acquisition stream: keep it as
-        the newest frame and announce it with a `frame_ready` carrying meta, never pixels."""
+        the newest frame and announce it with a `frame_ready` carrying meta, never pixels.
+        `piezo_z_um` is the piezo's z read now (None with no piezo), so stage z + piezo z is
+        the focus height of the frame, with the same read-at-pop lag as `z_um`."""
+        piezo_z = self._piezo_z()
         with self._lock:
             frame_id = next(self._frame_ids)
-            meta = {"frame_id": frame_id, **frame.meta(), "source_op": source_op}
+            meta = {"frame_id": frame_id, **frame.meta(), "piezo_z_um": piezo_z,
+                    "source_op": source_op}
             self._latest = (frame.image, meta)
             self._latest_by_camera[frame.camera or ""] = self._latest
         self._emit(Event("frame_ready", op_id, dict(meta)))
         return frame_id
+
+    def _piezo_z(self) -> float | None:
+        """The piezo's z position (a read; nothing moves), None with no piezo or a failed read."""
+        if self.piezo is None:
+            return None
+        try:
+            return float(self.piezo.position().z_um)
+        except Exception:  # noqa: BLE001 - a frame is never lost to a piezo read
+            return None
 
     def plan(self, cmd: Command) -> dict:
         """Only the operation's `plan` step, with no hardware behind it (screen GET plan)."""

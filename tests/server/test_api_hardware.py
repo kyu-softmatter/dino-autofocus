@@ -8,6 +8,7 @@ is not on main yet; swap it for `HardwareState` output when it is.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -185,6 +186,7 @@ def hw_engine(with_hardware):
 
 
 def test_router_is_mounted_read_only(make_client, hw_engine):
+    """Read only, but for saving a drafted cfg file (never the hardware)."""
     c = make_client(hw_engine)
     paths = c.get("/openapi.json").json()["paths"]
     mine = {p: m for p, m in paths.items() if p.startswith("/api/hardware")}
@@ -194,8 +196,11 @@ def test_router_is_mounted_read_only(make_client, hw_engine):
         "/api/hardware/gates/{op}",
         "/api/hardware/status",
         "/api/hardware/config",
+        "/api/hardware/config/match",
+        "/api/hardware/config/draft",
     }
-    assert all(set(methods) == {"get"} for methods in mine.values())
+    assert {p: set(m) for p, m in mine.items() if set(m) != {"get"}} == \
+        {"/api/hardware/config/draft": {"get", "post"}}
     assert c.post("/api/hardware/profile", json={}).status_code == 405
 
 
@@ -482,3 +487,100 @@ def test_config_prefers_a_byte_identical_copy_of_a_scanned_cfg_not_on_this_machi
     assert (body["source"], body["sha256"]) == ("scanned-copy", sha)
     assert body["path"] == str(single)
     assert [c["source"] for c in body["available"]].count("scanned-copy") == 1
+
+
+# -- /config/match and /config/draft: find or make a cfg from the scan ---------------------
+
+TREE_CFG = MINI_CFG + "Property,Core,Camera,Cam\n"
+WIRED_ROWS = [
+    {"label": "Ti2-E__0", "type": "HubDevice", "library": "NikonTi2", "description": "",
+     "role": None, "read_back": True, "write_verified": None, "properties": {},
+     "adapter": "Ti2-E__0", "parent": None, "preinit": {}, "installed": ["ZDrive", "Nosepiece"]},
+    {"label": "ZDrive", "type": "StageDevice", "library": "NikonTi2", "description": "",
+     "role": "z_drive", "read_back": True, "write_verified": None, "properties": {},
+     "adapter": "ZDrive", "parent": "Ti2-E__0", "preinit": {}, "installed": None},
+    {"label": "Core", "type": "CoreDevice", "library": "", "description": "", "role": None,
+     "read_back": True, "write_verified": None, "properties": {}},
+]
+
+
+@pytest.fixture
+def wired_engine(with_hardware, tmp_path, no_server_or_repo_cfg):
+    """A scan of Ti2-E__0 + ZDrive that loaded `scanned.cfg` (which also declares nothing more)."""
+    cfg = tmp_path / "scanned.cfg"
+    cfg.write_text(MINI_CFG, encoding="utf-8")
+    profile = t028_profile(device_list=WIRED_ROWS, objective_rows=[],
+                           config={"path": str(cfg), "sha256": "cd" * 32})
+    return with_hardware(t028_block(profile=profile))
+
+
+def test_match_ranks_the_listed_cfgs_against_the_scan(make_client, wired_engine, tmp_path):
+    body = make_client(wired_engine).get("/api/hardware/config/match").json()
+    assert body["error"] is None and body["detected_at"] == "2026-10-02T09:00:00"
+    best = body["rows"][0]
+    assert (best["name"], best["exact"], best["score"]) == ("scanned.cfg", True, 1.0)
+    assert best["matched"] == ["Ti2-E__0", "ZDrive"]
+
+
+def test_match_before_a_scan_says_so(make_client, with_hardware):
+    body = make_client(with_hardware({"profile": None})).get("/api/hardware/config/match").json()
+    assert body["rows"] == [] and "not scanned" in body["error"]
+
+
+def test_draft_is_built_from_the_scan_and_passes_the_load_check(make_client, wired_engine):
+    r = make_client(wired_engine).get("/api/hardware/config/draft")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["devices"] == 2 and d["base"]["name"] == "scanned.cfg"
+    assert "Device,ZDrive,NikonTi2,ZDrive" in d["text"]
+    assert "Parent,ZDrive,Ti2-E__0" in d["text"]
+    assert "Property,Core,Focus,ZDrive" in d["text"]
+    assert d["hub_found"] == ["Ti2-E__0: Nosepiece"]
+    assert d["load_check"] is None
+    assert d["suggested_name"] == "from-scan-202610020900"
+
+
+def test_draft_before_a_scan_is_refused(make_client, with_hardware):
+    r = make_client(with_hardware({"profile": None})).get("/api/hardware/config/draft")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "not_scanned"
+
+
+def test_save_writes_a_new_file_that_is_then_listed(make_client, wired_engine, seat):
+    c = make_client(wired_engine)
+    r = c.post("/api/hardware/config/draft", json={"name": "bench-from-scan"})
+    assert r.status_code == 201, r.text
+    saved = r.json()
+    path = Path(saved["path"])
+    assert path.name == "bench-from-scan.cfg" and path.parent.name == "micromanager"
+    assert path.parent.parent == Path(seat.accounts.path).parent  # the settings folder
+    assert "Device,ZDrive,NikonTi2,ZDrive" in path.read_text(encoding="utf-8")
+    listed = c.get("/api/hardware/config").json()["available"]
+    assert {"path": str(path), "name": "bench-from-scan.cfg", "source": "saved"} in listed
+    # never replaced
+    again = c.post("/api/hardware/config/draft", json={"name": "bench-from-scan.cfg"})
+    assert again.status_code == 409 and again.json()["detail"]["code"] == "exists"
+
+
+@pytest.mark.parametrize("name", ["", "../escape", "a/b", "con fig", ".hidden", "x" * 81])
+def test_save_refuses_a_bad_file_name(make_client, wired_engine, name):
+    r = make_client(wired_engine).post("/api/hardware/config/draft", json={"name": name})
+    assert r.status_code == 422
+
+
+def test_save_is_for_the_local_operator_only(make_client, wired_engine):
+    viewer = make_client(wired_engine, login=VIEWER).post(
+        "/api/hardware/config/draft", json={"name": "x"})
+    assert viewer.status_code == 403 and viewer.json()["detail"]["code"] == "role"
+    remote = make_client(wired_engine, remote=True).post(
+        "/api/hardware/config/draft", json={"name": "x"})
+    assert remote.status_code == 403 and remote.json()["detail"]["code"] == "remote_view"
+    foreign = make_client(wired_engine).post(
+        "/api/hardware/config/draft", json={"name": "x"}, headers={"Origin": "http://evil.test"})
+    assert foreign.status_code == 403 and foreign.json()["detail"]["code"] == "foreign_origin"
+
+
+def test_a_scan_only_draft_uses_no_base(make_client, wired_engine):
+    d = make_client(wired_engine).get("/api/hardware/config/draft",
+                                      params={"no_base": "true"}).json()
+    assert d["base"] is None and d["from_base"] == []
+    assert "Device,ZDrive,NikonTi2,ZDrive" in d["text"]  # the scan reported the adapter
