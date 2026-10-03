@@ -355,6 +355,19 @@ describe("hardware screen", () => {
     });
   });
 
+  it("lists a long change set short, with show all", async () => {
+    const changed = Array.from({ length: 12 }, (_, i) => ({ key: `device.D${i}.read_back`, before: true, after: false }));
+    setup({ profile: { ...PROFILE, previous: { ...PROFILE.previous!, changed } } });
+    const summary = within(await screen.findByRole("region", { name: "Detection summary" }));
+    const text = await summary.findByText(/changed \(12\):/);
+    expect(text.textContent).toContain("device.D7.read_back, …");
+    expect(text.textContent).not.toContain("device.D8.read_back");
+    fireEvent.click(summary.getByRole("button", { name: "show all 12" }));
+    expect(summary.getByText(/changed \(12\):/).textContent).toContain("device.D11.read_back");
+    fireEvent.click(summary.getByRole("button", { name: "show fewer" }));
+    expect(summary.getByText(/changed \(12\):/).textContent).not.toContain("device.D11.read_back");
+  });
+
   describe("configured hardware", () => {
     const tree = async () => within(await screen.findByRole("list", { name: "Config devices" }));
     const SCANNED: HardwareProfileOut = {

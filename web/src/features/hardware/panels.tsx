@@ -54,6 +54,25 @@ export function Reason({ text }: { text: string | null }) {
   return text ? <span className="hw-reason muted">{text}</span> : null;
 }
 
+/** How many changed keys "Since previous" lists before "show all". */
+export const CHANGES_SHOWN = 8;
+
+function ChangeList({ keys }: { keys: string[] }) {
+  const [all, setAll] = useState(false);
+  if (keys.length <= CHANGES_SHOWN) return <>changed: {keys.join(", ")}</>;
+  const shown = all ? keys : keys.slice(0, CHANGES_SHOWN);
+  return (
+    <>
+      <span className={all ? "hw-changes hw-changes-all" : "hw-changes"}>
+        changed ({keys.length}): {shown.join(", ")}{all ? "" : ", …"}
+      </span>{" "}
+      <button type="button" className="hw-link" aria-expanded={all} onClick={() => setAll(!all)}>
+        {all ? "show fewer" : `show all ${keys.length}`}
+      </button>
+    </>
+  );
+}
+
 export function SummaryPanel({ out }: { out: HardwareProfileOut }) {
   const p = out.profile;
   const error = out.error ? <p className="hw-warn">Engine could not read the hardware state: {out.error}</p> : null;
@@ -70,7 +89,7 @@ export function SummaryPanel({ out }: { out: HardwareProfileOut }) {
   const diff = !out.previous
     ? "no previous profile"
     : changed.length > 0
-      ? `changed: ${changed.map((c) => c.key).join(", ")}`
+      ? <ChangeList keys={changed.map((c) => c.key)} />
       : "no changes";
   const configPath = typeof p.config?.path === "string" ? p.config.path : NOT_REPORTED;
   const configSha = typeof p.config?.sha256 === "string" ? p.config.sha256 : null;
