@@ -119,13 +119,19 @@ export function LiveView({
   now = performanceNow,
   overlay,
   onPick,
+  onFrame,
 }: {
   now?: () => number;
   overlay?: Overlay;
   /** a click on a frame (the Tweezers area moves the chosen trap there) */
   onPick?: FramePick;
+  /** every frame as it arrives (the focus panel keeps their scores and z) */
+  onFrame?: (frame: CamFrame) => void;
 }) {
   const client = useClient();
+  // a ref, so a new callback each render does not reconnect the socket
+  const frameSink = useRef(onFrame);
+  frameSink.current = onFrame;
   const [cams, setCams] = useState<Record<string, CamFrame>>({});
   const [mode, setMode] = useState<Mode>("side");
   const [conn, setConn] = useState<Conn>("connecting");
@@ -168,7 +174,9 @@ export function LiveView({
         let meter = meters.get(camera);
         if (!meter) meters.set(camera, (meter = new FpsMeter()));
         const fps = meter.tick(now());
-        setCams((c) => ({ ...c, [camera]: { camera, url: next, jpeg: got.jpeg, meta: got.meta, fps } }));
+        const frame: CamFrame = { camera, url: next, jpeg: got.jpeg, meta: got.meta, fps };
+        setCams((c) => ({ ...c, [camera]: frame }));
+        frameSink.current?.(frame);
       };
       ws.onclose = () => {
         socket = null;

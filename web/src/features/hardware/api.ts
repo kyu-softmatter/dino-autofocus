@@ -29,7 +29,7 @@ export type Permissions = Record<string, Permission>;
 export interface ConfigChoice {
   path: string;
   name: string;
-  source: "scanned" | "scanned-copy" | "server" | "repo" | string;
+  source: "scanned" | "scanned-copy" | "server" | "repo" | "saved" | string;
 }
 export interface ConfigDevice {
   label: string;
@@ -43,6 +43,45 @@ export interface ConfigDevice {
   preinit?: Record<string, string>;
   line?: number;
 }
+/** `GET /api/hardware/config/match`: every listed cfg against the last scan, best first. */
+export interface ConfigMatchRow {
+  path: string;
+  name: string;
+  source: string;
+  score: number;
+  exact: boolean;
+  matched?: string[];
+  differs?: string[];
+  missing?: string[];
+  extra?: string[];
+}
+export interface ConfigMatchOut {
+  detected_at?: string | null;
+  rows?: ConfigMatchRow[];
+  error?: string | null;
+}
+/** `GET /api/hardware/config/draft`: a new cfg drafted from the last scan; nothing written. */
+export interface ConfigDraftOut {
+  text: string;
+  devices: number;
+  base?: ConfigChoice | null;
+  from_base?: string[];
+  unknown_adapter?: string[];
+  hub_found?: string[];
+  warnings?: string[];
+  load_check?: string | null;
+  suggested_name: string;
+}
+/** The draft base meaning "from the scan alone" (`no_base=true`). */
+export const NO_BASE = "__scan_only__";
+
+/** `POST /api/hardware/config/draft` answer: where the new file went. */
+export interface ConfigSavedOut {
+  path: string;
+  sha256: string;
+  load_check?: string | null;
+}
+
 export interface ConfigTreeOut {
   path: string | null;
   sha256?: string | null;
@@ -84,6 +123,10 @@ export const PATHS = {
   status: "/api/hardware/status",
   config: (path?: string | null) =>
     path ? `/api/hardware/config?path=${encodeURIComponent(path)}` : "/api/hardware/config",
+  configMatch: "/api/hardware/config/match",
+  configDraft: (base?: string | null) =>
+    base === NO_BASE ? "/api/hardware/config/draft?no_base=true"
+      : base ? `/api/hardware/config/draft?base=${encodeURIComponent(base)}` : "/api/hardware/config/draft",
   permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(encodeURIComponent).join(",")}`,
 };
 
@@ -115,3 +158,9 @@ export const readGates = (client: Client) => client.get<GateRow[]>(PATHS.gates);
 export const readStatus = (client: Client) => client.get<StatusResultOut | null>(PATHS.status);
 export const readConfig = (client: Client, path?: string | null) =>
   client.get<ConfigTreeOut>(PATHS.config(path));
+export const readConfigMatch = (client: Client) => client.get<ConfigMatchOut>(PATHS.configMatch);
+export const readConfigDraft = (client: Client, base?: string | null) =>
+  client.get<ConfigDraftOut>(PATHS.configDraft(base));
+export const saveConfigDraft = (client: Client, name: string, base?: string | null) =>
+  client.post<ConfigSavedOut>(PATHS.configDraft(),
+    base === NO_BASE ? { name, base: null, no_base: true } : { name, base: base ?? null });

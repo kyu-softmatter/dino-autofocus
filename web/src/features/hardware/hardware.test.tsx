@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { Client, ClientProvider } from "../../app/client";
 import { ScreenContextProvider, useCurrentScreenContext } from "../../app/screenContext";
 import { fakeTransport, type Route } from "../../test/fakes";
-import { type ConfigTreeOut, type GateRow, type HardwareProfileOut, PATHS, type Permissions, SCREEN_OPS } from "./api";
+import { type ConfigDraftOut, type ConfigMatchOut, type ConfigTreeOut, type GateRow, type HardwareProfileOut, PATHS, type Permissions, SCREEN_OPS } from "./api";
 import HardwareScreen from "./index";
 
 const PROFILE: HardwareProfileOut = {
@@ -55,6 +55,29 @@ const CONFIG: ConfigTreeOut = {
   error: null,
 };
 
+const MATCH: ConfigMatchOut = {
+  detected_at: "2026-10-01T18:00:00",
+  rows: [
+    { path: "C:/mm/bench.cfg", name: "bench.cfg", source: "scanned", score: 1, exact: true,
+      matched: ["Kinetix_red", "XYStage", "ZDrive"], differs: [], missing: [], extra: [] },
+    { path: CONFIG.available![1].path, name: "DMD_dualcam_LUNF.cfg", source: "repo", score: 0.3, exact: false,
+      matched: ["Kinetix_red", "XYStage", "ZDrive"], differs: [], missing: ["COM10", "CSUW1-Hub"], extra: [] },
+  ],
+  error: null,
+};
+
+const DRAFT: ConfigDraftOut = {
+  text: ["# Drafted by dino-autofocus", "Device,ZDrive,NikonTi2,ZDrive", ""].join("\n"),
+  devices: 3,
+  base: { path: "C:/mm/bench.cfg", name: "bench.cfg", source: "scanned" },
+  from_base: ["ZDrive: adapter"],
+  unknown_adapter: [],
+  hub_found: ["Ti2-E__0: Nosepiece"],
+  warnings: [],
+  load_check: null,
+  suggested_name: "from-scan-202610011800",
+};
+
 function requires(over: Partial<GateRow["requires"]> = {}): GateRow["requires"] {
   return { devices: [], objectives: [], confirmed: [], checks: [], arg: null, ...over };
 }
@@ -91,6 +114,7 @@ interface Opts {
   profile?: HardwareProfileOut;
   commands?: Route;
   config?: ConfigTreeOut;
+  saveDraft?: Route;
 }
 
 /** The screen on the shell's client over a fake transport: no network, no socket, no window. */
@@ -105,6 +129,10 @@ function setup(o: Opts = {}) {
     [PATHS.gates]: () => ({ status: 200, body: o.gates ?? GATES }),
     [PATHS.status]: () => ({ status: 200, body: null }),
     [PATHS.config()]: () => ({ status: 200, body: o.config ?? CONFIG }),
+    [PATHS.configMatch]: () => ({ status: 200, body: MATCH }),
+    [PATHS.configDraft()]: (init) => init?.method === "POST"
+      ? (o.saveDraft ?? (() => ({ status: 201, body: { path: "C:/settings/micromanager/mine.cfg", sha256: "ab".repeat(32), load_check: null } })))(init)
+      : { status: 200, body: DRAFT },
     [PATHS.config(CONFIG.available![1].path)]: () =>
       ({ status: 200, body: { ...CONFIG, path: CONFIG.available![1].path, source: "repo", devices: [DEV("NIDAQHub", "NIDAQ", "NIDAQHub")] } }),
     [PATHS.permissions(SCREEN_OPS)]: o.permissions ?? (() => ({ status: 200, body: world.permissions })),
@@ -435,6 +463,59 @@ describe("hardware screen", () => {
       fireEvent.change(screen.getByLabelText("Config file"), { target: { value: CONFIG.available![1].path } });
       expect(await screen.findByRole("button", { name: "NIDAQHub" })).toBeTruthy();
       expect(s.calls.some((c) => c.path === PATHS.config(CONFIG.available![1].path))).toBe(true);
+    });
+  });
+
+  describe("find or make a config", () => {
+    const panel = async () => within(await screen.findByRole("region", { name: "Find or make a config" }));
+
+    it("finds the matching config and shows one on request", async () => {
+      const s = setup();
+      const p = await panel();
+      const find = p.getByRole("button", { name: "Find matching config" });
+      await waitFor(() => expect(isDisabled(find)).toBe(false));
+      fireEvent.click(find);
+      expect((await p.findByLabelText("Match verdict")).textContent).toContain("Exact match: bench.cfg");
+      const rows = within(p.getByRole("table", { name: "Config matches" })).getAllByRole("row").slice(1);
+      expect(rows[1].textContent).toContain("30%");
+      expect(rows[1].textContent).toContain("COM10, CSUW1-Hub");
+      fireEvent.click(within(rows[1]).getByRole("button", { name: "Show" }));
+      await waitFor(() => expect(s.calls.some((c) => c.path === PATHS.config(CONFIG.available![1].path))).toBe(true));
+    });
+
+    it("drafts a config from the scan and saves it as a new file", async () => {
+      const s = setup();
+      const p = await panel();
+      fireEvent.click(p.getByRole("button", { name: "Draft config from scan" }));
+      expect((await p.findByLabelText("Draft text")).textContent).toContain("Device,ZDrive,NikonTi2,ZDrive");
+      const notes = p.getByLabelText("Config draft").textContent ?? "";
+      expect(notes).toContain("The bench (mm-real) load check passes");
+      expect(notes).toContain("Ti2-E__0: Nosepiece");
+      expect((p.getByLabelText("File name") as HTMLInputElement).value).toBe("from-scan-202610011800");
+      fireEvent.change(p.getByLabelText("File name"), { target: { value: "mine" } });
+      fireEvent.click(p.getByRole("button", { name: "Save as new file" }));
+      expect((await p.findByLabelText("Saved")).textContent).toContain("C:/settings/micromanager/mine.cfg");
+      const post = s.calls.find((c) => c.path === PATHS.configDraft() && c.init?.method === "POST");
+      expect(JSON.parse(String(post?.init?.body))).toEqual({ name: "mine", base: null });
+      // the saved file is shown in the tree
+      await waitFor(() => expect(s.calls.some((c) => c.path === PATHS.config("C:/settings/micromanager/mine.cfg"))).toBe(true));
+    });
+
+    it("shows why a save was refused", async () => {
+      setup({ saveDraft: () => ({ status: 409, body: { detail: { code: "exists", message: "mine.cfg already exists; pick another name" } } }) });
+      const p = await panel();
+      fireEvent.click(p.getByRole("button", { name: "Draft config from scan" }));
+      await p.findByLabelText("Draft text");
+      fireEvent.click(p.getByRole("button", { name: "Save as new file" }));
+      expect(await p.findByText(/not saved: .*already exists/)).toBeTruthy();
+    });
+
+    it("waits for a scan", async () => {
+      setup({ profile: { profile: null, path: null, sha256: null } });
+      const p = await panel();
+      expect(isDisabled(p.getByRole("button", { name: "Find matching config" }))).toBe(true);
+      expect(isDisabled(p.getByRole("button", { name: "Draft config from scan" }))).toBe(true);
+      expect(p.getByText(/Scan first/)).toBeTruthy();
     });
   });
 });

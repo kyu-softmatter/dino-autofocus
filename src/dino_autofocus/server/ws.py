@@ -27,6 +27,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.requests import HTTPConnection
 
+from ..focus import score
 from .api import (
     LOGIN_REQUIRED,
     LoginState,
@@ -56,6 +57,7 @@ EVENT_QUEUE_MAX = 1000  # a client this far behind is closed (1013) and should r
 CLOSE_TRY_AGAIN = 1013
 CLOSE_UNSUPPORTED = 1003
 CLOSE_REFUSED = 4000  # + the HTTP status: 4401 login_required, 4423 locked, 4403 origin
+LIVE_FOCUS_METRIC = "vollath4"  # the classical default (focus/classical.py)
 LOCK_POLL_S = 1.0  # how soon an open socket notices a lock or unlock with no events flowing
 
 
@@ -374,7 +376,8 @@ def encode_frame(
     pixels: Any, meta: dict[str, Any], seq: int, target_px: int = 800, quality: int = 80
 ) -> tuple[WsFrame, bytes]:
     """Bin a mono frame to at most `target_px` on the long side and JPEG it. Display range is
-    the 0.5-99.5 percentile of the binned frame (reported, so the UI can say so)."""
+    the 0.5-99.5 percentile of the binned frame (reported, so the UI can say so). The live
+    focus score is `LIVE_FOCUS_METRIC` on the binned frame (cheap at 10 fps per camera)."""
     from PIL import Image
 
     a = np.asarray(pixels)
@@ -391,12 +394,16 @@ def encode_frame(
     buf = io.BytesIO()
     Image.fromarray(u8).save(buf, format="JPEG", quality=quality)
     jpeg = buf.getvalue()
+    focus = score(binned, LIVE_FOCUS_METRIC) if min(binned.shape) >= 3 else None
+    if focus is not None and not math.isfinite(focus):
+        focus = None
     frame = WsFrame(
         # the runner's frames carry t_read (when popped from the camera), the placeholder t
         seq=seq, t=float(meta.get("t", meta.get("t_read", 0.0)) or 0.0), width=wb, height=hb,
         binning=b,
         source_width=w, source_height=h, display_min=lo, display_max=hi,
         jpeg_bytes=len(jpeg), camera=(str(meta["camera"]) if meta.get("camera") else None),
+        focus_score=focus, focus_metric=LIVE_FOCUS_METRIC if focus is not None else None,
         meta=meta,
     )
     return frame, jpeg
