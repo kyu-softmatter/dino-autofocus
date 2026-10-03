@@ -50,9 +50,9 @@ Run, stop and troubleshooting: [`docs/runbooks/launcher.md`](runbooks/launcher.m
 
 ## 5. Trained focus head
 
-`models/heads/head_k100x_dinov2_vits14_L1.joblib` (+ `.json` metrics) is the head trained
+`models/heads/head_k100x_dinov2_vits14_L1.npz` (+ `.json` metrics) is the head trained
 on the synthetic 100x set. Pass it to the live view with
-`--head models/heads/head_k100x_dinov2_vits14_L1.joblib`.
+`--head models/heads/head_k100x_dinov2_vits14_L1.npz`.
 
 ## Microscope-PC only (not needed to build or open the UI)
 

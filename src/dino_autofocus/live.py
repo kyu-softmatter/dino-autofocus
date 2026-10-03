@@ -14,10 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import joblib
 import numpy as np
 
 from .backbone import DinoExtractor
+from .focus.head import NpzHead
 
 
 @dataclass
@@ -101,7 +101,13 @@ def select_tiles(img: np.ndarray, k: int = 4, tile: int = 224, stride: int = 112
 class FocusScorer:
     def __init__(self, head_path: str | Path, k_tiles: int = 4, saturated: int = 65535):
         self.saturated = saturated  # the camera's own clip level: 4095 in a 12-bit readout
-        self.head = joblib.load(head_path)
+        head_path = Path(head_path)
+        if not head_path.is_file():
+            raise FileNotFoundError(head_path)
+        if head_path.suffix != ".npz":  # a joblib pickle runs code when loaded
+            raise ValueError(f"{head_path}: heads load from .npz only; convert a head you "
+                             f"trained with scripts/export_head_npz.py")
+        self.head = NpzHead.load(head_path)
         if self.head["uses_signal"]:
             raise NotImplementedError("head needs the photon-signal scalar; camera gain unmeasured")
         self.tile = int(self.head["tile_px"])
@@ -128,9 +134,9 @@ class FocusScorer:
         crops = np.stack([img[t.y0:t.y0 + self.tile, t.x0:t.x0 + self.tile] for t in tiles])
         X = self.dino(crops, batch=len(crops))
         h = self.head
-        dz = h["dz"].predict(X)
-        sigma = h["sigma_scale"] * np.exp(h["err"].predict(X))
-        pv = h["valid"].predict_proba(X)[:, 1]
+        dz = h.dz(X)
+        sigma = h["sigma_scale"] * np.exp(h.log_err(X))
+        pv = h.p_valid(X)
         for t, a, b, c in zip(tiles, dz, sigma, pv, strict=True):  # one prediction per tile
             t.dz, t.sigma, t.p_valid = float(a), float(b), float(c)
         use = [t for t in tiles if t.p_valid >= 0.5]
