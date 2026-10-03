@@ -375,6 +375,7 @@ SMA 사슬은 짧은 커밋 넷(G-00 → G-02(+11절 자리) → G-01 → G-02b,
 | OD-27 | A | 콘솔 제목 "Takatori Lab Console"(`web/index.html:6`, `Shell.tsx:118`)과 `docs/runs/2026-09-30_substrate-scan.md:6` 의 "(Takatori lab)" 을 공개 트리에 남기는가 | 제목은 중립("Autofocus Console") 권고, 문서의 랩 이름은 결정 P3 대로 유지 |
 | OD-28 | A | 공개 트리의 언어: 설계 문서가 모두 한국어(PLAN, integration-sma, operations-spec, ui-spec, screens, records-privacy, librarian-handoff, runbooks) | 공개는 됐고 한국어 문서 그대로, README 에 영어 한 단락(이미 있음)과 "설계 문서는 한국어" 표시; SMA 독자용 영어 요약은 `docs/integration-sma.md` 의 영어 요약 절 하나로 뒤에(기한 항목 아님); 코드 docstring 은 D-03 에서 영어 |
 | OD-29 | A | **`map_*.py`(맵 기하·타일·모자이크·가장자리) 4 파일과 `test_map_core.py` 를 2주차 복사에 넣는가** — SMA 10.2.1 의 자리 목록은 닫혀 있고(A1–A7, orchestrator 네 함수, O1 preflight, contract 필드, KB 항목) 샘플 맵 자리가 없으며 XY 는 보류(OD-20)다 | **빼고 보류한다.** dino `microscope_agent/` 에 그대로 두어 평탄·검사(D-02/D-03)는 유지하고, XY 카드(G-17 뒤 절반) 때 11절 자리 설계와 함께 넘긴다. SMA 측 주도 세션도 이 권고에 동의했다(2026-10-03); 결정은 사용자 몫. 대안: architecture 가 지금 11절에 "샘플 맵" 자리를 열어 설계한다(XY 설계 없이는 비어 있는 층) |
+| OD-30 | A | **D14(지역 브라우저가 모두 끊기면 10 s 뒤 자동 중단)를 SMA 가 실행하는 plan 에도 적용하는가** — SMA 에는 viewer 개념이 없고 정지는 컴파일된 stop_criteria 와 사람뿐이다(부록 C AR-03) | 지금은 **적용하지 않는다**고 `integration-sma.md` 7절에 결정으로 적고, G-13 의 정지 통로가 생기면 hw_port 가 "지역 viewer 없음" 을 정지 요청으로 보내는 것을 그때 카드로. 대안: G-13 을 복사 주차 선행으로 올린다(실행 계층 코드라 2주차에는 무리) |
 
 ---
 
