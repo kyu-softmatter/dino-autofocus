@@ -767,6 +767,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hardware/config/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Config Match
+         * @description Every listed cfg against the last scan's loaded devices, best match first.
+         */
+        get: operations["config_match_api_hardware_config_match_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hardware/config/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Config Draft
+         * @description A new `.cfg` drafted from the last scan; details the scan did not report come from
+         *     `base` (a listed cfg), the best match without it, or nowhere with `no_base`. Nothing is
+         *     written.
+         */
+        get: operations["config_draft_api_hardware_config_draft_get"];
+        put?: never;
+        /**
+         * Config Draft Save
+         * @description Save the draft as `<settings folder>/micromanager/<name>.cfg`. Local operator only;
+         *     an existing file is never replaced; the active config does not change.
+         */
+        post: operations["config_draft_save_api_hardware_config_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/map/{sample_id}": {
         parameters: {
             query?: never;
@@ -1696,6 +1743,77 @@ export interface components {
              * @default 0
              */
             line: number;
+        };
+        /** ConfigDraftOut */
+        ConfigDraftOut: {
+            /** Text */
+            text: string;
+            /** Devices */
+            devices: number;
+            base?: components["schemas"]["ConfigChoice"] | null;
+            /** From Base */
+            from_base?: string[];
+            /** Unknown Adapter */
+            unknown_adapter?: string[];
+            /** Hub Found */
+            hub_found?: string[];
+            /** Warnings */
+            warnings?: string[];
+            /** Load Check */
+            load_check?: string | null;
+            /** Suggested Name */
+            suggested_name: string;
+        };
+        /** ConfigMatchOut */
+        ConfigMatchOut: {
+            /** Detected At */
+            detected_at?: string | null;
+            /** Rows */
+            rows?: components["schemas"]["ConfigMatchRow"][];
+            /** Error */
+            error?: string | null;
+        };
+        /** ConfigMatchRow */
+        ConfigMatchRow: {
+            /** Path */
+            path: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+            /** Score */
+            score: number;
+            /** Exact */
+            exact: boolean;
+            /** Matched */
+            matched?: string[];
+            /** Differs */
+            differs?: string[];
+            /** Missing */
+            missing?: string[];
+            /** Extra */
+            extra?: string[];
+        };
+        /** ConfigSaveIn */
+        ConfigSaveIn: {
+            /** Name */
+            name: string;
+            /** Base */
+            base?: string | null;
+            /**
+             * No Base
+             * @default false
+             */
+            no_base: boolean;
+        };
+        /** ConfigSavedOut */
+        ConfigSavedOut: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+            /** Load Check */
+            load_check?: string | null;
         };
         /** ConfigTreeOut */
         ConfigTreeOut: {
@@ -5290,6 +5408,124 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    config_match_api_hardware_config_match_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigMatchOut"];
+                };
+            };
+        };
+    };
+    config_draft_api_hardware_config_draft_get: {
+        parameters: {
+            query?: {
+                base?: string | null;
+                no_base?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigDraftOut"];
+                };
+            };
+            /** @description base is not a listed config */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not scanned yet */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    config_draft_save_api_hardware_config_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigSaveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigSavedOut"];
+                };
+            };
+            /** @description not the local operator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description base is not a listed config */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not scanned yet, or the file exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description bad file name */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
