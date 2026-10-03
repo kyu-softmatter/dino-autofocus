@@ -46,6 +46,8 @@ The exe starts the web app server from this clone's uv env
 Shift + click opens the old tkinter launcher (`scripts/launcher.py`), also through uv.
 Server code changes need no rebuild; moving the clone or changing the port (`-Port`) does.
 If `autofocus.ico` is missing, `uv run python tools\launcher\make_icon.py` redraws it.
+Tests and the review gates: [`docs/runbooks/tests.md`](runbooks/tests.md).
+
 Run, stop and troubleshooting: [`docs/runbooks/launcher.md`](runbooks/launcher.md).
 
 ## 5. Trained focus head

@@ -1,8 +1,11 @@
 """select_tiles picks the sample, not the background, and avoids saturated windows."""
 
 import numpy as np
+import pytest
 
-from dino_autofocus.live import select_tiles
+pytest.importorskip("torch")  # the ml extra (T-035d): live imports the backbone
+
+from dino_autofocus.live import select_tiles  # noqa: E402
 
 
 def frame_with_patches(where, size=2400, seed=0):

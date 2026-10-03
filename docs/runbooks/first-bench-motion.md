@@ -145,12 +145,13 @@ What each move must show:
 Keep every move well inside the stage. The real stage limits are unknown (`StageLimits` all None), so
 the backend cannot catch a move past the travel.
 
-**Blocked until T-032 stage 2 merges.** `goto_xy` comes with T-032 stage 2 (sample map). Per the T-032
-spec it retracts Z first when a move is large; verify that when it merges. Today `guards.XYAxis` refuses
-a long move with Z up; it does not retract.
-
-Until T-032 stage 2 merges, no registered operation moves XY on request. Do the XY moves above only after
-that, and only after 2a has passed once on the stand.
+**`goto_xy` is on main (T-032 stage 2, `engine/operations/sample_map.py`).** A move longer than the
+lens's long-move row with Z above the retracted height retracts Z first (`park_at` to the safe height,
+PFS switched off before the retract and refused in preflight when its state cannot be read, the retract
+confirmed by readback) and leaves Z retracted; a short move goes straight. With Z at 0 from 2a or 2b every
+move in the table is short in that sense, so nothing retracts here. Like every motion operation it stays
+behind `BENCH_MOTION` until the user's unlock commit. Do the XY moves above only after 2a has passed once
+on the stand.
 
 Do not use the other operations instead:
 - **`objective_change`: do not run it on the stand**, including a turn to a dry lens without `escape`.
