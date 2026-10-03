@@ -175,8 +175,8 @@ the scan), `Not checked` (never scanned). Clicking a label shows adapter, depend
 found, port, Core role, state labels, pre-init settings and the cfg line. "Check connections" sends the
 same read-only `hardware_scan` as "Scan hardware" (its block reason is a tooltip; the text is on the Scan
 row). When the scan's `config.sha256` differs from the file shown, the panel says so. Devices the scan
-loaded that the cfg lacks are listed under the tree. The types are hand-written in `api.ts` until the
-next gen:api run.
+loaded that the cfg lacks are listed under the tree. The types are the generated `ConfigTreeOut` & co.
+(`src/api/schema.ts`, aliased in `api.ts`).
 
 ## "Find or make a config" panel (2026-10-02)
 

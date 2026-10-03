@@ -496,7 +496,7 @@ describe("hardware screen", () => {
       fireEvent.click(p.getByRole("button", { name: "Save as new file" }));
       expect((await p.findByLabelText("Saved")).textContent).toContain("C:/settings/micromanager/mine.cfg");
       const post = s.calls.find((c) => c.path === PATHS.configDraft() && c.init?.method === "POST");
-      expect(JSON.parse(String(post?.init?.body))).toEqual({ name: "mine", base: null });
+      expect(JSON.parse(String(post?.init?.body))).toEqual({ name: "mine", base: null, no_base: false });
       // the saved file is shown in the tree
       await waitFor(() => expect(s.calls.some((c) => c.path === PATHS.config("C:/settings/micromanager/mine.cfg"))).toBe(true));
     });

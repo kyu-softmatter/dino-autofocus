@@ -22,76 +22,22 @@ export type Permission = Schemas["PermissionOut"];
 export type Permissions = Record<string, Permission>;
 
 /**
- * `GET /api/hardware/config` (server/api/hardware.py `ConfigTreeOut`): the devices a
- * Micro-Manager `.cfg` declares and the hub each hangs under. Written by hand until the next
- * gen:api run (src/api/schema.ts is behind main); keep it equal to the pydantic models.
+ * Micro-Manager `.cfg` reads (server/api/hardware.py): `/config` the device tree, `/config/match`
+ * every listed cfg against the last scan, `/config/draft` a cfg drafted from the scan.
+ * `ConfigChoice.source`: "scanned" | "scanned-copy" | "server" | "repo" | "saved";
+ * `ConfigDevice.link`: "parent" | "port" | "inferred" | null.
  */
-export interface ConfigChoice {
-  path: string;
-  name: string;
-  source: "scanned" | "scanned-copy" | "server" | "repo" | "saved" | string;
-}
-export interface ConfigDevice {
-  label: string;
-  library: string;
-  adapter: string;
-  parent?: string | null;
-  link?: "parent" | "port" | "inferred" | string | null;
-  port?: string | null;
-  roles?: string[];
-  state_labels?: Record<string, string>;
-  preinit?: Record<string, string>;
-  line?: number;
-}
-/** `GET /api/hardware/config/match`: every listed cfg against the last scan, best first. */
-export interface ConfigMatchRow {
-  path: string;
-  name: string;
-  source: string;
-  score: number;
-  exact: boolean;
-  matched?: string[];
-  differs?: string[];
-  missing?: string[];
-  extra?: string[];
-}
-export interface ConfigMatchOut {
-  detected_at?: string | null;
-  rows?: ConfigMatchRow[];
-  error?: string | null;
-}
-/** `GET /api/hardware/config/draft`: a new cfg drafted from the last scan; nothing written. */
-export interface ConfigDraftOut {
-  text: string;
-  devices: number;
-  base?: ConfigChoice | null;
-  from_base?: string[];
-  unknown_adapter?: string[];
-  hub_found?: string[];
-  warnings?: string[];
-  load_check?: string | null;
-  suggested_name: string;
-}
+export type ConfigChoice = Schemas["ConfigChoice"];
+export type ConfigDevice = Schemas["ConfigDevice"];
+export type ConfigTreeOut = Schemas["ConfigTreeOut"];
+export type ConfigMatchRow = Schemas["ConfigMatchRow"];
+export type ConfigMatchOut = Schemas["ConfigMatchOut"];
+export type ConfigDraftOut = Schemas["ConfigDraftOut"];
+export type ConfigSaveIn = Schemas["ConfigSaveIn"];
+export type ConfigSavedOut = Schemas["ConfigSavedOut"];
+
 /** The draft base meaning "from the scan alone" (`no_base=true`). */
 export const NO_BASE = "__scan_only__";
-
-/** `POST /api/hardware/config/draft` answer: where the new file went. */
-export interface ConfigSavedOut {
-  path: string;
-  sha256: string;
-  load_check?: string | null;
-}
-
-export interface ConfigTreeOut {
-  path: string | null;
-  sha256?: string | null;
-  source?: string | null;
-  available?: ConfigChoice[];
-  devices?: ConfigDevice[];
-  startup?: string[];
-  warnings?: string[];
-  error?: string | null;
-}
 
 /** The gate key for `light_set` in one mode (T-028: one row per mode). */
 export const lightGateKey = (mode: "brightfield" | "aura" | "off") => `light_set:${mode}`;
@@ -161,6 +107,9 @@ export const readConfig = (client: Client, path?: string | null) =>
 export const readConfigMatch = (client: Client) => client.get<ConfigMatchOut>(PATHS.configMatch);
 export const readConfigDraft = (client: Client, base?: string | null) =>
   client.get<ConfigDraftOut>(PATHS.configDraft(base));
-export const saveConfigDraft = (client: Client, name: string, base?: string | null) =>
-  client.post<ConfigSavedOut>(PATHS.configDraft(),
-    base === NO_BASE ? { name, base: null, no_base: true } : { name, base: base ?? null });
+export const saveConfigDraft = (client: Client, name: string, base?: string | null) => {
+  const body: ConfigSaveIn = base === NO_BASE
+    ? { name, base: null, no_base: true }
+    : { name, base: base ?? null, no_base: false };
+  return client.post<ConfigSavedOut>(PATHS.configDraft(), body);
+};
