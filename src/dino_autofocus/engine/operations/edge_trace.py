@@ -62,7 +62,7 @@ from typing import Any
 import numpy as np
 
 from ..._flat import load
-from ..backend import Backend
+from ..backend import Backend, StreamActive
 from ..events import Event, EventSink, null_sink
 from ..guards import (
     GuardError,
@@ -710,15 +710,23 @@ def _runner_grab(ctx: OpContext) -> Callable[[float], np.ndarray]:
     """Frames under the runner: the engine's stream when it runs (its newest published frame
     taken after `not_before`), else a snap."""
 
+    # `live()` (engine/stream.py): frames are coming now; a stream without it streams while
+    # it runs
+    live = getattr(ctx.stream, "live", ctx.stream.running)
+
     def grab(not_before: float) -> np.ndarray:
-        if ctx.stream.running():
-            for _ in range(400):
+        for _ in range(400):
+            if live():
                 latest = ctx.runner.latest_frame()
                 if latest is not None and latest[1].get("t_read", 0.0) >= not_before:
                     return latest[0]
-                ctx.sleep(0.025)
-            raise GuardError("no fresh frame from the acquisition stream in 10 s")
-        return ctx.backend.snap().image
+            else:
+                try:
+                    return ctx.backend.snap().image
+                except StreamActive:  # the stream is stopping or starting: look again
+                    pass
+            ctx.sleep(0.025)
+        raise GuardError("no fresh frame from the acquisition stream or a snap in 10 s")
 
     return grab
 

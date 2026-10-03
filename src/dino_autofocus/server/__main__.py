@@ -217,6 +217,24 @@ def open_backend(kind: str, *, mm_config: str | None = None,
     return backend, info
 
 
+def simulated_extras(kind: str, backend: Any, bench: bool) -> tuple[Any, Any]:
+    """`(tweezers, live stream)` for this backend. Simulated backends get mock tweezers; only
+    the mock gets a live stream (its frames, the traps drawn in, and a second camera with the
+    trap laser spots). The bench gets neither: the Tweez300 adapter is not wired yet, and the
+    stand's live stream is a separate decision (card T-20261002-2205)."""
+    if bench:
+        return None, None
+    from ..engine.stream import BackendStream
+    from ..engine.tweezers import MockTweezers, mock_views
+
+    tweezers = MockTweezers()
+    if kind != "mock":
+        return tweezers, None
+    stream = BackendStream.for_backend(backend, decorate=mock_views(tweezers),
+                                       pixel_um=lambda: backend.info().pixel_um)
+    return tweezers, stream
+
+
 def record_roots(records_root: Path | None, bench: bool) -> tuple[Path, Path, Path]:
     """`(records, data, samples)`. The real folders are for the bench only."""
     from ..engine.sample import SAMPLES_ROOT
@@ -312,6 +330,7 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
     runner = None
     try:
         bench = is_bench(info)
+        tweezers, stream = simulated_extras(args.backend, backend, bench)
         records, data, samples = roots = record_roots(args.records_root, bench)
         cfg = RecordsConfig(records_root=records, data_root=data)
         if shutil.which("git"):
@@ -323,11 +342,15 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
         sessions = SessionSeat()
         runner, hardware = build_runner(
             backend, records_root=records, auth=auth, state_dir=state_dir,
-            records=session_records(sessions, data / "engine_records"), config=RunnerConfig())
+            records=session_records(sessions, data / "engine_records"), config=RunnerConfig(),
+            tweezers=tweezers, stream=stream)
         runner.start()
         app = create_app(runner, auth=auth, records=store, committer=AutoCommitter(store),
                          samples_root=samples, hardware=hardware, sessions=sessions,
                          engine_name=args.backend, **common)
+        if stream is not None:  # render only while someone has /ws/frames open
+            stream.wanted = lambda: app.state.frames.watching > 0
+            stream.attach(runner.publish_frame)
     except BaseException:
         if runner is not None:  # started: lights off and its threads stopped first
             try:

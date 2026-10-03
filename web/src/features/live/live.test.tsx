@@ -3,10 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Client, ClientProvider } from "../../app/client";
 import { fakeTransport } from "../../test/fakes";
-import { FpsMeter, FramePairer } from "./frames";
+import { ASSUMED_PIXEL_UM, FpsMeter, FramePairer, frameScale, LiveView } from "../../app/live";
 import LiveScreen from "./index";
-import { LiveView } from "./LiveView";
-import { ASSUMED_PIXEL_UM, frameScale } from "./PatternOverlay";
 
 const META = {
   type: "frame",

@@ -147,3 +147,9 @@ def test_a_client_that_joins_later_gets_an_idle_camera_at_once():
 
     got = asyncio.run(scenario())
     assert [json.loads(m)["camera"] for m, _ in got] == ["Kinetix_blue"]
+
+
+def test_encode_frame_takes_the_runner_frame_time():
+    img = np.zeros((8, 8), np.uint16)
+    assert encode_frame(img, {"t_read": 1759300000.25}, 1)[0].t == 1759300000.25
+    assert encode_frame(img, {"t": 5.0, "t_read": 9.0}, 1)[0].t == 5.0

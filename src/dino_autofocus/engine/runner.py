@@ -56,6 +56,7 @@ from typing import Any, ClassVar, Protocol, runtime_checkable
 from . import records as op_records
 from .backend import AURA_LINES, Frame, Positions, is_bench
 from .events import Command, Event, EventSink
+from .tweezers import state_of
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +136,8 @@ PERMISSIONS: dict[str, Permission] = {
     "goto_xy": MOTION,
     "focus_100x": MOTION,
     "objective_change": MOTION,
+    "trap_move": MOTION,  # optical tweezers (card T-20261002-2205): like any stage move
+    "trap_set": MOTION,
     # command kinds, listed so the server's table is complete (D13: remote abort only)
     "abort": Permission("stop", False, False),
     LIGHTS_OFF: Permission("stop", False, False),
@@ -466,6 +469,9 @@ class OpContext:
         self.runner, self._op = runner, op
         self.backend = runner._backend if backend is None else backend
         self.stream = runner._stream
+        # the optical tweezers (engine/tweezers.py), None when there are none; operations
+        # move them through guards.TrapAxis only
+        self.tweezers = runner.tweezers if backend is None else None
 
     op_id = property(lambda self: self._op.op_id)
     op = property(lambda self: self._op.op)
@@ -564,8 +570,10 @@ class Runner:
                  state_dir: str | Path | None = None,
                  hardware: Callable[[], dict] | None = None,
                  awaiting_return: dict | None = None,
-                 on_awaiting_return: Callable[[dict | None], None] | None = None):
+                 on_awaiting_return: Callable[[dict | None], None] | None = None,
+                 tweezers: Any = None):
         self._backend = SerializedBackend(backend)
+        self.tweezers = tweezers  # engine/tweezers.py; None: no tweezers on this setup
         self._registry = registry
         self._control = control or DenyAll()
         self._records = records or (lambda meta: NoRecord())
@@ -713,6 +721,7 @@ class Runner:
                 "hardware": self._hardware_state(),
                 "backend_info": self._info_dict,
                 "stream": {"running": bool(self._stream.running())},
+                "tweezers": state_of(self.tweezers),
                 "recent": [o.public() for o in ops if o.state in ENDED],
                 "operations": self._registry.names(),
                 "permissions": permission_table(),

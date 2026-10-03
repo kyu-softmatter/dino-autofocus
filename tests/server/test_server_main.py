@@ -6,7 +6,7 @@ import sys
 
 import numpy as np
 
-from dino_autofocus.server.__main__ import PlaceholderEngine, main
+from dino_autofocus.server.__main__ import PlaceholderEngine, main, simulated_extras
 from dino_autofocus.server.schemas import Command
 
 COMMON = {"CommandIn", "CommandAccepted", "EventOut", "Health", "ApiError",
@@ -61,3 +61,15 @@ def test_placeholder_engine_moves_nothing():
         assert eng.snapshot()["positions"] == before
     finally:
         unsubscribe()
+
+
+def test_simulated_backends_get_mock_tweezers_and_only_the_mock_a_stream():
+    from dino_autofocus.engine.backends.mock import MockBackend
+
+    mock = MockBackend(seed=1)
+    mock.open()
+    tw, stream = simulated_extras("mock", mock, bench=False)
+    assert tw.info().kind == "mock" and stream is not None and not stream.running()
+    tw, stream = simulated_extras("mm-demo", mock, bench=False)
+    assert tw is not None and stream is None
+    assert simulated_extras("mm-real", mock, bench=True) == (None, None)

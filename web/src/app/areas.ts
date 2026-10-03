@@ -15,6 +15,7 @@ export const AREAS = [
   { id: "simulation", label: "Simulation" },
   { id: "results", label: "Results" },
   { id: "patterns", label: "Patterns" },
+  { id: "tweezers", label: "Tweezers" },
   { id: "sessions", label: "Sessions" },
   // shown in the navigation to an admin only; the server refuses everyone else anyway
   { id: "accounts", label: "Accounts", adminOnly: true },
