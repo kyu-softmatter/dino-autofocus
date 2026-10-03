@@ -3648,6 +3648,38 @@ export interface components {
             session_id: string | null;
         };
         /**
+         * FocusDz
+         * @description The live -10..+10 gauge's reading (engine/live_dz.py): dz = stage - best focus in depths
+         *     of field, 0 = in focus. Display only.
+         */
+        FocusDz: {
+            /**
+             * Dz Dof
+             * @default null
+             */
+            dz_dof: number | null;
+            /**
+             * Sigma Dof
+             * @default null
+             */
+            sigma_dof: number | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "mock_truth" | "model";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Sign Known
+             * @default false
+             */
+            sign_known: boolean;
+        };
+        /**
          * WsAccepted
          * @description `/ws/events`, server -> client: reply to a `WsCommand`.
          */
@@ -3759,6 +3791,8 @@ export interface components {
              * @default null
              */
             focus_metric: string | null;
+            /** @default null */
+            focus_dz: components["schemas"]["FocusDz"] | null;
             /** Meta */
             meta?: {
                 [key: string]: unknown;

@@ -713,6 +713,37 @@ def test_frame_meta_carries_the_piezo_z(make):
     assert (meta["z_um"], meta["piezo_z_um"]) == (1200.0, 62.5)
 
 
+def test_frame_meta_carries_the_gauge_reading(make):
+    img = np.zeros((4, 4), np.uint16)
+    r, _ = make()
+    r.publish_frame(Frame(img, 1.0, 10.0, z_um=1200.0))
+    assert r.latest_frame()[1]["focus_dz"] is None  # no head, no mock truth
+    r.publish_frame(Frame(img, 2.0, 10.0, z_um=1200.0, dz_truth_dof=-1.5))
+    dz = r.latest_frame()[1]["focus_dz"]
+    assert (dz["dz_dof"], dz["source"]) == (-1.5, "mock_truth")
+
+    class Reader:
+        camera = "Kinetix_red"
+
+        def __init__(self):
+            self.fed = []
+
+        def feed(self, image):
+            self.fed.append(image)
+            return {"dz_dof": 0.4, "sigma_dof": 0.6, "source": "model", "note": "",
+                    "sign_known": False}
+
+        def stop(self):
+            pass
+
+    reader = Reader()
+    r2, _ = make(dz_reader=reader)
+    r2.publish_frame(Frame(img, 1.0, 10.0, camera="Kinetix_blue"))
+    assert r2.latest_frame()[1]["focus_dz"] is None and reader.fed == []  # not its camera
+    r2.publish_frame(Frame(img, 2.0, 10.0, camera="Kinetix_red"))
+    assert r2.latest_frame()[1]["focus_dz"]["dz_dof"] == 0.4 and len(reader.fed) == 1
+
+
 def test_latest_frame_keeps_only_the_newest_and_events_carry_no_pixels(make):
     r, sink = make()
     assert r.latest_frame() is None

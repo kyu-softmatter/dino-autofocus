@@ -53,6 +53,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
+from . import live_dz
 from . import records as op_records
 from .backend import AURA_LINES, Frame, Positions, is_bench
 from .events import Command, Event, EventSink
@@ -576,8 +577,11 @@ class Runner:
                  awaiting_return: dict | None = None,
                  on_awaiting_return: Callable[[dict | None], None] | None = None,
                  tweezers: Any = None, piezo: Any = None,
-                 patterns: Callable[[str], Any] | None = None):
+                 patterns: Callable[[str], Any] | None = None,
+                 dz_reader: live_dz.DzReader | None = None):
         self._backend = SerializedBackend(backend)
+        #: the live gauge's DINO reader (a trained head); None: frames carry no model dz
+        self.dz_reader = dz_reader
         self.tweezers = tweezers  # engine/tweezers.py; None: no tweezers on this setup
         self.piezo = piezo  # engine/piezo.py; None: no piezo that may move (the stand, < M5)
         #: pattern id -> engine.patterns.Pattern or None (the server's pattern folder)
@@ -659,6 +663,8 @@ class Runner:
             self._stream.stop()
         except Exception:
             log.exception("stream stop failed")
+        if self.dz_reader is not None:
+            self.dz_reader.stop()
         # once more after everything ended: an op finishing in the window (light_set) may
         # have switched a light on again; this readback is the one the next start shows
         final = self._new_op(LightsOff, Command("lights_off", args={"why": reason}))
@@ -806,16 +812,28 @@ class Runner:
         """Called by operations (`ctx.publish_frame`) and the acquisition stream: keep it as
         the newest frame and announce it with a `frame_ready` carrying meta, never pixels.
         `piezo_z_um` is the piezo's z read now (None with no piezo), so stage z + piezo z is
-        the focus height of the frame, with the same read-at-pop lag as `z_um`."""
+        the focus height of the frame, with the same read-at-pop lag as `z_um`. `focus_dz` is
+        the live gauge's signed reading (engine/live_dz.py), None when there is none."""
         piezo_z = self._piezo_z()
+        dz = self._focus_dz(frame)
         with self._lock:
             frame_id = next(self._frame_ids)
             meta = {"frame_id": frame_id, **frame.meta(), "piezo_z_um": piezo_z,
-                    "source_op": source_op}
+                    "focus_dz": dz, "source_op": source_op}
             self._latest = (frame.image, meta)
             self._latest_by_camera[frame.camera or ""] = self._latest
         self._emit(Event("frame_ready", op_id, dict(meta)))
         return frame_id
+
+    def _focus_dz(self, frame: Frame) -> dict | None:
+        """The mock's truth when the frame has one, else the head's reading (the reader gets
+        the frame and scores the newest on its own thread), else None. Display only."""
+        if frame.dz_truth_dof is not None:
+            return live_dz.truth_dz(frame.dz_truth_dof)
+        rd = self.dz_reader
+        if rd is None or (rd.camera is not None and frame.camera != rd.camera):
+            return None
+        return rd.feed(frame.image)
 
     def _piezo_z(self) -> float | None:
         """The piezo's z position (a read; nothing moves), None with no piezo or a failed read."""
