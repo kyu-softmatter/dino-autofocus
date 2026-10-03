@@ -133,6 +133,9 @@ class Frame:
     camera: str | None = None
     #: one image pixel in the sample plane, um (binning included); None when not known
     pixel_um: float | None = None
+    #: mock only: the true dz = stage - best focus in depths of field (the live view's gauge
+    #: shows it as "mock truth"); None from every real backend
+    dz_truth_dof: float | None = None
 
     def meta(self) -> dict:
         return {"t_read": self.t_read, "exposure_ms": self.exposure_ms, "x_um": self.x_um,

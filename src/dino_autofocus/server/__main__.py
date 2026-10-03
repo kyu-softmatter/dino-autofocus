@@ -238,6 +238,22 @@ def simulated_extras(kind: str, backend: Any, bench: bool) -> tuple[Any, Any, An
     return tweezers, piezo, stream
 
 
+def open_dz_reader(head: Path | None, info: Any, camera: str | None = None) -> Any:
+    """The live gauge's DINO reader over `head`, or None without one. The head loads now (a
+    bad path stops the start-up); the camera's clip level comes from its bit depth (the
+    Kinetix 'Standard' readout is 12-bit and clips at 4095)."""
+    if head is None:
+        return None
+    from ..engine.live_dz import DzReader
+    from ..live import FocusScorer
+
+    try:
+        scorer = FocusScorer(head, saturated=2 ** int(info.bit_depth) - 1)
+    except Exception as e:
+        raise BackendUnavailable(f"--head {head}: {type(e).__name__}: {e}") from e
+    return DzReader(scorer, camera=camera)
+
+
 def record_roots(records_root: Path | None, bench: bool) -> tuple[Path, Path, Path]:
     """`(records, data, samples)`. The real folders are for the bench only."""
     from ..engine.sample import SAMPLES_ROOT
@@ -343,11 +359,13 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
             store = FolderStore(cfg)
         state_dir = auth_config.config_dir(args.config_dir) / "engine_state" / args.backend
         sessions = SessionSeat()
+        dz_reader = open_dz_reader(getattr(args, "head", None), info,
+                                   getattr(args, "head_camera", None))
         runner, hardware = build_runner(
             backend, records_root=records, auth=auth, state_dir=state_dir,
             records=session_records(sessions, data / "engine_records"), config=RunnerConfig(),
             tweezers=tweezers, piezo=piezo, stream=stream,
-            patterns=PatternStore(common["patterns_root"]).get)
+            patterns=PatternStore(common["patterns_root"]).get, dz_reader=dz_reader)
         runner.start()
         app = create_app(runner, auth=auth, records=store, committer=AutoCommitter(store),
                          samples_root=samples, hardware=hardware, sessions=sessions,
@@ -435,6 +453,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--config-dir", type=Path, default=None,
                    help="accounts and audit log folder (default: the local config folder, "
                         "see auth/config.py)")
+    p.add_argument("--head", type=Path, default=None, metavar="NPZ",
+                   help="trained DINO head (.npz) for the live view's -10..+10 focus gauge; "
+                        "without it the gauge shows the mock's truth (mock) or nothing")
+    p.add_argument("--head-camera", default=None, metavar="LABEL",
+                   help="score only this camera's frames with --head (e.g. Kinetix_red)")
     p.add_argument("--web-dist", type=Path, default=None,
                    help="built web app to serve (default: <repo>/web/dist)")
     p.add_argument("--dump-openapi", metavar="PATH",

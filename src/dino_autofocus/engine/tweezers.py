@@ -181,6 +181,8 @@ def mock_views(tweezers: Tweezers, *, laser_camera: str = "Kinetix_blue", piezo:
                            sigma_px=max(MIN_SIGMA_PX, SPOT_SIGMA_UM / frame.pixel_um))
         # the sample camera last: `Runner.latest_frame()` (what edge_trace grabs from the
         # stream) is then always the sample, never the laser-only picture
-        return [replace(frame, image=spots, camera=laser_camera), replace(frame, image=beads)]
+        # the laser camera sees no sample: no focus truth on it
+        return [replace(frame, image=spots, camera=laser_camera, dz_truth_dof=None),
+                replace(frame, image=beads)]
 
     return decorate

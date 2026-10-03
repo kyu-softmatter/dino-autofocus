@@ -51,6 +51,16 @@ def test_encode_frame_live_focus_score():
     assert tiny.focus_score is None and tiny.focus_metric is None
 
 
+def test_encode_frame_gauge_reading():
+    a = np.zeros((8, 8), np.uint16)
+    dz = {"dz_dof": 2.5, "sigma_dof": None, "source": "mock_truth", "note": "mock truth",
+          "sign_known": True}
+    frame, _ = encode_frame(a, {"focus_dz": dz}, 1)
+    assert frame.focus_dz is not None and frame.focus_dz.model_dump() == dz
+    assert encode_frame(a, {"focus_dz": None}, 1)[0].focus_dz is None
+    assert encode_frame(a, {"focus_dz": {"source": "guess"}}, 1)[0].focus_dz is None  # dropped
+
+
 def test_bridge_rate_limit_and_latest_only(frame_engine):
     """200 frame_ready/s for 1 s from an engine thread: at most ~10 encodes, and a client that
     does not read keeps only the newest frame."""
