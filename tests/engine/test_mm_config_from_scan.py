@@ -159,3 +159,11 @@ def test_profiles_round_trip_the_wiring_and_old_profiles_still_load():
     for k in ("adapter", "parent", "preinit", "installed"):
         del old["device_list"][0][k]  # a profile written before 2026-10-02
     assert HardwareProfile.from_json(json.dumps(old)).device_list[0].adapter is None
+
+
+def test_read_wiring_skips_the_hub_query_when_asked():
+    from dino_autofocus.engine.backend import read_wiring
+
+    core = FakeCore(fail={"getInstalledDevices"})  # would raise if called
+    out = read_wiring(core, "Hub", "HubDevice", hub_peripherals=False)
+    assert "installed" not in out and out["adapter"] == "LibHub"

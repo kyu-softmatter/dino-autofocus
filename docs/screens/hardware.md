@@ -187,7 +187,9 @@ adapters, hub-reported peripherals), the text, a file name, "Save as new file" a
 
 Since 2026-10-02 the scan also records per device (`DeviceRow`): `adapter` (Micro-Manager device name),
 `parent` (hub label), `preinit` (pre-init property values) and, for hubs, `installed` (the hub's own
-`getInstalledDevices`). Reads only (`backend.read_wiring`); the bench hub read is in mm_real `USER_CHECKS`.
+`getInstalledDevices`). Reads only (`backend.read_wiring`). The hub query asks the hub's adapter and may reach
+the hardware, so it is off on mm-real (`mm_real.READ_HUB_PERIPHERALS = False`, user 2026-10-02) until checked on
+the microscope PC (`USER_CHECKS`); mm-demo keeps it.
 Profiles written earlier lack them, which is why a draft takes adapters from a base cfg. Checked on the
 Micro-Manager demo core: a scan-only draft loads back in a fresh core with the same 13 devices and roles.
 

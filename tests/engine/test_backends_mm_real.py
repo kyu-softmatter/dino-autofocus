@@ -194,6 +194,48 @@ def test_bench_lamp_and_set_property_allow_list(stub):
         stub.set_property("White Light Shutter", "State", 0, token=T)
 
 
+class HubStubCore:
+    """A bench hub and one peripheral; records every call so a hub query would show."""
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def __getattr__(self, name):
+        answers = {
+            "getLoadedDevices": lambda: ["Ti2-E__0", "ZDrive"],
+            "getDevicePropertyNames": lambda label: [],
+            "getDeviceType": lambda label: type("T", (), {"name": "HubDevice" if label ==
+                                                         "Ti2-E__0" else "StageDevice"})(),
+            "getDeviceLibrary": lambda label: "NikonTi2",
+            "getDeviceDescription": lambda label: "",
+            "getDeviceName": lambda label: label,
+            "getParentLabel": lambda label: "" if label == "Ti2-E__0" else "Ti2-E__0",
+            "getInstalledDevices": lambda label: ("ZDrive", "Nosepiece"),
+        }
+        if name not in answers:
+            raise AttributeError(name)
+
+        def call(*a):
+            self.calls.append(name)
+            return answers[name](*a)
+
+        return call
+
+
+def test_bench_scan_never_asks_a_hub_for_its_peripherals(tmp_path):
+    """User, 2026-10-02: off on the stand until checked (READ_HUB_PERIPHERALS)."""
+    assert mm_real.READ_HUB_PERIPHERALS is False
+    b = MmRealBackend(tmp_path / "bench.cfg")
+    b.core = HubStubCore()
+    try:
+        devs = {d.label: d for d in b.describe_devices(include_properties=False)}
+    finally:
+        calls, b.core = b.core.calls, None
+    assert "getInstalledDevices" not in calls
+    assert devs["Ti2-E__0"].installed is None
+    assert (devs["ZDrive"].adapter, devs["ZDrive"].parent) == ("ZDrive", "Ti2-E__0")
+
+
 # -- the real code on the demo config
 
 
