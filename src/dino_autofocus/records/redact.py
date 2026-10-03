@@ -52,6 +52,9 @@ RUNS_FILE = re.compile(r"^([A-Za-z0-9_.-]+|raw/.+)$")
 PERSON_ID = re.compile(r"^[a-z][a-z0-9-]{1,31}$")
 FLAT_PREFIX = "console."
 JSON_SUFFIXES = (".json", ".jsonl")
+# records that stay on the microscope PC even when they sit in a session folder: the
+# assistant conversation (user decision 2026-10-02, records-privacy.md section 6 item 3)
+LOCAL_ONLY = frozenset({"assistant.jsonl"})
 
 _EMAIL = re.compile(r"[\w.%+'-]+[@\uff20][\w-]+(?:\.[\w-]+)*", re.UNICODE)
 # an optional drive, then Users / home / Documents and Settings, then the account name
@@ -275,6 +278,7 @@ class RedactedSession:
     export_id: str                   # the same id with the user part pseudonymised
     files: dict[str, str]            # relative posix path -> redacted text
     left_out: list[str]              # files that are not JSON / JSONL: not copied
+    kept_local: list[str] = field(default_factory=list)  # LOCAL_ONLY files: not read
 
     def flat_files(self, prefix: str = FLAT_PREFIX) -> dict[str, str]:
         """The same files under flat names a runs/<run_id>/ folder accepts:
@@ -306,8 +310,12 @@ def redact_session(session_dir: str | Path, p: Pseudonyms) -> RedactedSession:
     files: dict[str, str] = {}
     left_out: list[str] = []
     found: list[Finding] = []
+    kept_local: list[str] = []
     for path in sorted(_walk(root)):
         rel = path.relative_to(root).as_posix()
+        if path.name in LOCAL_ONLY:
+            kept_local.append(rules.text(rel))
+            continue
         out_rel = rules.text(rel)
         name_kinds = rules.kinds(out_rel)
         if name_kinds:
@@ -333,7 +341,7 @@ def redact_session(session_dir: str | Path, p: Pseudonyms) -> RedactedSession:
     info = json.loads(info_path.read_text(encoding="utf-8"))
     sid = str(info.get("session_id", ""))
     return RedactedSession(session_id=sid, export_id=rules.text(sid), files=files,
-                           left_out=left_out)
+                           left_out=left_out, kept_local=kept_local)
 
 
 def _walk(root: Path) -> Iterable[Path]:
