@@ -14,11 +14,11 @@ T-009b refusals: `{"detail": {code, message}}` plus the `X-DinoAF-Refusal: <code
 |---|---|---|---|
 | `GET /setup` | anyone | any | → `{state: "needs_admin_email" \| "needs_admin" \| "ready"}`. No email in the reply |
 | `POST /setup/admin` | anyone, only while state ≠ ready | local | `{name, password, email?}` → `Me` + cookie. `email` only when none is configured |
-| `POST /signup` | anyone | any | `{name, email, password}` → `201 {status: "pending"}`. Nothing else is accepted (no role field; extra fields → 422) |
-| `POST /login` | anyone | any | `{email, password}` → `Me` + cookie; `401` with `detail.code` `bad_credentials` \| `pending_approval` \| `disabled` |
+| `POST /signup` | anyone | **local** | `{name, email, password}` → `201 {status: "pending"}`. Nothing else is accepted (no role field; extra fields → 422). An email that already has an account gets the same `201` and nothing changes (audit `signup_existing`). From another PC: `403 remote_view` (user decision 2026-10-02; may be opened later) |
+| `POST /login` | anyone | any | `{email, password}` → `Me` + cookie; `401` with `detail.code` `bad_credentials` \| `pending_approval` \| `disabled`; `429 too_many_attempts` with `Retry-After` after too many wrong passwords (below) |
 | `POST /logout` | logged in | any | → `204`, cookie cleared, control released |
 | `POST /lock` | logged in | any | → `204`. "Lock" in the user menu |
-| `POST /unlock` | logged in, locked | any | `{password}` → `Me`; `401` on a wrong password |
+| `POST /unlock` | logged in, locked | any | `{password}` → `Me`; `401` on a wrong password; `429 too_many_attempts` with `Retry-After` past the limit |
 | `POST /activity` | logged in | any | → `204`. The screen calls it on user input (throttled, at most every 30 s) so the idle lock does not fire while someone is working |
 | `GET /me` | logged in | any | → `Me`; `401` without a valid cookie |
 | `GET /accounts?status=` | admin | local | → `[Account]` (no hashes); `status` (pending / active / disabled) is optional |
@@ -54,6 +54,17 @@ not the check.
   `DeviceControl.check` (T-011). The browser only knows `has_control`.
 - Every login, failed login, logout, lock, unlock, sign-up, approval, role change, disable,
   enable, password reset, delete and control change goes to `audit.jsonl` through T-018. The router adds no second log.
+
+### Attempt limits (`auth/throttle.py`)
+
+Wrong passwords on login and unlock are counted per account (the email as typed, whether it
+exists or not) and per client address. PROVISIONAL limits: 5 per account and 20 per client in
+15 min, then that key is refused for 15 min. While a key is locked the password is not checked
+at all (no scrypt cost), and the answer is `429 too_many_attempts` with `Retry-After`. A right
+password clears the account's count; pending or disabled with the right password is not a
+guess. Audit: `login_failed` with `reason` `lockout_started` / `too_many_attempts`. The check
+runs outside the login-sessions lock, so a slow check never stalls other requests. State is in
+memory (a restart clears it).
 
 ## 3. Requests without a login
 

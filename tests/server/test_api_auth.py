@@ -87,8 +87,12 @@ def test_signup_takes_name_email_password_only_and_waits_for_approval(engine, ma
                      json={"email": "kim@example.test", "password": "kim-pass-12"})
     assert (pending.status_code, detail(pending)["code"]) == (401, "pending_approval")
     assert "approval" in detail(pending)["message"]
-    dup = c.post("/api/auth/signup", json={**body, "email": "KIM@example.test"})
-    assert (dup.status_code, detail(dup)["code"]) == (409, "account_exists")
+    before = seat.accounts.get("kim@example.test")
+    dup = c.post("/api/auth/signup", json={**body, "name": "Someone Else",
+                                           "email": "KIM@example.test"})
+    assert (dup.status_code, dup.json()) == (201, {"status": "pending"})  # same as a new one
+    assert seat.accounts.get("kim@example.test") == before  # and nothing changed
+    assert audit_kinds(seat)[-1] == "signup_existing"
     short = c.post("/api/auth/signup", json={**body, "email": "k2@example.test", "password": "x"})
     assert (short.status_code, detail(short)["code"]) == (422, "password_policy")
 
@@ -180,6 +184,45 @@ def test_remote_admin_cannot_enable_reset_or_delete(engine, make_client, seat):
         r = c.post(f"/api/auth/accounts/{OPERATOR2}/{path}", json=body)
         assert r.status_code == 403, path
     assert seat.accounts.get(OPERATOR2) is not None
+
+
+def test_signup_is_refused_from_another_pc(engine, make_client, seat):
+    c = make_client(engine, remote=True, login=None)
+    r = c.post("/api/auth/signup", json={"name": "Rem Ote", "email": "rem@example.test",
+                                         "password": "rem-pass-123"})
+    assert (r.status_code, detail(r)["code"]) == (403, "remote_view")
+    assert seat.accounts.get("rem@example.test") is None
+
+
+def test_too_many_wrong_passwords_lock_login_with_retry_after(engine, make_client, seat):
+    c = make_client(engine, login=None)
+    wrong = {"email": VIEWER, "password": "not-the-password"}
+    codes = [c.post("/api/auth/login", json=wrong).status_code for _ in range(5)]
+    assert codes == [401] * 5
+    locked = c.post("/api/auth/login", json={"email": VIEWER, "password": TEST_PASSWORD})
+    assert (locked.status_code, detail(locked)["code"]) == (429, "too_many_attempts")
+    assert int(locked.headers["Retry-After"]) > 0 and "Try again" in detail(locked)["message"]
+    other = c.post("/api/auth/login", json={"email": OPERATOR, "password": TEST_PASSWORD})
+    assert other.status_code == 200  # another account from this client still logs in
+    assert "too_many_attempts" in str([e for e in seat.audit.entries()
+                                       if e["kind"] == "login_failed"])
+
+
+def test_unknown_emails_are_limited_like_real_ones(engine, make_client):
+    c = make_client(engine, login=None)
+    wrong = {"email": "nobody@example.test", "password": "whatever-123"}
+    codes = [c.post("/api/auth/login", json=wrong).status_code for _ in range(6)]
+    assert codes == [401] * 5 + [429]  # a lockout says nothing about who has an account
+
+
+def test_too_many_wrong_unlock_passwords_answer_429(engine, make_client, seat):
+    c = make_client(engine)
+    assert c.post("/api/auth/lock").status_code == 204
+    for _ in range(5):
+        assert c.post("/api/auth/unlock", json={"password": "wrong-pass-99"}).status_code == 401
+    r = c.post("/api/auth/unlock", json={"password": TEST_PASSWORD})
+    assert (r.status_code, detail(r)["code"]) == (429, "too_many_attempts")
+    assert c.get("/api/auth/me").json()["locked"] is True
 
 
 # -- lock, unlock, activity -------------------------------------------------------------

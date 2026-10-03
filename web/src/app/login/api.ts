@@ -188,7 +188,8 @@ export function createFakeAuthApi(
       return meOf(u, false);
     },
     async signup({ name, email, password }) {
-      if (find(email)) throw new AuthError(409, `an account already exists for ${email.toLowerCase()}`);
+      // as the server (audit S1): an existing email gets the same answer and changes nothing
+      if (find(email)) return;
       users.push({ name, email: email.trim().toLowerCase(), password, role: "viewer", status: "pending", created_at: new Date().toISOString() });
     },
     async login({ email, password }) {

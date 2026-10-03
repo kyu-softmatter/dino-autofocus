@@ -19,11 +19,14 @@ from .accounts import (
 )
 from .audit import AuditFieldError, AuditKind, AuditLog
 from .control import ControlBusy, ControlError, ControlGrant, ControlHolder, Decision, DeviceControl
-from .logins import LoginInfo, LoginResult, LoginSessions
+from .logins import LoginInfo, LoginResult, LoginSessions, TooManyAttempts
 from .passwords import PasswordPolicyError, hash_password, verify_password
 from .roles import LOCAL_ONLY, AccountStatus, Action, Role, allows
+from .throttle import AttemptLimiter
 
 __all__ = [
+    "AttemptLimiter",
+    "TooManyAttempts",
     "Account",
     "AccountError",
     "AccountStatus",

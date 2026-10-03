@@ -241,6 +241,11 @@ export interface paths {
         /**
          * Signup
          * @description Name, email, password only. The account waits for an admin, who sets its role (D12).
+         *
+         *     On the microscope PC only (user decision 2026-10-02, audit S3; may be opened later). An
+         *     email that already has an account gets the same answer as a new one and nothing changes
+         *     (audit S1): the answer never tells a caller which emails are registered; the audit log
+         *     records it for the admin.
          */
         post: operations["signup_api_auth_signup_post"];
         delete?: never;
@@ -4422,6 +4427,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     logout_api_auth_logout_post: {
@@ -4490,6 +4502,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

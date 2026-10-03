@@ -6,8 +6,10 @@ login, logout, lock, unlock, sign-up, approval, role change and control change t
 `audit.jsonl`; nothing here logs a second time.
 
 Access (app.py, server/api): `POST login | logout | lock | unlock | activity | signup` work
-without a login (remote viewers log in too); every other route needs a live login, and every
-other write also needs the microscope PC (loopback), an unlocked login and no foreign Origin.
+without a login (remote viewers log in too; sign-up itself is refused here from another PC);
+login and unlock are attempt-limited (auth/throttle.py); every other route needs a live login,
+and every other write also needs the microscope PC (loopback), an unlocked login and no
+foreign Origin.
 The admin routes and device control check loopback again here, for reads too. Stops (abort,
 lights_off) never pass through this router, so nothing here can block them.
 
@@ -28,6 +30,7 @@ from ...auth import (
     Account,
     AccountError,
     Action,
+    AuditKind,
     ControlBusy,
     ControlError,
     DuplicateAccountError,
@@ -36,7 +39,9 @@ from ...auth import (
     PermissionDenied,
     SetupRequired,
     SetupState,
+    TooManyAttempts,
     allows,
+    normalize_email,
 )
 from . import (
     LOGIN_REQUIRED,
@@ -226,20 +231,42 @@ def create_first_admin(body: SetupIn, request: Request, response: Response, auth
 
 
 @router.post("/signup", response_model=SignupOut, status_code=201)
-def signup(body: SignupIn, auth: Auth) -> SignupOut:
-    """Name, email, password only. The account waits for an admin, who sets its role (D12)."""
+def signup(body: SignupIn, auth: Auth, local: IsLocal) -> SignupOut:
+    """Name, email, password only. The account waits for an admin, who sets its role (D12).
+
+    On the microscope PC only (user decision 2026-10-02, audit S3; may be opened later). An
+    email that already has an account gets the same answer as a new one and nothing changes
+    (audit S1): the answer never tells a caller which emails are registered; the audit log
+    records it for the admin."""
+    if not local:
+        raise remote_view("remote view: sign up on the microscope PC").http()
     try:
         auth.accounts.register(body.name, body.email, body.password)
     except PasswordPolicyError as e:
         raise _refuse(422, "password_policy", str(e)).http() from e
+    except DuplicateAccountError:
+        if auth.audit is not None:
+            auth.audit.append(AuditKind.SIGNUP_EXISTING, normalize_email(body.email))
     except AccountError as e:
         raise _account_error(e).http() from e
     return SignupOut(status="pending")
 
 
-@router.post("/login", response_model=Me, responses={401: {}})
-def login(body: LoginIn, response: Response, auth: Auth, local: IsLocal):
-    result = auth.logins.login(body.email, body.password)
+def _client(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+def _too_many(message: str, retry_after_s: int) -> JSONResponse:
+    return JSONResponse({"detail": {"code": "too_many_attempts", "message": message}},
+                        status_code=429, headers={"X-DinoAF-Refusal": "too_many_attempts",
+                                                  "Retry-After": str(retry_after_s)})
+
+
+@router.post("/login", response_model=Me, responses={401: {}, 429: {}})
+def login(body: LoginIn, request: Request, response: Response, auth: Auth, local: IsLocal):
+    result = auth.logins.login(body.email, body.password, client=_client(request))
+    if result.retry_after_s is not None:  # too many wrong passwords (audit S2)
+        return _too_many(result.message, result.retry_after_s)
     if not result.ok:
         # code is the outcome: bad_credentials | pending_approval | disabled
         return JSONResponse(
@@ -266,10 +293,13 @@ def lock(me: Login, auth: Auth) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/unlock", response_model=Me)
-def unlock(body: UnlockIn, me: Login, auth: Auth) -> Me:
+@router.post("/unlock", response_model=Me, responses={429: {}})
+def unlock(body: UnlockIn, request: Request, me: Login, auth: Auth):
     _logged_in(me, locked_ok=True)
-    info = auth.logins.unlock(me.token, body.password)
+    try:
+        info = auth.logins.unlock(me.token, body.password, client=_client(request))
+    except TooManyAttempts as e:  # audit S2
+        return _too_many(str(e), e.retry_after_s)
     if info is None:
         raise _refuse(401, "bad_credentials", "Wrong password.").http()
     return _me(auth, info, me.local)

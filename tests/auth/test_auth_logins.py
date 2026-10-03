@@ -77,3 +77,107 @@ def test_deleting_an_account_ends_its_login(logins, login, seeded):
     seeded.disable("admin@example.test", "vera@example.test")
     seeded.delete("admin@example.test", "vera@example.test")
     assert logins.get(token) is None
+
+
+
+def test_wrong_passwords_lock_the_account_and_a_right_one_clears_its_count(seeded, audit, clock,
+                                                                         seed_password):
+    from dino_autofocus.auth import AttemptLimiter, LoginSessions
+
+    logins = LoginSessions(seeded, audit=audit, clock=clock,
+                           limiter=AttemptLimiter(account_limit=3, client_limit=10,
+                                                  window_s=60, lockout_s=120, clock=clock))
+    for _ in range(2):
+        assert logins.login("vera@example.test", "bad-pass-123", client="10.0.0.9").outcome \
+            is LoginOutcome.BAD_CREDENTIALS
+    assert logins.login("vera@example.test", seed_password, client="10.0.0.9").ok  # clears it
+    for _ in range(3):
+        logins.login("vera@example.test", "bad-pass-123", client="10.0.0.9")
+    locked = logins.login("vera@example.test", seed_password, client="10.0.0.9")
+    assert locked.outcome is LoginOutcome.TOO_MANY and 0 < locked.retry_after_s <= 120
+    assert any(e.get("reason") == "lockout_started" for e in audit.entries())
+    clock.t += 121
+    assert logins.login("vera@example.test", seed_password, client="10.0.0.9").ok
+
+
+def test_the_client_limit_covers_many_accounts(seeded, audit, clock, seed_password):
+    from dino_autofocus.auth import AttemptLimiter, LoginSessions
+
+    logins = LoginSessions(seeded, audit=audit, clock=clock,
+                           limiter=AttemptLimiter(account_limit=10, client_limit=3,
+                                                  window_s=60, lockout_s=60, clock=clock))
+    for who in ("a@example.test", "b@example.test", "c@example.test"):
+        logins.login(who, "guess-guess-1", client="10.0.0.7")
+    assert logins.login("otto@example.test", seed_password, client="10.0.0.7").outcome \
+        is LoginOutcome.TOO_MANY
+    assert logins.login("otto@example.test", seed_password, client="10.0.0.8").ok
+
+
+def test_pending_or_disabled_with_the_right_password_is_no_guess(seeded, audit, clock,
+                                                                seed_password):
+    from dino_autofocus.auth import AttemptLimiter, LoginSessions
+
+    logins = LoginSessions(seeded, audit=audit, clock=clock,
+                           limiter=AttemptLimiter(account_limit=2, clock=clock))
+    for _ in range(4):
+        assert logins.login("pat@example.test", seed_password).outcome is LoginOutcome.PENDING
+
+
+def test_unlock_checks_the_password_outside_the_lock(logins, login, seeded, seed_password):
+    import threading as th
+
+    other = login("otto@example.test")
+    token = login("vera@example.test")
+    logins.lock(token)
+    entered, release = th.Event(), th.Event()
+    real = seeded.authenticate
+
+    def slow(email, password):
+        entered.set()
+        release.wait(5)
+        return real(email, password)
+
+    seeded.authenticate = slow
+    t = th.Thread(target=lambda: logins.unlock(token, seed_password))
+    t.start()
+    try:
+        assert entered.wait(5)
+        done = th.Event()
+        th.Thread(target=lambda: (logins.get(other), done.set())).start()
+        assert done.wait(1.0)  # another request is not stuck behind the slow check
+    finally:
+        release.set()
+        t.join(5)
+        seeded.authenticate = real
+    assert logins.get(token).locked is False
+
+
+def test_unlock_of_a_session_that_ended_during_the_check_does_nothing(logins, login, seeded,
+                                                                     seed_password):
+    token = login("vera@example.test")
+    logins.lock(token)
+    real = seeded.authenticate
+
+    def logout_meanwhile(email, password):
+        logins.logout(token)
+        return real(email, password)
+
+    seeded.authenticate = logout_meanwhile
+    try:
+        assert logins.unlock(token, seed_password) is None
+    finally:
+        seeded.authenticate = real
+
+
+
+def test_the_limiter_drops_stale_keys_and_caps_their_length():
+    from dino_autofocus.auth import throttle
+
+    t = [0.0]
+    lim = throttle.AttemptLimiter(window_s=10, lockout_s=10, clock=lambda: t[0])
+    assert lim.keys("x" * 1000, None) == [("account", "x" * throttle.MAX_KEY)]
+    for i in range(throttle.PRUNE_AT + 1):
+        lim.failed([("account", f"guess{i}@example.test")])
+    t[0] = 100.0  # every count is stale now
+    lim.failed([("account", "last@example.test")])
+    assert len(lim._counts) == 1

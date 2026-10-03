@@ -257,6 +257,23 @@ describe("clientAuthApi over the shared client", () => {
     const login = fake.calls.find((c) => c.path === "/api/auth/login")!;
     expect(login.init?.method).toBe("POST");
   });
+
+  it("passes the attempt limit's 429 and its message on", async () => {
+    const { fakeTransport } = await import("../../test/fakes");
+    const { Client } = await import("../client");
+    const { clientAuthApi } = await import("./api");
+    const tooMany = () => ({
+      status: 429,
+      body: { detail: { code: "too_many_attempts", message: "Too many wrong passwords. Try again in 15 minutes." } },
+    });
+    const fake = fakeTransport({ "/api/auth/login": tooMany, "/api/auth/unlock": tooMany });
+    const api = clientAuthApi(new Client(fake.transport, "127.0.0.1"));
+    const err = await api.login({ email: "vera@example.test", password: "x" }).catch((e) => e);
+    expect(err).toMatchObject({ status: 429 });
+    expect(err.message).toContain("Try again in 15 minutes");
+    const unlock = await api.unlock({ password: "x" }).catch((e) => e);
+    expect(unlock).toMatchObject({ status: 429 });
+  });
 });
 
 describe("LoginGate with T-009c lock state", () => {

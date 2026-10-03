@@ -89,6 +89,8 @@ class LoginOutcome(StrEnum):
     BAD_CREDENTIALS = "bad_credentials"
     PENDING = "pending_approval"
     DISABLED = "disabled"
+    #: refused before the password was checked: too many wrong ones (auth/throttle.py)
+    TOO_MANY = "too_many_attempts"
 
 
 @dataclass(frozen=True)

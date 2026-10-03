@@ -30,6 +30,8 @@ class AuditKind(StrEnum):
     LOCKED = "locked"
     UNLOCKED = "unlocked"
     ACCOUNT_CREATED = "account_created"
+    #: a sign-up for an email that already has an account; answered like a new one (S1)
+    SIGNUP_EXISTING = "signup_existing"
     ACCOUNT_APPROVED = "account_approved"
     ACCOUNT_ROLE_CHANGED = "account_role_changed"
     ACCOUNT_DISABLED = "account_disabled"
