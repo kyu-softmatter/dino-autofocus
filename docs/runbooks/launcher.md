@@ -55,6 +55,21 @@ or set `DINO_AF_REMOTE_VIEW=1`. The server then binds `0.0.0.0`; other PCs can r
 watch events, and commands are still accepted only from this PC (T-009). Allow the port in
 Windows Firewall only for the network you need.
 
+Remote view is not in use for now (user decision 2026-10-02: no remote access or remote
+sign-up; VPN or TLS is to be decided if it is opened later). Over plain HTTP, passwords and the
+session cookie cross the LAN in clear text.
+
+## Never forward or proxy the port
+
+The server treats requests from loopback as the microscope PC itself: stops and shutdown
+without a login, first-run admin setup, commands. A port forwarder or reverse proxy on this PC
+(`ssh -L` / `-R`, ngrok, cloudflared, Tailscale serve, RDP or VS Code port forwarding, a local
+nginx) makes remote traffic arrive from `127.0.0.1` with those rights. Do not run any of them
+for the server port. Requests that carry a forwarding header (`X-Forwarded-For`, `Forwarded`,
+`Via`, ...) are refused with 403 `proxied` (`server/edge.py`), but a plain TCP forwarder adds
+none, so the header check is not a substitute for this rule. The Vite dev proxy
+(`npm run dev`) adds no such header and is fine.
+
 ## Stop
 
 Ctrl + click the exe, or run `"DINO Autofocus.exe" --stop`:

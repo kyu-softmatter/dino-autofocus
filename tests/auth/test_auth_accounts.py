@@ -19,6 +19,7 @@ from dino_autofocus.auth import (
     SetupRequired,
     SetupState,
     normalize_email,
+    passwords,
 )
 from dino_autofocus.auth import config as auth_config
 
@@ -233,3 +234,22 @@ def test_no_real_email_in_auth_code_or_tests():
     assert files
     found = {m.group(0) for f in files for m in _EMAIL.finditer(f.read_text(encoding="utf-8"))}
     assert found and all(e.lower().endswith("example.test") for e in found), found
+
+
+def test_older_cheaper_hash_is_upgraded_at_the_next_login(seeded, seed_password, monkeypatch):
+    """A p=1 hash answers faster than an unknown email's dummy check (audit S11): it must not
+    stay on file once the password is known."""
+    current_p = passwords.SCRYPT_P
+    monkeypatch.setattr(passwords, "SCRYPT_P", 1)
+    seeded.reset_password("admin@example.test", "vera@example.test", "old-pass-word-1")
+    old = seeded.get("vera@example.test").password_hash
+    monkeypatch.setattr(passwords, "SCRYPT_P", current_p)
+    assert passwords.needs_rehash(old)
+    assert not seeded.authenticate("vera@example.test", "wrong-pass-word").ok
+    assert seeded.get("vera@example.test").password_hash == old  # a wrong password changes nothing
+    assert seeded.authenticate("vera@example.test", "old-pass-word-1").ok
+    new = seeded.get("vera@example.test").password_hash
+    assert new != old and not passwords.needs_rehash(new)
+    reloaded = AccountStore(seeded.path, audit=None)
+    assert reloaded.get("vera@example.test").password_hash == new
+    assert reloaded.authenticate("vera@example.test", "old-pass-word-1").ok

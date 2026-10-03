@@ -270,3 +270,7 @@ fp16 기본값 유지 여부의 근거가 된다.
 - 하드웨어 스크립트와 동시 실행.
 - fp32 특징과 fp16 특징을 섞어 학습.
 - 헤드 출력으로 Z 한계, 이동 허가, 게이트를 정하는 일.
+- 다른 곳에서 받은 데이터셋 shard (`shard_*.npz`) 를 학습·평가 스크립트로 여는 일. `scene_params` 가 객체
+  배열이라 `train_head.py`, `eval_synthetic.py` 등은 `np.load(..., allow_pickle=True)` 로 읽고, 피클은 열 때
+  코드를 실행할 수 있다. 이 PC 에서 `make_dataset.py` / `farm_p5.py` 로 만든 shard 만 쓴다 (공개 전 점검 S10).
+  엔진과 서버 쪽은 `allow_pickle=False` 이고, 헤드는 `.npz` 만 읽는다.

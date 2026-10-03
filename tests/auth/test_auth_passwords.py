@@ -45,5 +45,12 @@ def test_short_password_is_refused():
 
 @pytest.mark.real_scrypt
 def test_production_cost():
-    assert (passwords.SCRYPT_N, passwords.SCRYPT_R, passwords.SCRYPT_P) == (2**14, 8, 1)
+    assert (passwords.SCRYPT_N, passwords.SCRYPT_R, passwords.SCRYPT_P) == (2**14, 8, 5)
     assert hash_password("correct horse").split("$")[1] == str(2**14)
+
+
+def test_needs_rehash_only_for_other_parameters():
+    assert not passwords.needs_rehash(hash_password("correct horse"))
+    n, r = passwords.SCRYPT_N, passwords.SCRYPT_R
+    assert passwords.needs_rehash(f"scrypt${n}${r}$1$AA==$AA==")
+    assert passwords.needs_rehash("not a hash")

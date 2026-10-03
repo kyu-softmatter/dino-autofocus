@@ -15,7 +15,7 @@
   "startup_preset": "System/Startup",
   "t_loaded": 1790959778.3545728,
   "notes": {
-   "mm_dir": "C:\\Users\\Takatori lab\\AppData\\Local\\pymmcore-plus\\pymmcore-plus\\mm\\Micro-Manager_2.0.3_20260806",
+   "mm_dir": "%USERPROFILE%\\AppData\\Local\\pymmcore-plus\\pymmcore-plus\\mm\\Micro-Manager_2.0.3_20260806",
    "loaded": "a private copy of the checked bytes (T-036b)",
    "load_settings": "post-init Property: Core.Camera=Kinetix_red; post-init Property: Core.Shutter=LightEngine; post-init Property: Core.AutoShutter=1; ConfigGroup System/Startup: LappMainBranch1.State=1"
   }

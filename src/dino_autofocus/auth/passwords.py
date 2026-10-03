@@ -15,10 +15,13 @@ import secrets
 
 SCHEME = "scrypt"
 
-#: Cost parameters for new hashes: 16 MiB, about 0.4 s per check on the desktop (2026-10-01).
+#: Cost parameters for new hashes (audit S11): OWASP's n=2**14, r=8, p=5, which matches its
+#: n=2**17, p=1 in work but keeps memory at 16 MiB per check (the login limiter bounds how many
+#: run at once, but a burst still runs one per worker thread). About 1 s per check on the desktop
+#: (2026-10-02). Was p=1 until then; such hashes still verify and are upgraded at the next login.
 SCRYPT_N = 2**14
 SCRYPT_R = 8
-SCRYPT_P = 1
+SCRYPT_P = 5
 SALT_BYTES = 16
 HASH_BYTES = 32
 
@@ -60,6 +63,15 @@ def dummy_verify(password: str) -> bool:
     """Spend what a real check costs and return False (for an unknown login email)."""
     _scrypt(password, bytes(SALT_BYTES), SCRYPT_N, SCRYPT_R, SCRYPT_P, HASH_BYTES)
     return False
+
+
+def needs_rehash(stored: str) -> bool:
+    """True when ``stored`` was made with other cost parameters than new hashes get."""
+    try:
+        scheme, n, r, p, _, _ = stored.split("$")
+        return (scheme, int(n), int(r), int(p)) != (SCHEME, SCRYPT_N, SCRYPT_R, SCRYPT_P)
+    except (ValueError, AttributeError):
+        return True
 
 
 def verify_password(password: str, stored: str) -> bool:

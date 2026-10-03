@@ -30,7 +30,13 @@ from typing import Any
 
 from . import config
 from .audit import AuditKind, AuditLog
-from .passwords import dummy_verify, hash_password, verify_password
+from .passwords import (
+    PasswordPolicyError,
+    dummy_verify,
+    hash_password,
+    needs_rehash,
+    verify_password,
+)
 from .roles import DEFAULT_ROLE, AccountStatus, Action, Role, allows
 
 FILE_VERSION = 1
@@ -350,6 +356,20 @@ class AccountStore:
 
     # -- login --------------------------------------------------------------------------------
 
+    def _rehash(self, acc: Account, password: str) -> Account:
+        try:
+            password_hash = hash_password(password)
+        except PasswordPolicyError:
+            return acc  # an older, weaker policy: keep the old hash rather than refuse the login
+        with self._lock:
+            current = self._accounts.get(acc.email)
+            if current is None or current.password_hash != acc.password_hash:
+                return current or acc  # changed or removed meanwhile: leave it
+            acc = replace(current, password_hash=password_hash)
+            self._accounts[acc.email] = acc
+            self._save()
+        return acc
+
     def authenticate(self, email: str, password: str) -> LoginCheck:
         """Check a login. Pending and disabled are reported only after the right password."""
         acc = self.get(email)
@@ -358,6 +378,10 @@ class AccountStore:
             return LoginCheck(LoginOutcome.BAD_CREDENTIALS)
         if not verify_password(password, acc.password_hash):
             return LoginCheck(LoginOutcome.BAD_CREDENTIALS)
+        if needs_rehash(acc.password_hash):
+            # An older, cheaper hash answers faster than an unknown email's dummy check, which
+            # would tell that the account exists; upgrade it now that the password is known.
+            acc = self._rehash(acc, password)
         if acc.status is AccountStatus.PENDING:
             return LoginCheck(LoginOutcome.PENDING, acc)
         if acc.status is AccountStatus.DISABLED:

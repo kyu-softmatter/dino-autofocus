@@ -359,11 +359,11 @@ def test_status_without_credentials_is_not_connected(tmp_path):
 
 
 def test_status_never_shows_the_key(tmp_path):
-    env = {"ANTHROPIC_API_KEY": "sk-ant-secret-123"}
+    env = {"ANTHROPIC_API_KEY": "test-key-not-real-123"}
     ok, why = credentials(env, home=tmp_path)
     assert ok and why == "environment"
     s = connection_status(AssistantConfig(provider="anthropic"), env=env)
-    assert "sk-ant-secret-123" not in json.dumps(s)
+    assert "test-key-not-real-123" not in json.dumps(s)
 
 
 def test_import_loads_neither_anthropic_nor_torch():

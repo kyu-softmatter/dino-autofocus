@@ -63,6 +63,7 @@ from .api import (
     remote_view,
     server_action_why,
 )
+from .edge import EdgeMiddleware
 from .schemas import (
     WS_MODELS,
     ApiError,
@@ -390,6 +391,8 @@ def create_app(
             return why.response()
         return await call_next(request)
 
+    # proxied requests, docs for this PC only, security headers (audit S5, S6, S8)
+    app.add_middleware(EdgeMiddleware)
     # added last, so it runs first, for HTTP and WebSocket alike
     app.add_middleware(TrustedHostMiddleware,
                        allowed_hosts=[*LOOPBACK_HOSTS, *allowed_hosts], www_redirect=False)

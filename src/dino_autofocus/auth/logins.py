@@ -13,7 +13,7 @@ A *login session* is one person logged in from one browser. It is not the experi
   once, and a disabled account's sessions end.
 * Wrong passwords on login and unlock are counted per account and per client
   (``throttle.AttemptLimiter``); past the limit both are refused before the password is checked.
-* The password check (scrypt, about 0.4 s) never runs while this object's lock is held, so one
+* The password check (scrypt, about 1 s) never runs while this object's lock is held, so one
   slow check does not stall every other request.
 """
 

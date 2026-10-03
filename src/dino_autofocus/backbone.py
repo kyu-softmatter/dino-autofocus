@@ -18,6 +18,12 @@ import torch
 #: Commit the results in this repo were produced with.
 DINOV2_COMMIT = "7764ea0f912e53c92e82eb78a2a1631e92725fc8"
 DEFAULT_REPO = Path(os.environ.get("DINOV2_REPO", Path(__file__).parents[3] / "dinov2"))
+#: Backbones that may be loaded: the plain DINOv2 ViTs (Apache-2.0), with or without registers.
+#: The pinned clone also exports Cell-DINO / X-Ray DINO entries under a noncommercial licence;
+#: the name comes from a head file, so a head must not be able to pick those (audit L4).
+ALLOWED_BACKBONES = frozenset(
+    f"dinov2_vit{size}14{reg}" for size in "sblg" for reg in ("", "_reg")
+)
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -79,6 +85,9 @@ class DinoExtractor:
     repo: Path = DEFAULT_REPO
 
     def __post_init__(self) -> None:
+        if self.name not in ALLOWED_BACKBONES:
+            raise ValueError(f"backbone {self.name!r} is not allowed; use one of "
+                             f"{sorted(ALLOWED_BACKBONES)}")
         os.environ.setdefault("XFORMERS_DISABLED", "1")
         commit = repo_commit(self.repo)
         if commit != DINOV2_COMMIT:

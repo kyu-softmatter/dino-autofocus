@@ -36,7 +36,7 @@ from dino_autofocus.records.codeversion import CodeVersion
 
 @pytest.fixture(autouse=True, scope="session")
 def _cheap_scrypt() -> Iterator[None]:
-    """scrypt at the production cost takes ~0.4 s per hash; the bench hashes a few."""
+    """scrypt at the production cost takes ~1 s per hash; the bench hashes a few."""
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(passwords, "SCRYPT_N", 2**10)
         yield

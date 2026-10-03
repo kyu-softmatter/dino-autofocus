@@ -2,7 +2,14 @@ import numpy as np
 import pytest
 import torch
 
-from dino_autofocus.backbone import IMAGENET_MEAN, IMAGENET_STD, robust_unit, to_dino_batch
+from dino_autofocus.backbone import (
+    ALLOWED_BACKBONES,
+    IMAGENET_MEAN,
+    IMAGENET_STD,
+    DinoExtractor,
+    robust_unit,
+    to_dino_batch,
+)
 
 
 def test_robust_unit_maps_median_to_0_and_p995_to_1():
@@ -31,3 +38,11 @@ def test_non_multiple_of_patch_is_refused_unless_resized():
     with pytest.raises(ValueError, match="multiple of 14"):
         to_dino_batch(frames)
     assert to_dino_batch(frames, size=28).shape == (1, 3, 28, 28)
+
+
+def test_only_plain_dinov2_backbones_load(tmp_path):
+    """Refused before the clone is even looked at (audit L4: no noncommercial Cell-DINO)."""
+    assert {"dinov2_vits14", "dinov2_vitb14", "dinov2_vits14_reg"} <= ALLOWED_BACKBONES
+    for name in ("cell_dino_vitl14", "xray_dino_vitl16", "dinov2_vits14_lc", "../evil"):
+        with pytest.raises(ValueError, match="not allowed"):
+            DinoExtractor(name, repo=tmp_path)

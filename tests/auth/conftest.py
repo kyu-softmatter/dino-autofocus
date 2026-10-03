@@ -85,6 +85,6 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def fast_scrypt(request, monkeypatch):
-    """scrypt at the production cost takes ~0.4 s here; tests use a cheaper n."""
+    """scrypt at the production cost takes ~1 s here; tests use a cheaper n."""
     if request.node.get_closest_marker("real_scrypt") is None:
         monkeypatch.setattr(passwords, "SCRYPT_N", 2**10)
