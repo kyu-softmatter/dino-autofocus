@@ -150,6 +150,21 @@ class WsLock(BaseModel):
     locked: bool
 
 
+class FocusDz(BaseModel):
+    """The live -10..+10 gauge's reading (engine/live_dz.py): dz = stage - best focus in depths
+    of field, 0 = in focus. Display only."""
+
+    #: null: nothing readable in view (`note` says why)
+    dz_dof: float | None = None
+    #: the reading's one-sigma spread, DoF; null for the mock's truth
+    sigma_dof: float | None = None
+    #: "mock_truth" (the mock world's own z, not a measurement) or "model" (a DINO head)
+    source: Literal["mock_truth", "model"]
+    note: str = ""
+    #: false when |dz| is within sigma: the side of focus is not known
+    sign_known: bool = False
+
+
 class WsFrame(BaseModel):
     """`/ws/frames`, server -> client. Always sent as a text message immediately followed by
     one binary message holding the JPEG (`jpeg_bytes` long). Pixel values were mapped
@@ -174,6 +189,9 @@ class WsFrame(BaseModel):
     #: it could not be computed
     focus_score: float | None = None
     focus_metric: str | None = None
+    #: the signed gauge reading of this frame (`meta.focus_dz` from the engine); null when the
+    #: engine has none (no head loaded and no mock truth)
+    focus_dz: FocusDz | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 
 

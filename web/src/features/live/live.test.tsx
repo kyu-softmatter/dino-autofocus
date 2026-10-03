@@ -5,10 +5,12 @@ import { Client, ClientProvider } from "../../app/client";
 import { fakeTransport } from "../../test/fakes";
 import {
   ASSUMED_PIXEL_UM,
+  FocusGauge,
   type FocusSample,
   FpsMeter,
   FramePairer,
   frameScale,
+  gaugeY,
   heightOf,
   LiveView,
   pushSample,
@@ -232,7 +234,7 @@ describe("focus panel", () => {
 
   it("adds the piezo z to the stage z and keeps the last minute", () => {
     const s = (t: number, stageZ: number | null, piezoZ: number | null): FocusSample => ({
-      t, camera: "", score: 1, metric: "vollath4", stageZ, piezoZ,
+      t, camera: "", score: 1, metric: "vollath4", stageZ, piezoZ, dz: null,
     });
     expect(heightOf(s(0, 1200, 50.5))).toBe(1250.5);
     expect(heightOf(s(0, 1200, null))).toBe(1200); // no piezo: the stage alone
@@ -268,5 +270,65 @@ describe("focus panel", () => {
     expect(screen.getByTestId("focus-z").textContent).toContain("piezo 50.00 µm");
     expect(screen.getByRole("img", { name: "Z height over time" })).toBeTruthy();
     expect(screen.getByTestId("z-line").getAttribute("d")).toMatch(/^M.* L.* L/);
+  });
+});
+
+describe("Z score gauge", () => {
+  beforeEach(() => {
+    let n = 0;
+    URL.createObjectURL = vi.fn(() => `blob:frame-${++n}`);
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("maps +10 to the top, 0 to the middle and -10 to the bottom, clipping beyond", () => {
+    expect(gaugeY(10)).toBeLessThan(gaugeY(0));
+    expect(gaugeY(0)).toBeCloseTo((gaugeY(10) + gaugeY(-10)) / 2);
+    expect(gaugeY(-10)).toBeGreaterThan(gaugeY(0));
+    expect(gaugeY(250)).toBe(gaugeY(10));
+    expect(gaugeY(-250)).toBe(gaugeY(-10));
+  });
+
+  it("shows the value, marker and sigma bar of a model reading", () => {
+    render(<FocusGauge reading={{ dz_dof: 1.24, sigma_dof: 0.8, source: "model", note: "box: 3/4 tiles", sign_known: true }} />);
+    expect(screen.getByTestId("gauge-value").textContent).toBe("+1.2");
+    expect(screen.getByTestId("gauge-marker")).toBeTruthy();
+    expect(screen.getByTestId("gauge-sigma")).toBeTruthy();
+    expect(screen.getByTestId("gauge-note").textContent).toBe("box: 3/4 tiles");
+    expect(screen.getByText("model")).toBeTruthy();
+    expect(screen.getByText("0 focus")).toBeTruthy();
+  });
+
+  it("says when nothing is loaded and when a value is off scale", () => {
+    const { unmount } = render(<FocusGauge reading={null} />);
+    expect(screen.getByTestId("gauge-value").textContent).toBe("--");
+    expect(screen.queryByTestId("gauge-marker")).toBeNull();
+    expect(screen.getByTestId("gauge-note").textContent).toBe("No DINO head loaded (--head)");
+    unmount();
+    render(<FocusGauge reading={{ dz_dof: -42.5, sigma_dof: null, source: "mock_truth", note: "mock truth, not a measurement", sign_known: true }} />);
+    expect(screen.getByTestId("gauge-value").textContent).toBe("−42.5");
+    expect(screen.getByText(/off scale/)).toBeTruthy();
+    expect(screen.queryByTestId("gauge-sigma")).toBeNull(); // the truth has no sigma
+  });
+
+  it("follows the newest frame that carries a reading, not the laser camera's", () => {
+    window.location.hash = "#/live";
+    const t = fakeTransport({ "/api/patterns": () => ({ status: 200, body: [] }) });
+    render(
+      <ClientProvider client={new Client(t.transport, "127.0.0.1")}>
+        <LiveScreen />
+      </ClientProvider>,
+    );
+    const ws = t.sockets.find((s) => s.path === "/ws/frames")!;
+    const dz = (v: number) => ({ dz_dof: v, sigma_dof: null, source: "mock_truth", note: "mock truth, not a measurement", sign_known: true });
+    act(() => {
+      ws.open();
+      for (const [camera, focus_dz, dt] of [["Kinetix_red", dz(3.04), 0], ["Kinetix_red", dz(-0.46), 0.1], ["Kinetix_blue", null, 0.2]] as const) {
+        ws.send({ ...META, camera, t: META.t + dt, focus_dz, meta: { z_um: 10 } });
+        ws.onmessage?.(new MessageEvent("message", { data: jpeg() }));
+      }
+    });
+    expect(screen.getByRole("img", { name: "Focus gauge, depths of field" })).toBeTruthy();
+    expect(screen.getByTestId("gauge-value").textContent).toBe("−0.5");
+    expect(screen.getByText("mock truth")).toBeTruthy();
   });
 });

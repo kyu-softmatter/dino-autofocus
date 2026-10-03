@@ -336,6 +336,84 @@ body {
   font-size: 0.85rem;
 }
 
+/* the -10..+10 Z score gauge (scripts/live_focus.py Gauge, 9/30 run): its colours */
+.focus-gauge {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.focus-gauge svg {
+  display: block;
+  width: 150px;
+  height: 300px;
+  flex: none;
+}
+
+.focus-gauge-band {
+  fill: #d6f0d6; /* |dz| <= 1 DoF */
+}
+
+.focus-gauge-track {
+  stroke: #e4e3df;
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.focus-gauge-tick {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.focus-gauge-zero {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.focus-gauge-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.focus-gauge-label-zero {
+  fill: var(--ink);
+  font-weight: 700;
+}
+
+.focus-gauge-sigma {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.focus-gauge-marker {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 1;
+}
+
+.focus-gauge-read {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.focus-gauge-read strong {
+  font-family: Consolas, ui-monospace, monospace;
+  font-size: 1.6rem;
+  color: var(--ink);
+}
+
+.focus-gauge-source {
+  align-self: flex-start;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .notice-warn {
   border-color: var(--warn);
   color: var(--warn);

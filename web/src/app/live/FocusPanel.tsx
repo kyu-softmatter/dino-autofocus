@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { type FocusDz, FocusGauge } from "./FocusGauge";
 import type { CamFrame } from "./LiveView";
 
 /** One received frame as the focus panel keeps it. */
@@ -14,6 +15,8 @@ export interface FocusSample {
   stageZ: number | null;
   /** piezo z read at the same moment, um; null with no piezo */
   piezoZ: number | null;
+  /** the signed gauge reading (mock truth or a DINO head), null when the engine has none */
+  dz: FocusDz | null;
 }
 
 /** How much history the Z graph keeps and draws. */
@@ -31,6 +34,7 @@ export function sampleOf(frame: CamFrame): FocusSample {
     metric: frame.meta.focus_metric ?? null,
     stageZ: num(m.z_um),
     piezoZ: num(m.piezo_z_um),
+    dz: frame.meta.focus_dz ?? null,
   };
 }
 
@@ -134,8 +138,9 @@ export function ZGraph({ samples }: { samples: FocusSample[] }) {
 }
 
 /**
- * Beside the live view: each camera's live focus score and the focus height (stage z + piezo z)
- * of the newest frame, with its last minute as a graph. Display only.
+ * Beside the live view: the -10..+10 Z score gauge (the newest frame that has a reading), each
+ * camera's live focus score and the focus height (stage z + piezo z) of the newest frame, with
+ * its last minute as a graph. Display only.
  */
 export function FocusPanel({ samples }: { samples: FocusSample[] }) {
   const latest = new Map<string, FocusSample>();
@@ -146,8 +151,13 @@ export function FocusPanel({ samples }: { samples: FocusSample[] }) {
   const cams = [...latest.keys()].sort();
   const newest = samples.reduce<FocusSample | null>((a, s) => (!a || s.t >= a.t ? s : a), null);
   const metric = newest?.metric ?? null;
+  const withDz = samples.reduce<FocusSample | null>((a, s) => (s.dz && (!a || s.t >= a.t) ? s : a), null);
   return (
     <aside className="focus-panel" aria-label="Focus">
+      <section>
+        <h3>Z score</h3>
+        <FocusGauge reading={withDz?.dz ?? null} empty={newest ? undefined : "No frame yet."} />
+      </section>
       <section>
         <h3>Focus score</h3>
         {cams.length === 0 && <p className="muted">No score yet.</p>}

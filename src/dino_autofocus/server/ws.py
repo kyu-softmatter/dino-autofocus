@@ -50,6 +50,7 @@ from .schemas import (
     WsFrame,
     WsLock,
 )
+from .schemas.common import FocusDz
 
 log = logging.getLogger(__name__)
 
@@ -397,6 +398,10 @@ def encode_frame(
     focus = score(binned, LIVE_FOCUS_METRIC) if min(binned.shape) >= 3 else None
     if focus is not None and not math.isfinite(focus):
         focus = None
+    try:  # the engine's gauge reading, if any (engine/live_dz.py); a bad one is dropped
+        dz = FocusDz.model_validate(meta["focus_dz"]) if meta.get("focus_dz") else None
+    except ValidationError:
+        dz = None
     frame = WsFrame(
         # the runner's frames carry t_read (when popped from the camera), the placeholder t
         seq=seq, t=float(meta.get("t", meta.get("t_read", 0.0)) or 0.0), width=wb, height=hb,
@@ -404,6 +409,6 @@ def encode_frame(
         source_width=w, source_height=h, display_min=lo, display_max=hi,
         jpeg_bytes=len(jpeg), camera=(str(meta["camera"]) if meta.get("camera") else None),
         focus_score=focus, focus_metric=LIVE_FOCUS_METRIC if focus is not None else None,
-        meta=meta,
+        focus_dz=dz, meta=meta,
     )
     return frame, jpeg

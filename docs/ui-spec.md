@@ -523,7 +523,7 @@ API 로 직접 와도 엔진이 막아야 한다.
 | **100x 에서 위로 연장은 사람이 승인** | `no_climb_without_ok` | 피크가 위 끝이면 작업이 멈추고 C9 | 위로 연장하는 버튼은 C9 대화상자 안에만 있다. 양식에서 범위를 직접 올리는 것은 새 실행이고, 그때도 천장과 C11 을 지난다 |
 | **렌즈 회전 뒤 액침액 로딩 대기** | `confirm_oil` | `objective_change` 5단계가 `manual_step` 으로 멈추고 Z, XY, Nosepiece 명령을 보내지 않는다 | C7 단계 카드. 대기 중에는 공통 상태 줄에 `"Waiting: load immersion oil"` 을 띄워 다른 영역에서도 보이게 한다 |
 | **종료 시 소등, 그리고 그 상태를 보여 주기** | 9/30 알려진 문제 4 (DiaLamp 미소등) | 모든 작업의 종료 컨텍스트가 `all_off()` + readback. `lights_off` 는 선점 | 5.2 |
-| **모델 판정은 5개 어휘로만, Z 는 엔코더 값만** | PLAN 6절 3항 | 모델 값은 안전 판단에 들어가지 않는다 | 5.3 |
+| **모델 판정은 5개 어휘로만, Z 는 엔코더 값만** | PLAN 6절 3항 | 모델 값은 안전 판단에 들어가지 않는다. 예외: Live 의 Z score 게이지는 DoF 숫자를 보인다 (사용자 결정 2026-10-02, 표시만) | 5.3 |
 
 ### 5.2 조명 상태 표시
 
@@ -544,8 +544,8 @@ API 로 직접 와도 엔진이 막아야 한다.
 
 | 지금 (live_focus.py) | 새 화면 |
 |---|---|
-| 게이지에 DoF 숫자 (`+1.2`), sigma 막대, −10..+10 눈금 | **판정 배지 하나**: `in_focus`, `step_up`, `step_down`, `no_sample_here`, `unsure`. 공통 컴포넌트 (T-010, `web/src/app/`). 눈금과 숫자는 없다. 배지 옆에 출처 `"model"` 또는 `"classical"` |
-| 메모 `"box: 3/4 tiles, sign unsure, offset +0.5"` | `"read in: box"`, `"3 of 4 tiles readable"` 만. offset 숫자와 sigma 는 보이지 않는다. 기록에는 `grade: "model"` 로 남는다 |
+| 게이지에 DoF 숫자 (`+1.2`), sigma 막대, −10..+10 눈금 | **사용자 결정 (2026-10-02)으로 9/30 게이지를 그대로 둔다**: Live 영역 Focus 패널의 `"Z score"` (`web/src/app/live/FocusGauge.tsx`). −10..+10 DoF 세로 막대, 0 = 초점, +10 위 (`above`), −10 아래 (`below`), ±1 DoF 초록 띠, 마커, sigma 막대, 숫자 (`+1.2`), 메모. 출처 표시는 늘 붙는다: `"mock truth"` (목 세계의 실제 z, 측정 아님) 또는 `"model"` (`--head` 로 읽은 DINO 헤드, 최근 5개 중앙값). 헤드가 없으면 `"No DINO head loaded (--head)"`. 화면 표시일 뿐 어떤 판단에도 들어가지 않는다. 판정 배지 (`in_focus` … `unsure`) 는 작업 결과와 지도에 그대로 쓴다 |
+| 메모 `"box: 3/4 tiles, sign unsure, offset +0.5"` | 게이지 메모는 9/30 형식 (`"box: 3/4 tiles, sign unsure"`). tare offset 은 아직 게이지에 적용하지 않는다. 기록에는 `grade: "model"` 로 남는다 |
 | 타일 테두리 위 `+1.3` | 타일마다 판정 배지의 작은 표시 (아이콘 또는 약어). 읽을 수 없는 타일은 회색 점선 그대로 |
 | tare 결과 `"offset +0.52 DoF"` | `"Tared at this focus (objective <label>)"`. 숫자는 기록에만 |
 | 지도의 방문 필드 색 (\|s\| ≤ 1 초록, ≤ 3 파랑) | 판정으로 색: `in_focus` 초록, 나머지는 한 가지 중립색. "얼마나 먼지" 를 색으로 나타내지 않는다 |
@@ -889,7 +889,7 @@ Z 는 다시 올리지 않는다 (operations-spec 6.3 의 4번). 화면은 다�
 
 1·2절의 라이브 뷰 그대로이고, 표시 규칙은 5.3 을 따른다. 바뀌는 점만:
 
-- 게이지 대신 판정 배지 (5.3). 트레이스 둘은 그대로.
+- 게이지는 9/30 모양 그대로 (5.3, 사용자 결정 2026-10-02). 트레이스 둘은 그대로.
 - 키 바인딩 (2.1) 은 그대로 단축키로 두고, 같은 동작의 버튼을 둔다. 판정과 무관한 키 (`b`, `u`, `t`, `+`, `-`) 는 `map` 영역과 같은 명령이다.
 - 피에조 키 (`f`, `w`, `W`) 는 operations-spec 9.2 에 따라 M5 전까지 **꺼 두고** 이유 `"piezo focus is out of scope until M5"` 를 보여 준다.
 - `"Save frame"` (새).
