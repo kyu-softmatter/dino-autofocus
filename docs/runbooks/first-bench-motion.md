@@ -6,7 +6,7 @@ skip one because the code would catch it.
 
 Until the commit that sets `BENCH_MOTION = "UNLOCKED"` in `engine/backends/mm_real.py` is on main, every
 `mm-real` move is refused with "bench motion locked until clearance guards land (T-027, T-011)". Only
-step 1 can be done then. This lock is T-036, `docs/tasks/T-036-mm-real-motion-lock.md`.
+step 1 can be done then. This lock is T-036 (card in the private internal notes, `dino-autofocus-internal/tasks/T-036-mm-real-motion-lock.md`).
 
 Values marked *provisional* are "unmeasured provisional" in the code and the records. None of them has
 been measured on this stand yet.

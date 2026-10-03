@@ -175,9 +175,11 @@
 
 - **동결 해제** (사용자, 2026-10-02, 현미경 PC 결과 반영 뒤). 새 작업을 다시 배정할 수 있다.
 - (해제 전) **새 작업 배정은 멈췄다** (사용자, 2026-10-02). 이미 커밋했거나 검토 중인 작업만 검토, 병합, 푸시까지
-  마무리한다. 새로 찾은 일은 `docs/tasks/BACKLOG.md` 에 항목으로만 적는다.
+  마무리한다. 새로 찾은 일은 내부 노트 (공개 저장소 밖, `dino-autofocus-internal/tasks/BACKLOG.md`) 에 항목으로만 적는다.
 - 이후 개발은 **토큰을 덜 쓰는 방식(플랫폼)으로 옮긴다** (사용자). 넘겨줄 목록은 BACKLOG 의 인계 절,
-  확인할 것은 [microscope-pc-checklist.md](microscope-pc-checklist.md), 세션 규칙은 [sessions.md](sessions.md).
+  확인할 것은 [microscope-pc-checklist.md](microscope-pc-checklist.md), 세션 규칙은 내부 노트의 `sessions.md`.
+- 과제 카드 (`T-NNN`), BACKLOG, 세션 규칙은 2026-10-02 에 공개 트리 밖의 비공개 저장소 `dino-autofocus-internal` 로 옮겼다
+  (사용자, 공개 전 점검 D1). 이 문서와 코드의 `T-NNN` 표기는 그 카드를 가리킨다.
 - 실행 세션과 검토보조, 업무분배보조는 모두 보관했다. 남은 세션은 총괄, 매니저, 검토다.
 
 ### 마일스톤 진행
@@ -562,7 +564,7 @@ D1 을 웹으로 정한 이유: v0.1 에서는 현미경 화면만 범위여서 
 - `engine/gates.py` 와 `engine/sample.py` 는 WP-A 가 골격을 만들고, 이후 내용은 G 와 H 가
   나눠 맡는다. 동시에 같은 파일을 배정하지 않는다.
 - 공유 파일: `pyproject.toml`, `uv.lock` 은 매니저를 통해 한 세션만 고친다.
-  `docs/PLAN.md`, `docs/sessions.md` 는 총괄만, `docs/tasks/` 는 매니저만 쓴다.
+  `docs/PLAN.md` 는 총괄만 쓴다. 세션 규칙과 과제 카드는 내부 노트 (`dino-autofocus-internal`) 에 있다.
   `scripts/*` 는 과제에 명시된 경우만 고친다.
 
 ## 10. 미해결 사항
