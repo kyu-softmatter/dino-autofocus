@@ -5,10 +5,11 @@ position-write call site becomes a failing test instead of a diff somebody has t
 Lock values at the time of writing, with where they live:
 
 - ``engine/backends/mm_real.py:88``  ``BENCH_MOTION = "LOCKED"`` (T-036; only the user flips it)
-- ``engine/guards.py:84``            ``BENCH_APPROACH = "MEASURED"`` (partial unlock, user 2026-10-02)
+- ``engine/guards.py:84``            ``BENCH_APPROACH = "MEASURED"``
+  (the partial unlock of 2026-10-02, by the user)
 - ``engine/guards.py:61-62``         ``SAMPLE_Z_WINDOW_UM = (2800, 3200)``, retract 0, return 2800
-- ``engine/guards.py:68``            ``FREE_WD_UM`` -> ``approach_ceiling_um``: 4x, 10x, 20x may climb
-  to 3200 um; 40x-WI, 60x-Oil, 100x-Oil, an unknown or unreadable lens stop at 2800 um
+- ``engine/guards.py:68``            ``FREE_WD_UM`` -> ``approach_ceiling_um``: 4x, 10x and 20x may
+  climb to 3200 um; 40x-WI, 60x-Oil, 100x-Oil, an unknown or unreadable lens stop at 2800 um
 
 The behaviour behind each fact is tested beside its code (``test_backends_mm_real_lock.py``,
 ``test_operations_bench_approach.py``, ``test_tweezers.py``, ``e2e/test_e2e_safety.py``); this
@@ -93,7 +94,7 @@ def test_is_bench_fails_safe(info, bench):
 
 
 def test_the_simulated_kinds_are_the_four_known_ones():
-    assert SIMULATED_KINDS == {"mock", "replay", "mm-demo", "fake"}
+    assert {"mock", "replay", "mm-demo", "fake"} == SIMULATED_KINDS
 
 
 # -- the device paths that must refuse today -------------------------------------------------
@@ -138,11 +139,17 @@ def test_piezo_axis_refuses_anything_but_a_simulated_piezo():
 
 
 def test_the_live_stream_is_for_the_mock_only():
-    for info in (SimpleNamespace(kind="mm-real", bench=True), SimpleNamespace(kind="mm-demo", bench=False),
-                 SimpleNamespace(kind="replay", bench=False), SimpleNamespace(kind="mock", bench=True)):
+    refused = (
+        SimpleNamespace(kind="mm-real", bench=True),
+        SimpleNamespace(kind="mm-demo", bench=False),
+        SimpleNamespace(kind="replay", bench=False),
+        SimpleNamespace(kind="mock", bench=True),
+    )
+    for info in refused:
         with pytest.raises(ValueError):
             BackendStream.for_backend(SimpleNamespace(info=lambda info=info: info))
-    stream = BackendStream.for_backend(SimpleNamespace(info=lambda: SimpleNamespace(kind="mock", bench=False)))
+    mock = SimpleNamespace(info=lambda: SimpleNamespace(kind="mock", bench=False))
+    stream = BackendStream.for_backend(mock)
     assert isinstance(stream, BackendStream)
 
 
@@ -162,7 +169,8 @@ def _call_sites(folder: Path) -> dict[str, set[str]]:
 
 BENCH_BUCKET = {"src/dino_autofocus/engine/backends/mm_real.py":
                 {"setPosition", "setXYPosition", "enableContinuousFocus"}}
-DEMO_BUCKET = {"src/dino_autofocus/engine/backends/mm_demo_core.py": {"setPosition", "setXYPosition"}}
+DEMO_BUCKET = {"src/dino_autofocus/engine/backends/mm_demo_core.py":
+               {"setPosition", "setXYPosition"}}
 SCRIPTS_BUCKET = {  # legacy, allowed until R-05; a new site, or a site surviving R-05, fails here
     "scripts/edge_track.py": {"setRelativeXYPosition"},
     "scripts/find_particle_z.py": {"setXYPosition"},
