@@ -3793,6 +3793,12 @@ export interface components {
             focus_metric: string | null;
             /** @default null */
             focus_dz: components["schemas"]["FocusDz"] | null;
+            /**
+             * Time Base
+             * @default software
+             * @constant
+             */
+            time_base: "software";
             /** Meta */
             meta?: {
                 [key: string]: unknown;

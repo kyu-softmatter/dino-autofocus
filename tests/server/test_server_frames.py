@@ -118,6 +118,14 @@ class TwoCameraEngine(FakeFrameEngine):
         return dict(self.frames)
 
 
+def test_encode_frame_declares_a_software_time_base():
+    """P-01: the frame says its time came from the host clock, so two cameras' frames are
+    paired by arrival and a merged view is display only (no timing physics from it)."""
+    frame, _ = encode_frame(np.zeros((8, 8), np.uint16), {"t": 1.0, "camera": "Kinetix_blue"}, 1)
+    assert frame.time_base == "software"
+    assert json.loads(frame.model_dump_json())["time_base"] == "software"
+
+
 def test_encode_frame_names_the_camera():
     frame, _ = encode_frame(np.zeros((8, 8), np.uint16), {"camera": "Kinetix_blue"}, 1)
     assert frame.camera == "Kinetix_blue"
