@@ -44,3 +44,24 @@ mock and the bench.
   (side by side, merged, one at a time) in the same colours, markers where each target is at
   the slider's time (piezo a square, a trap a numbered circle), a 10 µm scale bar. The scale is
   the frame's `meta.pixel_um` × binning; a frame without it uses 0.1 µm/px and says "assumed".
+
+## 4. Running a pattern (`pattern_run`, stage 4)
+
+- `start("pattern_run", {pattern_id, repeats?: 1..100, rate_hz?: 1..50 (20), return_to_start?:
+  true})`. Rule 12 motion class (control and an open session); gate row: the camera.
+- Preflight, before anything moves: the pattern exists; a piezo track needs a piezo that may
+  move (`guards.PiezoAxis`: only a simulated one; the stand's piezo stays read only until M5)
+  and must stay inside its travel from where it is now; a trap track needs tweezers with that
+  trap (`guards.TrapAxis`: real ones refused while the bench-motion lock is on); at most 2 h.
+- Every tick each track's position at that time is sent (piezo: start + offset; traps: field
+  position), read back, without a motion event per move. Progress every 0.5 s carries `t_s`,
+  `elapsed_s`, `of_s` and every target's position; the summary carries the pattern's sha256,
+  move counts and the largest readback error. At the end the piezo returns to its start
+  (`return_to_start`); an abort stops at once with no return. No ramp yet: the first tick
+  jumps to the first point and each repeat jumps back to the start (needs a ramp or step limit
+  before any real piezo, M5).
+- Setup (`server/__main__.py` `simulated_extras`): simulated backends get `MockPiezo` (x, y
+  0..200 µm, z 0..100 µm, starting in the middle); the mock's live frames shift with the piezo.
+  The bench gets no piezo and no tweezers.
+- Screens: "Run on piezo / traps" with repeats and "Abort run" in the designer (saved patterns)
+  and in the live view's pattern overlay; the overlay's time follows the run's progress.

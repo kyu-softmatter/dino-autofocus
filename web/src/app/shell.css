@@ -379,3 +379,15 @@ body {
   background: var(--panel);
   font-weight: 600;
 }
+
+.pattern-run {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin: 8px 0;
+}
+
+.pattern-run input[type="number"] {
+  width: 64px;
+}

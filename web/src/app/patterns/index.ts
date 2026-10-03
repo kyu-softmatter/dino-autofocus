@@ -2,3 +2,4 @@
 export * from "./model";
 export { DEFAULT_SHAPE, fromCsv, generate, type ShapeKind, type ShapeParams, toCsv } from "./shapes";
 export { drawTracks, PatternCanvas, PatternReadout, PatternScrubber, type ToPx } from "./PatternCanvas";
+export { PatternRunControls } from "./PatternRunControls";

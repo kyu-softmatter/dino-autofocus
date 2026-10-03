@@ -6,6 +6,7 @@ import {
   type PatternSummary,
   patternDuration,
   PatternReadout,
+  PatternRunControls,
   PatternScrubber,
   patternTime,
   targetLabel,
@@ -116,6 +117,7 @@ export default function LiveScreen() {
         <>
           <PatternScrubber duration={patternDuration(pattern)} t={t} onTime={setT} loop={pattern.loop} />
           <PatternReadout tracks={pattern.tracks} t={patternTime(pattern, t)} />
+          <PatternRunControls patternId={pattern.id} onTime={setT} />
         </>
       )}
       <LiveView overlay={pattern || trapsShown ? overlay : undefined} />

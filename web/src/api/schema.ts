@@ -2517,6 +2517,40 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /** PiezoPositionOut */
+        PiezoPositionOut: {
+            /** X Um */
+            x_um: number;
+            /** Y Um */
+            y_um: number;
+            /** Z Um */
+            z_um: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * PiezoStateOut
+         * @description `snapshot()["piezo"]` (engine/piezo.py `piezo_state_of`): the piezo patterns may move;
+         *     null on the stand (read only until M5).
+         */
+        PiezoStateOut: {
+            /** Kind */
+            kind: string;
+            /** Travel Um */
+            travel_um?: {
+                [key: string]: number[];
+            };
+            /**
+             * Bench
+             * @default true
+             */
+            bench: boolean;
+            position?: components["schemas"]["PiezoPositionOut"] | null;
+            /** Error */
+            error?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** PlanStep */
         PlanStep: {
             /** Step */
@@ -3154,6 +3188,7 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             tweezers?: components["schemas"]["TweezersState"] | null;
+            piezo?: components["schemas"]["PiezoStateOut"] | null;
             /** Unclean Shutdown */
             unclean_shutdown?: {
                 [key: string]: unknown;

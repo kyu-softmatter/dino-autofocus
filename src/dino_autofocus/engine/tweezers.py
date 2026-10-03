@@ -143,17 +143,32 @@ SPOT_SIGMA_UM = 0.3
 MIN_SIGMA_PX = 3.0
 
 
-def mock_views(tweezers: Tweezers, *, laser_camera: str = "Kinetix_blue"):
+def mock_views(tweezers: Tweezers, *, laser_camera: str = "Kinetix_blue", piezo: Any = None):
     """`BackendStream.decorate` for the mock: the camera frame with a bead held in every trap
     that is on, plus a second camera (`laser_camera`) that sees only the trap laser spots, so
-    the side-by-side and merged views show the traps over the sample."""
+    the side-by-side and merged views show the traps over the sample. With a mock `piezo` the
+    sample picture shifts by the piezo's XY offset from the middle of its travel (the traps,
+    fixed to the optics, do not), so a pattern run is seen moving the sample."""
     dark: dict[tuple[int, ...], np.ndarray] = {}
+
+    def shifted(img: np.ndarray, pixel_um: float) -> np.ndarray:
+        if piezo is None:
+            return img
+        try:
+            pos, travel = piezo.position(), piezo.info().travel_um
+        except Exception:  # noqa: BLE001 - a picture aid only
+            return img
+        dx = (pos.x_um - sum(travel["x"]) / 2) / pixel_um
+        dy = (pos.y_um - sum(travel["y"]) / 2) / pixel_um
+        if abs(dx) < 0.5 and abs(dy) < 0.5:
+            return img
+        return np.roll(img, (int(round(dy)), int(round(dx))), axis=(0, 1))
 
     def decorate(frame: Any) -> list[Any]:
         if frame.pixel_um is None or not frame.pixel_um > 0:
             return [frame]
         traps = tweezers.traps()
-        img = frame.image
+        img = shifted(frame.image, frame.pixel_um)
         # as bright as the brightest part of the sample, so the live view's display range
         # (0.5-99.5 percentile) keeps both visible
         bright = max(float(np.percentile(img[::8, ::8], 99.5)), 50.0)
