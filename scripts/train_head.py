@@ -24,6 +24,8 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from dino_autofocus.focus.head import from_pipelines
+from dino_autofocus.focus.head import save as save_head
 from dino_autofocus.synth.models.preprocess import COND_SCALE
 
 KEYS = ("dz_dof", "valid", "cond", "scene_id", "family")
@@ -130,12 +132,14 @@ def main() -> None:
 
     args.out.mkdir(parents=True, exist_ok=True)
     path = args.out / f"head_{args.data.name}_{tag}.joblib"
-    joblib.dump({"backbone": args.model, "n_layers": args.n_layers, "tile_px": 224,
-                 "uses_signal": chosen == "dino+signal", "dz": dz_head, "err": err_head,
-                 "err_offset": 0.05, "sigma_scale": k, "valid": val_head,
-                 "trained_on": str(args.data), "report": report}, path)
+    head = {"backbone": args.model, "n_layers": args.n_layers, "tile_px": 224,
+            "uses_signal": chosen == "dino+signal", "dz": dz_head, "err": err_head,
+            "err_offset": 0.05, "sigma_scale": k, "valid": val_head,
+            "trained_on": str(args.data), "report": report}
+    joblib.dump(head, path)  # the pipelines, for further training; never shipped
+    npz = save_head(path.with_suffix(".npz"), *from_pipelines(head))  # what FocusScorer loads
     (args.out / f"head_{args.data.name}_{tag}.json").write_text(json.dumps(report, indent=2))
-    print(f"wrote {path}")
+    print(f"wrote {path} and {npz}")
 
 
 if __name__ == "__main__":

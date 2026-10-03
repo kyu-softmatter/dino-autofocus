@@ -116,7 +116,7 @@ uv run python -c "from pathlib import Path; from dino_autofocus.engine.backends.
 > 3200 µm 까지, 40x WI, 60x, 100x 는 2800 µm 까지 올라간다. 동작 잠금(`BENCH_MOTION`)은 그대로다.
 
 > 이 결과에 따른 코드 수정 중 Aura 라인 이름, 카메라 `Port`·`ReadoutRate`, 렌즈 작동 거리 네 개는 반영했다
-> (사용자 승인, 2026-10-02). 나머지는 `docs/tasks/BACKLOG.md` 인계 절의 "2026-10-02 bench results" 항목에 있다.
+> (사용자 승인, 2026-10-02). 나머지는 내부 노트 (공개 저장소 밖, `dino-autofocus-internal/tasks/BACKLOG.md`) 인계 절의 "2026-10-02 bench results" 항목에 있다.
 
 현미경 PC (Takatori_lab) 에서 확인했다. 저장소는 `dbfd023`. 장치 속성 전체는
 [runs/2026-10-02_bench-properties.json](runs/2026-10-02_bench-properties.json), 설정 파일 사본은

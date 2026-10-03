@@ -84,7 +84,7 @@ shows their `why` text. While a session is open, the list stays readable but oth
 `"Open folder"` is not an engine command (it writes no record): `POST /api/sample/{sample_id}/open-folder`
 -> 204, `LocalOnly` (remote: 403 `remote_view`; also 404 `no_folder`, 500 `open_failed`). A remote screen shows
 the path from `SampleDetail.dir` instead of the button. The web side calls it with the shell's `client.post`. The action that opens Explorer is injected into the router (`app.state.open_folder`), and
-tests replace it with a recorder, so tests never open a window (docs/sessions.md). Role for it: any logged-in
+tests replace it with a recorder, so tests never open a window (session rules, internal notes). Role for it: any logged-in
 local user, never remote (G9, approved).
 
 On refusal, the screen shows the reason next to the control in ui-spec 7.0 order (remote, role, control,

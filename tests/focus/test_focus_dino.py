@@ -45,6 +45,6 @@ def test_import_does_not_load_torch():
 
 
 def test_from_head_loads_the_real_scorer_lazily(tmp_path):
-    pytest.importorskip("joblib")  # the ml extra
+    pytest.importorskip("torch")  # the ml extra (live imports the backbone)
     with pytest.raises(FileNotFoundError):
         DinoVerdict.from_head(tmp_path / "missing.joblib")

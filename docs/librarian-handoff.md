@@ -20,7 +20,7 @@
   `ops/*` = engine/operations/*.py, `chk` = docs/microscope-pc-checklist.md, `run930y` = docs/runs/2026-09-30_substrate-scan.yaml,
   `run930m` = docs/runs/2026-09-30_substrate-scan.md, `bp1002` = docs/runs/2026-10-02_bench-properties.json,
   `cfg1` = configs/micromanager/single_cam_red_noDMD_nocom10.cfg, `cfg2` = configs/micromanager/DMD_dualcam_LUNF.cfg,
-  `BL` = docs/tasks/BACKLOG.md. SMA 쪽: `safety` = microscope_agent/envelope/safety.json, `devices.v0` = librarian_agent/kb/staging/devices.v0.json,
+  `BL` = BACKLOG.md (2026-10-02 부터 내부 노트 `dino-autofocus-internal/tasks/BACKLOG.md`). SMA 쪽: `safety` = microscope_agent/envelope/safety.json, `devices.v0` = librarian_agent/kb/staging/devices.v0.json,
   `rulings` = microscope_agent/rulings.jsonl.
 
 ## 2. 질문 카드

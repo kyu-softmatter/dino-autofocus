@@ -8,6 +8,8 @@ outputs/
 
 # synthetic images and other generated arrays (datasets live in data/, renders in outputs/)
 *.npz
+# ...except the shipped focus heads (pickle-free arrays, focus/head.py)
+!models/heads/*.npz
 *.npy
 *.tif
 *.tiff
