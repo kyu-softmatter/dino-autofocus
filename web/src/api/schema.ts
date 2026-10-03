@@ -746,6 +746,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hardware/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Config
+         * @description The devices a Micro-Manager `.cfg` declares, with the hub each hangs under. `path`
+         *     picks one of `available`; without it, the first (the scanned cfg when there is one).
+         */
+        get: operations["config_api_hardware_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/map/{sample_id}": {
         parameters: {
             query?: never;
@@ -1636,6 +1657,64 @@ export interface components {
             args?: {
                 [key: string]: unknown;
             };
+        };
+        /** ConfigChoice */
+        ConfigChoice: {
+            /** Path */
+            path: string;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+        };
+        /** ConfigDevice */
+        ConfigDevice: {
+            /** Label */
+            label: string;
+            /** Library */
+            library: string;
+            /** Adapter */
+            adapter: string;
+            /** Parent */
+            parent?: string | null;
+            /** Link */
+            link?: string | null;
+            /** Port */
+            port?: string | null;
+            /** Roles */
+            roles?: string[];
+            /** State Labels */
+            state_labels?: {
+                [key: string]: string;
+            };
+            /** Preinit */
+            preinit?: {
+                [key: string]: string;
+            };
+            /**
+             * Line
+             * @default 0
+             */
+            line: number;
+        };
+        /** ConfigTreeOut */
+        ConfigTreeOut: {
+            /** Path */
+            path: string | null;
+            /** Sha256 */
+            sha256?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Available */
+            available?: components["schemas"]["ConfigChoice"][];
+            /** Devices */
+            devices?: components["schemas"]["ConfigDevice"][];
+            /** Startup */
+            startup?: string[];
+            /** Warnings */
+            warnings?: string[];
+            /** Error */
+            error?: string | null;
         };
         /** ConfirmedItem */
         ConfirmedItem: {
@@ -5127,6 +5206,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusResultOut"] | null;
+                };
+            };
+        };
+    };
+    config_api_hardware_config_get: {
+        parameters: {
+            query?: {
+                path?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigTreeOut"];
+                };
+            };
+            /** @description path is not one of the listed config files */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
