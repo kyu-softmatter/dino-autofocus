@@ -159,7 +159,10 @@ src/dino_autofocus/          단독 실행용 나머지 (engine, backends, opera
   - `map_tiles` (완료): 뱀 모양 타일 순서, 스캔 사각형, `fit_plane` / `plane_z`, 카메라 보정 기본값 (`scan_4x.py`, `sample_map.py`). 허용 XY 상자는 guards (`XYBox.around`) 라 남음.
   - `map_edge` (완료): `edge_trace.py` 의 검출부 (`find_edge`, 원 맞춤, `hole_fit`); `remove_small_regions` 의 scipy label → numpy run 묶기 (같은 영역).
   - `focus_search` (완료): `focus_100x.py` 의 인자, 중심, coarse·fine·위로 늘리기 구간, 피크 위치, 경고 규칙, `sweep_z` (한계는 인자, guards 의 `FocusAxis.plan` 과 같은 Z). 실제 계획·검사는 guards 에 남음.
-  - `focus_step_rules` (건너뜀): `guards.py` 안에 있고 다른 세션이 고치는 중이라 이번에 손대지 않음.
+  - `focus_step_rules` (완료 2026-10-03, 순수 파일만; 작업계획 D-01): Z 창·후퇴·복귀·읽기 허용·렌즈별 작동 거리·긴 이동
+    문턱·접근 스텝을 모두 **인자로** 받는 규칙 함수(상향 스윕, 읽기 확인, 상승 확인, 접근 단계 열거, 스윕·접근 상한,
+    PFS 꺼짐·범위 밖, 터릿 회전 조건, 긴 XY 이동 전 후퇴 — Q4 의 건식 렌즈 해제 포함, 모델 등급 거부)와 평탄 unittest.
+    `guards.py` 가 이 함수들에 위임하는 것은 별도 카드(다른 세션이 그 파일을 고치는 중일 수 있어 겹치지 않게).
   - D-02 (완료 2026-10-03, 작업계획 `integration-sma-workplan.md`): 평탄 파일의 벤치·튜닝 숫자(스윕 중심 2930, 동초점
     −60, 암전 102, 신호 바닥 50, 노출 20, 스팬 40/2/3/0.2, 판정 문턱 20/0.05/3/1.0/3.0, 포화 0.001, 드롭아웃 0.02,
     이중 피크 0.2, 4x 보정 1.625 와 행렬)를 `src/dino_autofocus/bench_values.py` 로 옮기고 함수 인자로 받게 함;
