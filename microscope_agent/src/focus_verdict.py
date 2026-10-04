@@ -26,6 +26,24 @@ Two mappings:
   no tile with sample signal -> ``no_sample_here``; tiles but none readable, or sigma above
   ``max_sigma_dof`` -> ``unsure``; ``|dz| <= in_focus_dof`` -> ``in_focus``; sign known
   (``|dz| > sigma``) -> ``step_down`` for dz > 0, ``step_up`` for dz < 0; else ``unsure``.
+
+Contract (D-07; ``test_focus_contract.py`` pins it, soft-matter-agents' card for the copy
+cites it):
+
+* Inputs of ``from_sweep``: ``z_um`` -- the encoder readback of each frame, floats, one per
+  frame, in sweep order; ``stats`` -- one ``FrameStats`` per frame (``score``, ``metric``,
+  ``mean``, ``median``, ``p999``, ``max``, ``saturated_fraction``), same order; and every
+  threshold as a keyword argument with no default. Inputs of ``from_reading``: an object
+  with ``score``, ``sigma``, ``n_used``, ``tiles`` and ``sign_known``, the frame's encoder
+  ``z_um`` (or None) and its ``frame_index``, plus both DoF thresholds by keyword.
+* Output: a ``FocusVerdict`` whose ``as_record()`` is JSON-native and has exactly the keys
+  ``RECORD_KEYS``: ``verdict`` (one of ``VERDICTS``), ``source`` (one of ``SOURCES``),
+  ``reason`` (a sentence), ``frame_index`` (an index into ``z_um`` or None), ``z_um`` (the
+  readback at that index or None -- never a model value, never interpolated), ``evidence``
+  (a list of ``{name, value, grade, unit}`` with ``grade`` in ``GRADES``) and ``z_grade``
+  (``"measured"`` when ``z_um`` is set, else None).
+* A verdict can refuse and cannot permit: it carries no limit, no target and no command.
+* Model numbers appear only as evidence graded ``"model"``; ``has_model_numbers`` says so.
 """
 
 from __future__ import annotations
@@ -76,6 +94,14 @@ class Verdict(StrEnum):
     STEP_DOWN = "step_down"
     NO_SAMPLE_HERE = "no_sample_here"
     UNSURE = "unsure"
+
+
+#: The contract's fixed vocabularies (soft-matter-agents plan.md 13.2 branches; this module's
+#: sources and grades) and the exact key set of ``FocusVerdict.as_record()``.
+VERDICTS = tuple(str(v) for v in Verdict)
+SOURCES = ("sweep", "dino")
+GRADES = ("measured", "computed", "model")
+RECORD_KEYS = ("verdict", "source", "reason", "frame_index", "z_um", "evidence", "z_grade")
 
 
 @dataclass
