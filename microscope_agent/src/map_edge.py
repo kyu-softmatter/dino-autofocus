@@ -1,5 +1,5 @@
 """Chamber edge detection and the hole circle fit, pure numpy (the detection half of
-``dino_autofocus.engine.operations.edge_trace``, port of scripts/edge_track.py).
+the engine's ``edge_trace`` operation, a port of the 2026-09-30 edge-tracking script).
 
 Image vectors are (x, y) = (column, row) in full-resolution pixels; ``find_edge`` returns the
 boundary point nearest the field centre and its normal (dark -> bright). Mapping it to the
@@ -9,7 +9,7 @@ file's: nothing here moves anything.
 ``hole_fit`` turns boundary points (stage um) into the sample.json ``hole`` fields with a
 Kasa circle, refitted without outliers (``robust_circle``).
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib +
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib +
 numpy only (``remove_small_regions`` labels regions with its own 4-neighbour run union;
 scipy.ndimage.label gave the same regions). ``edge_trace`` re-exports these names.
 """

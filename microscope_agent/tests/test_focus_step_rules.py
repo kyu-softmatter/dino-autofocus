@@ -1,7 +1,7 @@
 """focus_step_rules.py: the guards' comparisons as pure functions, loaded by path, stdlib only.
 
 Runs with `python -m unittest` from this folder and under pytest. The numbers below are this
-repository's provisional bench values (dino_autofocus.engine.guards); the module holds none."""
+repository's provisional bench values (the engine's guards); the module holds none."""
 
 import importlib.util
 import sys

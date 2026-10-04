@@ -6,15 +6,15 @@ Pure numpy, no hardware. Inputs are mono camera frames (uint16; the Kinetix read
 The metrics come from the scripts that ran on the bench on 2026-09-30 and keep their
 formulas exactly, so values in old scan records stay comparable:
 
-* ``vollath4`` and ``brenner`` -- ``scripts/mm_grab.py``. The frame is median-subtracted
+* ``vollath4`` and ``brenner`` -- the bench grab script (mm_grab). The frame is median-subtracted
   and divided by its mean absolute deviation, so a brighter exposure does not read as
   sharper. Vollath F4 (lag-1 minus lag-2 autocorrelation, both axes) cancels uncorrelated
   noise; Brenner (lag-2 squared differences) rises on dim, noisy frames.
-* ``peak_brightness`` -- ``scripts/focus_100x.py --metric peak``: brightest 4 x 4-binned
+* ``peak_brightness`` -- the 100x focus script's ``--metric peak``: brightest 4 x 4-binned
   spot minus the binned median. For sparse particle fields at 100x, where a whole-frame
   sharpness barely moves.
 * ``tenengrad`` -- Sobel gradient energy, one of the ``RELIABLE`` metrics of the vendored
-  ``dino_autofocus.synth.sim.metrics``, here on the valid interior only and with the same
+  synthetic ``synth.sim.metrics`` module, here on the valid interior only and with the same
   normalisation as the two above.
 
 ``vollath4`` here sums both axes, while ``synth.sim.metrics.vollath4`` uses the x axis
@@ -40,7 +40,7 @@ CEILING_12BIT = 4095
 CEILING_16BIT = 65535
 
 # The saturated-fraction limit, the dropout tolerance and the double-peak prominence are
-# the caller's arguments (dino-autofocus: src/dino_autofocus/bench_values.py).
+# the caller's arguments (dino-autofocus keeps them in its bench_values module).
 PEAK_BIN = 4  # 4 x 4 binning before the peak metric, so one hot pixel cannot win (structure)
 
 Edge = Literal["interior", "top", "bottom"]
@@ -67,7 +67,7 @@ def _normalise(img: np.ndarray) -> np.ndarray:
 
 
 def vollath4(img: np.ndarray) -> float:
-    """Scale-invariant Vollath F4 over both axes (``scripts/mm_grab.py``)."""
+    """Scale-invariant Vollath F4 over both axes (the bench grab script)."""
     a = _normalise(img)
     f = (a[:, :-1] * a[:, 1:]).mean() - (a[:, :-2] * a[:, 2:]).mean()
     g = (a[:-1] * a[1:]).mean() - (a[:-2] * a[2:]).mean()
@@ -75,7 +75,7 @@ def vollath4(img: np.ndarray) -> float:
 
 
 def brenner(img: np.ndarray) -> float:
-    """Scale-invariant Brenner sharpness, lag 2 on both axes (``scripts/mm_grab.py``)."""
+    """Scale-invariant Brenner sharpness, lag 2 on both axes (the bench grab script)."""
     a = _normalise(img)
     return float(((a[:, 2:] - a[:, :-2]) ** 2).mean() + ((a[2:] - a[:-2]) ** 2).mean())
 
@@ -153,7 +153,7 @@ def frame_stats(img: np.ndarray, metric: str = "vollath4",
 def dropout_mask(means: Sequence[float], tolerance: float) -> np.ndarray:
     """True for frames whose mean is within `tolerance` of the sweep's median mean.
 
-    The others are light dropouts (``scripts/scan_4x.py``) and must not pick the peak.
+    The others are light dropouts (the 2026-09-30 4x scan script) and must not pick the peak.
     """
     m = np.asarray(means, dtype=np.float64)
     if m.size == 0:
@@ -174,8 +174,8 @@ def _sorted_curve(z: Sequence[float], s: Sequence[float]) -> tuple[np.ndarray, n
 def parabola_vertex(z: Sequence[float], s: Sequence[float]) -> float:
     """Sub-step peak: the vertex of the parabola through the argmax and its neighbours.
 
-    Same formula as ``synth.sim.metrics.argmax_parabolic`` (used by
-    ``scripts/eval_synthetic.py``), after sorting by z. At either end of the span it returns
+    Same formula as ``synth.sim.metrics.argmax_parabolic`` (used by the synthetic
+    evaluation script), after sorting by z. At either end of the span it returns
     that end's z: the curve says nothing about how far beyond the span the peak is (see
     ``peak_edge``). The vertex is clipped to the two neighbours.
     """
@@ -289,7 +289,7 @@ OIL_WARNING = "check immersion oil"
 
 
 def block_scores(img: np.ndarray, n: int = BLOCKS) -> list[float]:
-    """``vollath4`` of each block of an ``n`` x ``n`` grid, row-major (``scripts/scan_4x.py``).
+    """``vollath4`` of each block of an ``n`` x ``n`` grid, row-major (the 4x scan script).
     Pixels beyond a whole number of blocks on the right and bottom are not used."""
     if img.ndim != 2 or n < 1 or img.shape[0] < 3 * n or img.shape[1] < 3 * n:
         raise ValueError(f"need a 2-D frame of at least {3 * n} px a side for {n} x {n} blocks,"
@@ -301,7 +301,7 @@ def block_scores(img: np.ndarray, n: int = BLOCKS) -> list[float]:
 
 def parabola_peak(z: Sequence[float], s: Sequence[float]) -> float | None:
     """``parabola_vertex``, but None when the maximum sits at either end of the span
-    (``scripts/scan_4x.py parabola_peak``): such a curve has no peak inside it."""
+    (the 4x scan script's ``parabola_peak``): such a curve has no peak inside it."""
     return None if peak_edge(z, s) != "interior" else parabola_vertex(z, s)
 
 

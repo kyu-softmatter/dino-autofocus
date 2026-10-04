@@ -1,7 +1,9 @@
 """`microscope_agent/` already has the shape soft-matter-agents will check when it is copied
 there (docs/integration-sma.md section 9; that repository's contracts/validate.py checks 13,
-16 and 82 at baf6f1e): flat src (or src/devices/<file>), flat tests, stdlib + numpy imports
-only, no relative or dino_autofocus imports, no device importing a sibling."""
+16 and 82 at ``SMA_SHAPE_COMMIT``): flat src (or src/devices/<file>), flat tests, stdlib +
+numpy imports only, no relative or dino_autofocus imports, no device importing a sibling,
+and (D-03) no dino path in any text under microscope_agent/: the files must read the same
+after the copy, where ``scripts/`` and ``docs/`` would mean that repository's folders."""
 
 import ast
 import re
@@ -10,6 +12,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "microscope_agent"
 ALLOWED_THIRD_PARTY = {"numpy"}  # what the soft-matter-agents `mic` environment has
+# The soft-matter-agents commit whose validate.py checks the mirror's shape follows. Re-pin
+# it (and re-read checks 13, 16 and 82) when the drift test below says the checkout moved.
+SMA_SHAPE_COMMIT = "b346c02d5de14e23a3036b92e0245b8b68c0fd6d"
+# Tokens that mean something else once the files sit in soft-matter-agents (D-03): the dino
+# package name and dino's own folders. Prose names the thing ("the engine's guards", "the 4x
+# scan script") instead; the origin header names the commit.
+FORBIDDEN_TOKENS = ("dino_autofocus", "scripts/", "docs/")
 SKIP = {"__pycache__"}
 
 
@@ -107,6 +116,15 @@ def test_flat_files_name_no_dino_constant():
         text = p.read_text(encoding="utf-8")
         hits = [g for g in gone if re.search(rf"^{g}\\s*=", text, re.M)]
         assert not hits, f"{p.name} defines {hits}"
+
+
+def test_no_dino_path_token_under_microscope_agent():
+    hits = []
+    for p in _files(ROOT):
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            hits += [f"{p.relative_to(ROOT).as_posix()}:{i}: {tok}" for tok in FORBIDDEN_TOKENS
+                     if tok in line]
+    assert not hits, hits
 
 
 def test_no_file_shadows_a_stdlib_module():

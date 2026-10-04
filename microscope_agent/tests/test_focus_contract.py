@@ -49,7 +49,7 @@ def _sweep(blurs=(6.0, 3.5, 2.0, 3.5, 6.0)):
 
 
 class Reading:
-    """What ``dino_autofocus.live.FocusReading`` provides, with model numbers."""
+    """What the live module's ``FocusReading`` provides, with model numbers."""
 
     def __init__(self, score, sigma, tiles=(0, 1, 2), n_used=3, sign_known=True):
         self.score, self.sigma, self.n_used = score, sigma, n_used

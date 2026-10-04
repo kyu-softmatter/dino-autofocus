@@ -1,6 +1,6 @@
 """The 100x focus search as steps, pure: what to sweep, not whether a move is allowed.
 
-The search (``dino_autofocus.engine.operations.focus_100x``, port of scripts/focus_100x.py):
+The search (the engine's ``focus_100x`` operation, a port of the 2026-09-30 bench script):
 a coarse sweep around a centre; a peak inside it gets a fine sweep around the coarse peak; a
 peak on the top end is **not** climbed: Z goes back to the low end and the operator is asked
 whether to extend upward, one span higher from the old top, at most ``MAX_EXTENSIONS`` times
@@ -15,7 +15,7 @@ The span helpers return ``(centre_um, half_um, step_um)``, the arguments of
 ``FocusAxis.plan`` and of ``sweep_z``; ``sweep_z`` gives the same Z list as the guards' plan
 for the same floor and ceiling.
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib +
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib +
 numpy only, siblings loaded by path.
 """
 
@@ -44,11 +44,11 @@ def _load(name: str, filename: str):
     return module
 
 
-GRADE_COMPUTED = "computed"  # dino_autofocus.engine.records.GRADE_COMPUTED
-PROVISIONAL = "unmeasured provisional"  # dino_autofocus.engine.backend.PROVISIONAL
+GRADE_COMPUTED = "computed"  # the engine's records.GRADE_COMPUTED
+PROVISIONAL = "unmeasured provisional"  # the engine's backend.PROVISIONAL
 # The bench numbers this search once carried (sweep centre, parfocal offset, dark offset,
-# signal floor, exposure, span sizes) are the caller's: dino-autofocus keeps them in
-# src/dino_autofocus/bench_values.py; soft-matter-agents takes them from an approved plan.
+# signal floor, exposure, span sizes) are the caller's: dino-autofocus keeps them in its
+# bench_values module; soft-matter-agents takes them from an approved plan.
 MAX_EXTENSIONS = 3  # times a top-end peak may be followed upward: a count, not a bench value
 METRICS = ("peak", "vollath")
 REDUCE_EXPOSURE = "reduce exposure"

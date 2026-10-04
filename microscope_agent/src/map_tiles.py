@@ -1,6 +1,6 @@
 """4x tile layout and the focus plane through the tiles, pure (no hardware, no guards).
 
-Tile order is serpentine (rows alternate direction), as on 2026-09-30 (scripts/scan_4x.py).
+Tile order is serpentine (rows alternate direction), as the 2026-09-30 4x scan script did.
 The scan square is centred on the hole fit with half side ``diameter_mm * 500 + margin_um``;
 the allowed XY box around it is the engine guards' business (``XYBox.around``), not this
 file's.
@@ -8,8 +8,8 @@ file's.
 ``fit_plane`` / ``plane_z``: z = a + b (x - x0) + c (y - y0) through the tiles' measured
 focus z; slopes in um per mm. Grade "computed" (from measured tile z; never a model value).
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib +
-numpy only. ``dino_autofocus.engine.operations.scan_4x`` re-exports these names.
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib +
+numpy only. The engine's ``scan_4x`` operation re-exports these names.
 """
 
 from __future__ import annotations
@@ -20,9 +20,9 @@ from typing import Any
 
 import numpy as np
 
-GRADE_COMPUTED = "computed"  # dino_autofocus.engine.records.GRADE_COMPUTED
+GRADE_COMPUTED = "computed"  # the engine's records.GRADE_COMPUTED
 # The bench camera calibration (um per pixel, the stage -> pixel matrix) is the caller's:
-# dino-autofocus keeps the 2026-09-30 4x values in src/dino_autofocus/bench_values.py.
+# dino-autofocus keeps the 2026-09-30 4x values in its bench_values module.
 
 
 def grid(centre: tuple[float, float], half_side_um: float, fov_um: float,

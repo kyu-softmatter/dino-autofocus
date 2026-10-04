@@ -1,6 +1,6 @@
 """The step rules of the focus drive, the XY stage and the PFS as pure functions (D-01).
 
-These are the comparisons dino-autofocus's guards (``dino_autofocus.engine.guards``) make
+These are the comparisons dino-autofocus's engine guards make
 before and after every move, with every limit as an argument and no number of its own:
 the Z window, the retract and return heights, the readback tolerances, the per-lens free
 working distances, long-move thresholds and approach steps all come from the caller. In
@@ -12,7 +12,7 @@ A rule returns ``None`` when the move is allowed and a sentence saying why when 
 nothing here moves anything, reads anything or holds state. Ambiguity refuses: an unknown
 PFS state, an unknown lens and a model-graded number are all refusals, never defaults.
 
-The rules, as the bench runs them (docs/runs/2026-09-30_substrate-scan.md, PLAN section 5):
+The rules, as the bench runs them (the 2026-09-30 substrate-scan run note; PLAN section 5):
 
 - Z targets stay inside the sample window; below it only a park (descend only) may go.
 - A move up is refused unless the caller allows that much ascent; sweeps are planned
@@ -29,7 +29,7 @@ The rules, as the bench runs them (docs/runs/2026-09-30_substrate-scan.md, PLAN 
 - The nosepiece turns only with Z retracted, the PFS off and out of range.
 - A model-graded value drives no motion.
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib only.
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib only.
 """
 
 from __future__ import annotations

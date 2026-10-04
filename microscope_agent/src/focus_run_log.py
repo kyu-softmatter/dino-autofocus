@@ -1,4 +1,4 @@
-"""A focus verdict as one soft-matter-agents run-log event (docs/integration-sma.md P3).
+"""A focus verdict as one soft-matter-agents run-log event (integration-sma.md, P3).
 
 The event follows `contracts/schemas/run_log.schema.json` `$defs/event` there: `t_mono` and
 `time_base` are required, other keys are allowed. It carries no `params` (a verdict is not a

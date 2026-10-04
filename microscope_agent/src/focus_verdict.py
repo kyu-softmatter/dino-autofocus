@@ -2,7 +2,7 @@
 
 A verdict is **for display and for the record only**. It never sets a motion limit, never
 opens a gate and never takes part in a safety decision: those are decided by the engine's
-guards from encoder readbacks and fixed limits (docs/PLAN.md, design rules 2 and 3).
+guards from encoder readbacks and fixed limits (PLAN design rules 2 and 3).
 
 Vocabulary: ``in_focus | step_up | step_down | no_sample_here | unsure``.
 
@@ -21,7 +21,7 @@ Two mappings:
   peak at the top of the span -> ``step_up``; at the bottom -> ``step_down``;
   peak inside -> ``in_focus`` at the real frame nearest the parabola vertex.
 
-``from_reading`` -- one frame's signed DINO reading (``dino_autofocus.live.FocusReading``),
+``from_reading`` -- one frame's signed DINO reading (the live module's ``FocusReading``),
   in DoF units with dz = stage - best focus (positive: the stage is above focus):
   no tile with sample signal -> ``no_sample_here``; tiles but none readable, or sigma above
   ``max_sigma_dof`` -> ``unsure``; ``|dz| <= in_focus_dof`` -> ``in_focus``; sign known
@@ -78,8 +78,8 @@ analyse_sweep = _classical.analyse_sweep
 
 # The thresholds (dynamic range floor in ADU, curve contrast, readable frames, in-focus
 # band and model sigma ceiling in DoF, dropout tolerance, saturated fraction) are the
-# caller's arguments: dino-autofocus keeps its provisional values in
-# src/dino_autofocus/bench_values.py; soft-matter-agents carries them in the plan.
+# caller's arguments: dino-autofocus keeps its provisional values in its bench_values
+# module; soft-matter-agents carries them in the plan.
 
 #: Grade of a number in a verdict record. "measured": read from the hardware (encoder z,
 #: pixel statistics); "computed": deterministic from measured values (a classical metric,
@@ -203,7 +203,7 @@ def from_sweep(z_um: Sequence[float], stats: Sequence[FrameStats], *,
 # -- mapping 2: one signed model reading ----------------------------------------------------
 
 class ReadingLike(Protocol):
-    """What ``dino_autofocus.live.FocusReading`` provides (no import of live here)."""
+    """What the live module's ``FocusReading`` provides (no import of live here)."""
 
     score: float | None
     sigma: float | None
