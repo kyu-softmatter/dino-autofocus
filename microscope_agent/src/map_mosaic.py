@@ -69,8 +69,8 @@ GRADE_COMPUTED = "computed"  # dino_autofocus.engine.records.GRADE_COMPUTED
 BIN = 8  # plot_scan.py
 ORIENTATION = "stage"
 CANDIDATE_SOURCE = "classical_candidate"
-# 2026-09-30 4x calibration (docs/runs/2026-09-30_substrate-scan.yaml); used when a sample has none
-BENCH_M_4X = [[0.61602, 0.00236], [0.00126, -0.61456]]
+# The bench 4x calibration a sample without one falls back to is the caller's
+# (dino-autofocus: src/dino_autofocus/bench_values.py).
 
 
 # ---------------------------------------------------------------- tile orientation
@@ -202,15 +202,18 @@ def build_mosaic(tiles: Sequence[Tile], M: Any, *, objective: str = "4x", bin: i
     return mosaic, meta
 
 
-def calibration_for(sample_json: Path | None, objective: str = "4x") -> tuple[list, str]:
-    """M from the sample's stage_camera_calibration for this objective, else the bench 4x M."""
+def calibration_for(sample_json: Path | None, objective: str = "4x", *,
+                    fallback_m: Sequence[Sequence[float]] | None = None,
+                    fallback_source: str = "caller fallback") -> tuple[list, str]:
+    """M from the sample's stage_camera_calibration for this objective, else the caller's
+    fallback; no fallback means no calibration (an error, never a guess)."""
     if sample_json is not None and sample_json.exists():
         cal = json.loads(sample_json.read_text(encoding="utf-8")).get("stage_camera_calibration")
         if cal and cal.get("M_px_per_um") and cal.get("objective", objective) == objective:
             return cal["M_px_per_um"], "sample stage_camera_calibration"
-    if objective != "4x":
-        raise ValueError(f"no calibration for {objective!r} and no bench default")
-    return BENCH_M_4X, "2026-09-30 bench 4x (docs/runs/2026-09-30_substrate-scan.yaml)"
+    if fallback_m is None:
+        raise ValueError(f"no calibration for {objective!r} in the sample and no fallback given")
+    return [[float(v) for v in r] for r in fallback_m], fallback_source
 
 
 def load_scan_tiles(scan_dir: Path) -> tuple[dict, list[Tile]]:

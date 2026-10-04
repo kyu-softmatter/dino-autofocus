@@ -4,6 +4,7 @@ there (docs/integration-sma.md section 9; that repository's contracts/validate.p
 only, no relative or dino_autofocus imports, no device importing a sibling."""
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -52,6 +53,59 @@ def test_imports_are_stdlib_or_numpy_and_never_relative():
             if level or mod not in allowed:
                 bad.append(f"{p.name}: {'.' * level}{mod}")
     assert not bad, bad
+
+
+# D-02: every bench measurement and tuning default left the flat files for
+# src/dino_autofocus/bench_values.py. What may still be written as a number there is listed
+# per file; anything else fails. Categories: structure (bit depths, bin sizes, a count
+# ceiling, minimum point counts), unit conversions (1000 um/mm, 500 um per mm of diameter),
+# statistics definitions (99.9th percentile, 1.4826 MAD factor, 256 histogram bins),
+# epsilons, and a few detection tuning defaults in the held-back map_* files that OD-29
+# keeps in dino until a soft-matter-agents place exists (they are tuning, not bench facts).
+ALWAYS_OK = {0, 1, -1, 2, 0.5, 100, 255}
+ALLOWED_LITERALS: dict[str, set[float]] = {
+    "focus_classical.py": {4095, 65535, 4, 6, 16, 3, 99.9, 1e-06, 1e-12, 1e-30},
+    "focus_run_log.py": set(),
+    "focus_search.py": {3, 4, 1e-06, 1e-09},  # MAX_EXTENSIONS, rounding digits, epsilons
+    "focus_verdict.py": {1e-12},
+    "map_edge.py": {8.0, 150, 3, 1.4826, 5, 36, 30, 6, 256, 1e-12, 1e-06, 1e-09, 0.001, 4,
+                    0.03, 1000},
+    # loop arc; coverslip and sample-size form defaults (lab values, candidates for cards)
+    "map_geometry.py": {330.0, 170.0, 24.0, 50.0},
+    "map_mosaic.py": {8, 4.0, 16, 1.5, 25.0, 6.0, 0.3, 500, 10.0, 1.4826, 3},
+    "map_tiles.py": {500, 3, 1000},
+}
+
+
+def _number_literals(path: Path) -> set[float]:
+    out: set[float] = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) \
+                and not isinstance(node.value, bool):
+            out.add(node.value)
+    return out
+
+
+def test_no_bench_or_tuning_number_is_written_in_a_flat_file():
+    files = {p.name: p for p in _files(ROOT / "src") if p.suffix == ".py"}
+    assert set(files) == set(ALLOWED_LITERALS), "a new flat file needs its own allow-list row"
+    bad = {name: sorted(_number_literals(p) - ALLOWED_LITERALS[name] - ALWAYS_OK, key=float)
+           for name, p in files.items()}
+    bad = {k: v for k, v in bad.items() if v}
+    assert not bad, f"numbers that must come from the caller (bench_values): {bad}"
+
+
+def test_flat_files_name_no_dino_constant():
+    """The removed names must not creep back under their old spelling."""
+    gone = ("DEFAULT_CENTRE_UM", "PARFOCAL_4X_TO_100X_UM", "DARK_OFFSET_ADU", "SIGNAL_MIN_ADU",
+            "DEFAULT_EXPOSURE_MS", "MIN_DYNAMIC_RANGE_ADU", "MIN_CURVE_CONTRAST",
+            "MIN_SWEEP_FRAMES", "IN_FOCUS_DOF", "MAX_SIGMA_DOF", "MAX_SATURATED_FRACTION",
+            "DROPOUT_TOLERANCE", "DOUBLE_PEAK_PROMINENCE", "DEFAULT_UM_PER_PX",
+            "DEFAULT_M_PX_PER_UM", "BENCH_M_4X")
+    for p in _files(ROOT / "src"):
+        text = p.read_text(encoding="utf-8")
+        hits = [g for g in gone if re.search(rf"^{g}\\s*=", text, re.M)]
+        assert not hits, f"{p.name} defines {hits}"
 
 
 def test_no_file_shadows_a_stdlib_module():

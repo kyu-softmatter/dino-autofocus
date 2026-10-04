@@ -24,7 +24,7 @@ Two mappings:
 ``from_reading`` -- one frame's signed DINO reading (``dino_autofocus.live.FocusReading``),
   in DoF units with dz = stage - best focus (positive: the stage is above focus):
   no tile with sample signal -> ``no_sample_here``; tiles but none readable, or sigma above
-  ``MAX_SIGMA_DOF`` -> ``unsure``; ``|dz| <= IN_FOCUS_DOF`` -> ``in_focus``; sign known
+  ``max_sigma_dof`` -> ``unsure``; ``|dz| <= in_focus_dof`` -> ``in_focus``; sign known
   (``|dz| > sigma``) -> ``step_down`` for dz > 0, ``step_up`` for dz < 0; else ``unsure``.
 """
 
@@ -55,27 +55,13 @@ def _load(name: str, filename: str):
 
 
 _classical = _load("_mic_focus_classical", "focus_classical.py")
-DROPOUT_TOLERANCE = _classical.DROPOUT_TOLERANCE
-MAX_SATURATED_FRACTION = _classical.MAX_SATURATED_FRACTION
 FrameStats = _classical.FrameStats
 analyse_sweep = _classical.analyse_sweep
 
-#: Frames whose 99.9th percentile is less than this many ADU above their median hold no
-#: sample: 2026-09-30, a 30 ms 100x Vollath run read only the dark offset (~102 ADU) and
-#: gave no focus. Provisional; set from dark frames on the microscope PC.
-MIN_DYNAMIC_RANGE_ADU = 20.0
-
-#: A curve whose (max - min) / max(|max|, |min|) is below this is flat: no peak to trust.
-MIN_CURVE_CONTRAST = 0.05
-
-#: Fewer readable sweep frames than this cannot place a peak.
-MIN_SWEEP_FRAMES = 3
-
-#: |dz| at or under this many DoF reads as in focus (the live view's green band).
-IN_FOCUS_DOF = 1.0
-
-#: A model reading with a larger sigma (DoF) is ``unsure``. Provisional.
-MAX_SIGMA_DOF = 3.0
+# The thresholds (dynamic range floor in ADU, curve contrast, readable frames, in-focus
+# band and model sigma ceiling in DoF, dropout tolerance, saturated fraction) are the
+# caller's arguments: dino-autofocus keeps its provisional values in
+# src/dino_autofocus/bench_values.py; soft-matter-agents carries them in the plan.
 
 #: Grade of a number in a verdict record. "measured": read from the hardware (encoder z,
 #: pixel statistics); "computed": deterministic from measured values (a classical metric,
@@ -128,12 +114,9 @@ def _num(x: float | None) -> float | None:
 # -- mapping 1: classical sweep -------------------------------------------------------------
 
 def from_sweep(z_um: Sequence[float], stats: Sequence[FrameStats], *,
-               min_dynamic_range_adu: float = MIN_DYNAMIC_RANGE_ADU,
-               min_contrast: float = MIN_CURVE_CONTRAST,
-               min_frames: int = MIN_SWEEP_FRAMES,
-               dropout_tolerance: float = DROPOUT_TOLERANCE,
-               max_saturated: float = MAX_SATURATED_FRACTION) -> FocusVerdict:
-    """Verdict from a classical sweep.
+               min_dynamic_range_adu: float, min_contrast: float, min_frames: int,
+               dropout_tolerance: float, max_saturated: float) -> FocusVerdict:
+    """Verdict from a classical sweep. Every threshold is the caller's (no defaults).
 
     `z_um` is the encoder readback of each frame (not the commanded z), `stats` the
     ``classical.frame_stats`` of the same frames, in the same order.
@@ -206,8 +189,7 @@ class ReadingLike(Protocol):
 
 
 def from_reading(reading: ReadingLike, z_um: float | None, frame_index: int | None = None, *,
-                 in_focus_dof: float = IN_FOCUS_DOF,
-                 max_sigma_dof: float = MAX_SIGMA_DOF) -> FocusVerdict:
+                 in_focus_dof: float, max_sigma_dof: float) -> FocusVerdict:
     """Verdict from one frame's signed reading; `z_um` is that frame's encoder readback.
 
     dz (``reading.score``) is in DoF, dz = stage - best focus: dz > 0 means the stage is

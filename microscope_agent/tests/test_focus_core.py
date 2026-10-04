@@ -36,30 +36,36 @@ def _frame(sigma_px: float) -> np.ndarray:
     return (200 + 3000 * spot * (2.0 / sigma_px) ** 2).astype(np.uint16)
 
 
+# This repository's provisional thresholds (dino-autofocus bench_values); the flat modules
+# take them as arguments and hold no numbers of their own.
+RULES = {"min_dynamic_range_adu": 20.0, "min_contrast": 0.05, "min_frames": 3,
+         "dropout_tolerance": 0.02, "max_saturated": 0.001}
+
+
 class FocusCore(unittest.TestCase):
     def test_sweep_through_focus_is_in_focus_at_a_real_frame(self):
         z = [100.0, 102.0, 104.0, 106.0, 108.0]
         frames = [_frame(s) for s in (6.0, 3.5, 2.0, 3.5, 6.0)]
         stats = [classical.frame_stats(f, "vollath4") for f in frames]
-        v = verdict.from_sweep(z, stats)
+        v = verdict.from_sweep(z, stats, **RULES)
         self.assertEqual(v.verdict, verdict.Verdict.IN_FOCUS)
         self.assertIn(v.z_um, z)  # an encoder z of a frame, never an interpolated one
 
     def test_dark_sweep_has_no_sample(self):
         dark = [np.full((64, 64), 100, np.uint16) for _ in range(4)]
         stats = [classical.frame_stats(f, "vollath4") for f in dark]
-        v = verdict.from_sweep([0.0, 1.0, 2.0, 3.0], stats)
+        v = verdict.from_sweep([0.0, 1.0, 2.0, 3.0], stats, **RULES)
         self.assertEqual(v.verdict, verdict.Verdict.NO_SAMPLE_HERE)
 
     def test_double_peak_without_scipy(self):
         z = np.arange(0.0, 20.0)
         s = np.exp(-((z - 5) ** 2) / 4) + 0.8 * np.exp(-((z - 14) ** 2) / 4)
-        self.assertTrue(classical.double_peak(z, s))
+        self.assertTrue(classical.double_peak(z, s, 0.2))
 
     def test_run_log_event_is_json_and_has_no_e6(self):
         z = [100.0, 102.0, 104.0, 106.0, 108.0]
         stats = [classical.frame_stats(_frame(s), "vollath4") for s in (6.0, 3.5, 2.0, 3.5, 6.0)]
-        ev = run_log.to_run_log_event(verdict.from_sweep(z, stats), 1.5)
+        ev = run_log.to_run_log_event(verdict.from_sweep(z, stats, **RULES), 1.5)
         text = json.dumps(ev, allow_nan=False)
         self.assertNotIn("E6", text)
         self.assertEqual(ev["event"], "focus_verdict")

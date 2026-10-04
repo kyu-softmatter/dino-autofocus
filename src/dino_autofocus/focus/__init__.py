@@ -13,6 +13,11 @@ classical = load("focus_classical", f"{__name__}.classical")
 verdict = load("focus_verdict", f"{__name__}.verdict")
 sma_event = load("focus_run_log", f"{__name__}.sma_event")
 
+from ..bench_values import (  # noqa: E402
+    VERDICT_IN_FOCUS_DOF,
+    VERDICT_MAX_SIGMA_DOF,
+    VERDICT_SWEEP_THRESHOLDS,
+)
 from .classical import (  # noqa: E402
     CEILING_12BIT,
     CEILING_16BIT,
@@ -33,7 +38,22 @@ from .classical import (  # noqa: E402
     vollath4,
 )
 from .dino import DinoVerdict  # noqa: E402
-from .verdict import Evidence, FocusVerdict, Verdict, from_reading, from_sweep  # noqa: E402
+from .verdict import Evidence, FocusVerdict, Verdict  # noqa: E402
+from .verdict import from_reading as _from_reading  # noqa: E402
+from .verdict import from_sweep as _from_sweep  # noqa: E402
+
+
+def from_sweep(z_um, stats, **thresholds):
+    """``focus_verdict.from_sweep`` with this repository's provisional thresholds
+    (``bench_values.VERDICT_SWEEP_THRESHOLDS``) unless the caller names its own (D-02)."""
+    return _from_sweep(z_um, stats, **{**VERDICT_SWEEP_THRESHOLDS, **thresholds})
+
+
+def from_reading(reading, z_um, frame_index=None, *, in_focus_dof=VERDICT_IN_FOCUS_DOF,
+                 max_sigma_dof=VERDICT_MAX_SIGMA_DOF):
+    """``focus_verdict.from_reading`` with this repository's provisional DoF thresholds."""
+    return _from_reading(reading, z_um, frame_index, in_focus_dof=in_focus_dof,
+                         max_sigma_dof=max_sigma_dof)
 
 __all__ = [
     "CEILING_12BIT",

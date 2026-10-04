@@ -7,6 +7,10 @@
 - soft-matter-agents 규칙 (plan.md §10.3): 다른 저장소의 숫자는 librarian 을 거쳐 항목으로만, 최대 E3. 안전 한계는 숫자로 건너가지 않는다
   (사람이 `envelope/safety.json` 에 직접 쓴다). 모델이 낸 숫자는 E6 이고 카드에 들어가지 않는다.
 - 작성일: 2026-10-02. 읽기 전용 조사. 두 저장소 모두 아무것도 바꾸지 않았다.
+- 2026-10-03 (D-02): 아래 표의 `focus/classical.py`, `focus/verdict.py`, `ops/focus_100x.py`, 맵 보정값의 숫자는 이제
+  `src/dino_autofocus/bench_values.py` 한 곳에 있고, 평탄 파일(`microscope_agent/src/*.py`)은 그 값을 **인자로** 받는다.
+  file:line 은 여전히 025080f 기준이며 L-01 에서 다시 고정한다. `tests/test_sma_shape.py` 가 평탄 파일에 그런 숫자가
+  다시 들어오면 실패한다.
 - 기준 커밋:
   - dino-autofocus `025080f86baadb5b76c44ddcf47ca798454a6519` (main HEAD). 작업 트리에 커밋 안 된 변경이 있다
     (`engine/backend.py` 등, Frame 에 camera 라벨 추가; 숫자는 바뀌지 않음). **아래의 file:line 은 모두 HEAD `025080f` 기준**이다

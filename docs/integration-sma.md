@@ -160,6 +160,10 @@ src/dino_autofocus/          단독 실행용 나머지 (engine, backends, opera
   - `map_edge` (완료): `edge_trace.py` 의 검출부 (`find_edge`, 원 맞춤, `hole_fit`); `remove_small_regions` 의 scipy label → numpy run 묶기 (같은 영역).
   - `focus_search` (완료): `focus_100x.py` 의 인자, 중심, coarse·fine·위로 늘리기 구간, 피크 위치, 경고 규칙, `sweep_z` (한계는 인자, guards 의 `FocusAxis.plan` 과 같은 Z). 실제 계획·검사는 guards 에 남음.
   - `focus_step_rules` (건너뜀): `guards.py` 안에 있고 다른 세션이 고치는 중이라 이번에 손대지 않음.
+  - D-02 (완료 2026-10-03, 작업계획 `integration-sma-workplan.md`): 평탄 파일의 벤치·튜닝 숫자(스윕 중심 2930, 동초점
+    −60, 암전 102, 신호 바닥 50, 노출 20, 스팬 40/2/3/0.2, 판정 문턱 20/0.05/3/1.0/3.0, 포화 0.001, 드롭아웃 0.02,
+    이중 피크 0.2, 4x 보정 1.625 와 행렬)를 `src/dino_autofocus/bench_values.py` 로 옮기고 함수 인자로 받게 함;
+    `tests/test_sma_shape.py` 가 파일별 숫자 리터럴 허용 목록 밖의 숫자를 거부한다.
 - S4 `console/` 로 서버·웹·런처 옮기기 (import 약 100 곳, gen:api, 런처 경로).
 - S5 `hw_port.py`: 화면이 엔진을 직접 부르지 않고 포트 하나로 (그 뒤 console 은 `dino_autofocus` 를 import 하지 않는다).
 - S6 합치는 주: 그쪽 승인 순서 (사람: 좌석 → architecture: seats.json, pixi, ALLOWED_PATHS 명세 → manager: validate.py →

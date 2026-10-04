@@ -160,9 +160,12 @@ class Tiles(unittest.TestCase):
         self.assertIsNone(tiles.fit_plane([]))
 
     def test_camera_calibration(self):
-        um, m, src = tiles.camera_calibration(None)
+        bench = {"default_um_per_px": 1.625, "default_m_px_per_um": BENCH_M,
+                 "default_source": "2026-09-30 4x calibration"}
+        um, m, src = tiles.camera_calibration(None, **bench)
         self.assertEqual((um, src), (1.625, "2026-09-30 4x calibration"))
-        self.assertEqual(tiles.camera_calibration({"M_px_per_um": [[1, 0], [0, 1]]})[1],
+        self.assertEqual(m, [[float(v) for v in r] for r in BENCH_M])
+        self.assertEqual(tiles.camera_calibration({"M_px_per_um": [[1, 0], [0, 1]]}, **bench)[1],
                          [[1.0, 0.0], [0.0, 1.0]])
 
 

@@ -46,9 +46,14 @@ from typing import Any, ClassVar
 import numpy as np
 
 from ..._flat import load
+from ...bench_values import (
+    CALIBRATION_4X_SOURCE,
+    DROPOUT_TOLERANCE,
+)
+from ...bench_values import M_PX_PER_UM_4X as DEFAULT_M_PX_PER_UM
+from ...bench_values import UM_PER_PX_4X as DEFAULT_UM_PER_PX
 from ...focus.classical import (
     BLOCKS,
-    DROPOUT_TOLERANCE,
     block_scores,
     dropout_mask,
     parabola_peak,
@@ -76,8 +81,6 @@ from ..sample import SAMPLES_ROOT, Sample, SampleInfo
 
 load("map_tiles", f"{__package__}._map_tiles")
 from ._map_tiles import (  # noqa: E402, F401 - re-exported
-    DEFAULT_M_PX_PER_UM,
-    DEFAULT_UM_PER_PX,
     camera_calibration,
     fit_plane,
     grid,
@@ -159,7 +162,10 @@ def parse(args: dict) -> ScanArgs:
 
 def calibration(info: SampleInfo) -> tuple[float, list[list[float]], str]:
     """(um_per_px, M_px_per_um, source) from the sample's stage_camera_calibration."""
-    return camera_calibration(info.stage_camera_calibration)
+    return camera_calibration(info.stage_camera_calibration,
+                              default_um_per_px=DEFAULT_UM_PER_PX,
+                              default_m_px_per_um=DEFAULT_M_PX_PER_UM,
+                              default_source=CALIBRATION_4X_SOURCE)
 
 
 def plan(info: SampleInfo, sensor: tuple[int, int], args: dict | ScanArgs,

@@ -14,7 +14,9 @@ from typing import Any
 
 import numpy as np
 
-from .verdict import IN_FOCUS_DOF, MAX_SIGMA_DOF, FocusVerdict, ReadingLike, from_reading
+from ..bench_values import VERDICT_IN_FOCUS_DOF as IN_FOCUS_DOF
+from ..bench_values import VERDICT_MAX_SIGMA_DOF as MAX_SIGMA_DOF
+from .verdict import FocusVerdict, ReadingLike, from_reading
 
 Scorer = Callable[..., ReadingLike]
 

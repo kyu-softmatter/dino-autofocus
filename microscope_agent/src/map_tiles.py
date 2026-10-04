@@ -21,9 +21,8 @@ from typing import Any
 import numpy as np
 
 GRADE_COMPUTED = "computed"  # dino_autofocus.engine.records.GRADE_COMPUTED
-DEFAULT_UM_PER_PX = 1.625
-#: 2026-09-30 4x calibration (docs/runs/2026-09-30_substrate-scan.yaml); d_px = M @ d_stage
-DEFAULT_M_PX_PER_UM = ((0.61602, 0.00236), (0.00126, -0.61456))
+# The bench camera calibration (um per pixel, the stage -> pixel matrix) is the caller's:
+# dino-autofocus keeps the 2026-09-30 4x values in src/dino_autofocus/bench_values.py.
 
 
 def grid(centre: tuple[float, float], half_side_um: float, fov_um: float,
@@ -60,13 +59,16 @@ def square_box_um(centre: Sequence[float], half: float) -> list[float]:
     return [centre[0] - half, centre[0] + half, centre[1] - half, centre[1] + half]
 
 
-def camera_calibration(cal: dict | None) -> tuple[float, list[list[float]], str]:
-    """(um_per_px, M_px_per_um, source) from a sample's stage_camera_calibration dict."""
+def camera_calibration(cal: dict | None, *, default_um_per_px: float,
+                       default_m_px_per_um: Sequence[Sequence[float]],
+                       default_source: str) -> tuple[float, list[list[float]], str]:
+    """(um_per_px, M_px_per_um, source) from a sample's stage_camera_calibration dict,
+    else the caller's defaults."""
     cal = cal or {}
-    um_px = float(cal.get("um_per_px", DEFAULT_UM_PER_PX))
+    um_px = float(cal.get("um_per_px", default_um_per_px))
     m = cal.get("M_px_per_um")
     if m is None:
-        return um_px, [list(r) for r in DEFAULT_M_PX_PER_UM], "2026-09-30 4x calibration"
+        return um_px, [[float(v) for v in r] for r in default_m_px_per_um], default_source
     return um_px, [[float(v) for v in r] for r in m], "sample stage_camera_calibration"
 
 

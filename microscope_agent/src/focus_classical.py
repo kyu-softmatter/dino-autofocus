@@ -23,8 +23,8 @@ only: both peak at the same plane, but their values differ.
 Saturation: the metrics use the pixels as read and do **not** mask clipped pixels. A
 clipped core flattens the gradient at the top of a particle, so a saturated frame
 under-reads its own sharpness and can move the peak. Keep ``saturated_fraction`` next to
-the score (``frame_stats`` does) and treat frames above ``MAX_SATURATED_FRACTION`` as not
-readable; ``analyse_sweep`` drops them.
+the score (``frame_stats`` does) and treat frames above the caller's ``max_saturated``
+fraction as not readable; ``analyse_sweep`` drops them.
 """
 
 from __future__ import annotations
@@ -39,16 +39,9 @@ import numpy as np
 CEILING_12BIT = 4095
 CEILING_16BIT = 65535
 
-#: A frame with a larger clipped fraction is not used for focus. Same limit as the tile
-#: picker in ``dino_autofocus.live.select_tiles``.
-MAX_SATURATED_FRACTION = 0.001
-
-#: A sweep frame whose mean is more than this fraction off the sweep's median is a light
-#: dropout, not a focus change (``scripts/scan_4x.py``; on 2026-09-30 one Aura frame at
-#: -23 % read 2.7x sharper than the rest and became the "peak").
-DROPOUT_TOLERANCE = 0.02
-
-PEAK_BIN = 4  # focus_100x.py: 4 x 4 binning, so one hot pixel cannot win
+# The saturated-fraction limit, the dropout tolerance and the double-peak prominence are
+# the caller's arguments (dino-autofocus: src/dino_autofocus/bench_values.py).
+PEAK_BIN = 4  # 4 x 4 binning before the peak metric, so one hot pixel cannot win (structure)
 
 Edge = Literal["interior", "top", "bottom"]
 
@@ -157,7 +150,7 @@ def frame_stats(img: np.ndarray, metric: str = "vollath4",
 
 # -- sweep curves ---------------------------------------------------------------------------
 
-def dropout_mask(means: Sequence[float], tolerance: float = DROPOUT_TOLERANCE) -> np.ndarray:
+def dropout_mask(means: Sequence[float], tolerance: float) -> np.ndarray:
     """True for frames whose mean is within `tolerance` of the sweep's median mean.
 
     The others are light dropouts (``scripts/scan_4x.py``) and must not pick the peak.
@@ -241,9 +234,8 @@ class SweepAnalysis:
 
 def analyse_sweep(z_um: Sequence[float], scores: Sequence[float],
                   means: Sequence[float] | None = None,
-                  saturated: Sequence[float] | None = None,
-                  dropout_tolerance: float = DROPOUT_TOLERANCE,
-                  max_saturated: float = MAX_SATURATED_FRACTION) -> SweepAnalysis:
+                  saturated: Sequence[float] | None = None, *,
+                  dropout_tolerance: float, max_saturated: float) -> SweepAnalysis:
     """Drop light-dropout and saturated frames, then locate the peak of what is left.
 
     `means` (frame means) enables the dropout filter, `saturated` (clipped fractions) the
@@ -292,12 +284,8 @@ def analyse_sweep(z_um: Sequence[float], scores: Sequence[float],
 
 # -- helpers for the scan_4x and focus_100x operations (T-031)
 
-BLOCKS = 6  # scripts/scan_4x.py: 6 x 6 blocks per tile, one focus z per block
+BLOCKS = 6  # 6 x 6 blocks per tile, one focus z per block (structure, not a bench value)
 OIL_WARNING = "check immersion oil"
-#: A local maximum counts as a separate peak when it stands this fraction of the curve's
-#: (max - min) above the dip between it and any higher one. On 2026-09-30 (focus100x
-#: -202226) too little oil gave a false rise near the top of the span beside the real peak.
-DOUBLE_PEAK_PROMINENCE = 0.2
 
 
 def block_scores(img: np.ndarray, n: int = BLOCKS) -> list[float]:
@@ -350,8 +338,7 @@ def _prominence(x: np.ndarray, peak: int) -> float:
     return float(h - max(left, right))
 
 
-def separated_peaks(z: Sequence[float], s: Sequence[float],
-                    prominence: float = DOUBLE_PEAK_PROMINENCE) -> list[float]:
+def separated_peaks(z: Sequence[float], s: Sequence[float], prominence: float) -> list[float]:
     """z of each separate local maximum, highest score first.
 
     A maximum counts when it rises at least ``prominence`` x (max - min) of the curve above
@@ -371,7 +358,6 @@ def separated_peaks(z: Sequence[float], s: Sequence[float],
     return [float(zz[peaks[k]]) for k in order]
 
 
-def double_peak(z: Sequence[float], s: Sequence[float],
-                prominence: float = DOUBLE_PEAK_PROMINENCE) -> bool:
+def double_peak(z: Sequence[float], s: Sequence[float], prominence: float) -> bool:
     """Two or more separate maxima on the curve: warn with ``OIL_WARNING`` (classical)."""
     return len(separated_peaks(z, s, prominence)) >= 2

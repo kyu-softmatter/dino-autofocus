@@ -21,10 +21,10 @@ from typing import Any
 import numpy as np
 
 from .._flat import load
+from ..bench_values import BENCH_M_4X_SOURCE, M_PX_PER_UM_4X
 
 load("map_mosaic", f"{__package__}._map_mosaic")
 from ._map_mosaic import (  # noqa: E402
-    BENCH_M_4X,
     BIN,
     CANDIDATE_SOURCE,
     DEFAULT_CANDIDATES,
@@ -35,7 +35,6 @@ from ._map_mosaic import (  # noqa: E402
     Tile,
     bin_image,
     build_mosaic,
-    calibration_for,
     detect_blobs,
     load_mosaic,
     load_scan_tiles,
@@ -46,7 +45,11 @@ from ._map_mosaic import (  # noqa: E402
     tile_pixel_to_stage,
     um_per_px,
 )
+from ._map_mosaic import calibration_for as _calibration_for  # noqa: E402
 from ._map_mosaic import find_candidates as _find_candidates  # noqa: E402
+
+#: The 2026-09-30 bench 4x M (bench_values), the fallback for a sample with no calibration.
+BENCH_M_4X = [list(r) for r in M_PX_PER_UM_4X]
 
 __all__ = [
     "BENCH_M_4X", "BIN", "CANDIDATE_SOURCE", "DEFAULT_CANDIDATES", "ORIENTATION",
@@ -55,6 +58,14 @@ __all__ = [
     "mosaic_from_scan", "mosaic_to_stage", "save_mosaic", "stage_to_mosaic",
     "stage_to_tile_pixel", "tile_pixel_to_stage", "um_per_px",
 ]
+
+
+def calibration_for(sample_json: Path | None, objective: str = "4x") -> tuple[list, str]:
+    """map_mosaic.calibration_for with this repository's fallback: the bench 4x M for the 4x,
+    an error for any other objective without a sample calibration (as before D-02)."""
+    return _calibration_for(sample_json, objective,
+                            fallback_m=BENCH_M_4X if objective == "4x" else None,
+                            fallback_source=BENCH_M_4X_SOURCE)
 
 
 def find_candidates(tiles: Iterable[Tile], M: Any, p: CandidateParams = DEFAULT_CANDIDATES, *,

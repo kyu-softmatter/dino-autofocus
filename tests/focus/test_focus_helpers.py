@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from dino_autofocus.bench_values import DOUBLE_PEAK_PROMINENCE as P
 from dino_autofocus.focus import classical as C
 
 
@@ -47,30 +48,30 @@ def test_single_peak_is_not_double():
     z = np.arange(2955.0, 3016.0, 2.0)
     rng = np.random.default_rng(2)
     s = gauss(z, 2988.0) + rng.normal(0, 0.05, z.size)  # small noise in the tails
-    assert C.separated_peaks(z, s) == [pytest.approx(2988.0, abs=2.0)]
-    assert not C.double_peak(z, s)
+    assert C.separated_peaks(z, s, P) == [pytest.approx(2988.0, abs=2.0)]
+    assert not C.double_peak(z, s, P)
 
 
 def test_monotonic_and_flat_curves():
     z = np.arange(10.0)
-    assert C.separated_peaks(z, z) == [9.0]  # rising to the top end: one peak, at the end
-    assert not C.double_peak(z, z)
-    assert C.separated_peaks(z, np.ones(10)) == []
-    assert C.separated_peaks([1.0, 2.0], [1.0, 2.0]) == []
+    assert C.separated_peaks(z, z, P) == [9.0]  # rising to the top end: one peak, at the end
+    assert not C.double_peak(z, z, P)
+    assert C.separated_peaks(z, np.ones(10), P) == []
+    assert C.separated_peaks([1.0, 2.0], [1.0, 2.0], P) == []
 
 
 def test_oil_false_rise_at_the_top_end_is_double():
     # focus100x -202226 on 2026-09-30: peak at 2982 and a false rise towards 3005
     z = np.arange(2965.0, 3006.0, 1.0)
     s = gauss(z, 2982.0) + gauss(z, 3010.0, width=5.0, height=6.0)
-    peaks = C.separated_peaks(z, s)
+    peaks = C.separated_peaks(z, s, P)
     assert len(peaks) == 2 and peaks[0] == pytest.approx(2982.0, abs=1.0)
     assert peaks[1] == 3005.0
-    assert C.double_peak(z, s) and C.OIL_WARNING == "check immersion oil"
+    assert C.double_peak(z, s, P) and C.OIL_WARNING == "check immersion oil"
 
 
 def test_two_interior_peaks_and_threshold():
     z = np.arange(0.0, 60.0, 1.0)
     s = gauss(z, 15.0) + gauss(z, 45.0, height=4.0)
-    assert C.double_peak(z, s)
+    assert C.double_peak(z, s, P)
     assert not C.double_peak(z, s, prominence=0.5)  # the smaller one is ~0.4 of the span
