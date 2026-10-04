@@ -20,8 +20,6 @@ from typing import Any
 
 from .events import SampleEvent, fold
 from .layout import (
-    (,
-)
     MOCK_ROOT_SUFFIX,
     append_jsonl,
     now_iso,
