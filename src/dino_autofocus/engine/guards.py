@@ -32,6 +32,9 @@ Rules (docs/runs/2026-09-30_substrate-scan.md, scripts/change_objective.py, focu
 - `operation()` switches Aura and DiaLamp off and reads them back on every exit path.
 - One engine owns the backend at a time (`exclusive`).
 - A model-graded value (`records.Graded`, grade "model") is refused as any guard input.
+- The comparisons behind these refusals are the flat `microscope_agent/src/
+  focus_step_rules.py` (D-01), asked at the moment of comparison (D-01b); this file keeps
+  the limits, the backend calls, the records and the bench locks.
 - `dry_run=True` records the motion and sends nothing.
 
 Method names follow agentic_microscope's FocusAxis as the scripts call it (T-002 appendix),
@@ -51,10 +54,18 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .._flat import load
 from .backend import GUARD_TOKEN, Backend, BackendInfo, PfsState, Readback, is_bench
 from .events import Event, EventSink, fan_out, null_sink
 from .patterns import TRAP_RANGE_UM
-from .records import GRADE_MODEL, Graded, OpRecord
+from .records import Graded, OpRecord
+
+#: The flat rules file, loaded by path as soft-matter-agents will hold it. Every limit is
+#: passed in; a rule answers None (allowed) or the sentence of the refusal. Not delegated:
+#: the approach loop (its next target comes from the readback, `approach_steps` plans from
+#: the nominal) and the XY long-move rule (`needs_retract_before_xy` wants the lens kind of
+#: D-04; today every lens is held to its table row).
+_rules = load("focus_step_rules", "dino_autofocus.engine.focus_step_rules")
 
 PROVISIONAL = "unmeasured provisional"
 
@@ -146,7 +157,8 @@ OBJECTIVE_LIMITS: dict[str, ObjectiveLimits] = {
     "100x-Oil": ObjectiveLimits(156.0, 10.0),  # WD 0.13 mm, field 0.156 mm
 }
 # objective unreadable or not in the table: retract before any XY move, smallest Z step
-STRICTEST = ObjectiveLimits(0.0, min(r.approach_step_um for r in OBJECTIVE_LIMITS.values()))
+STRICTEST = ObjectiveLimits(*_rules.strictest_for_unknown_lens(
+    {k: (r.long_xy_um, r.approach_step_um) for k, r in OBJECTIVE_LIMITS.items()}))
 
 
 UNKNOWN_OBJECTIVE = "unknown objective"  # FocusAxis key when the objective cannot be read
@@ -158,8 +170,7 @@ def approach_ceiling_um(key: str | None, window: tuple[float, float] = SAMPLE_Z_
     image, so above RETURN_Z_UM only a lens whose known free working distance covers the
     whole window above it may go (the 4x, 10x and 20x). Every other lens, an unlisted key and an
     unreadable objective stop at RETURN_Z_UM (2800). Refused, never clamped (T-027b)."""
-    wd = FREE_WD_UM.get(key) if key else None
-    return window[1] if wd is not None and wd >= window[1] - RETURN_Z_UM else RETURN_Z_UM
+    return _rules.approach_ceiling(RETURN_Z_UM, window[1], FREE_WD_UM.get(key) if key else None)
 
 
 def limits_for(label_or_key: str | None) -> tuple[ObjectiveLimits, str]:
@@ -187,8 +198,9 @@ class OperationAborted(RuntimeError):
 
 def plain(v: Any, what: str) -> float:
     if isinstance(v, Graded):
-        if v.grade == GRADE_MODEL:
-            raise GuardError(f"{what}: a model output cannot drive motion ({v.source})")
+        why = _rules.refuse_model_graded(v.grade, what, v.source)
+        if why:
+            raise GuardError(why)
         v = v.value
     f = float(v)
     if not math.isfinite(f):
@@ -305,7 +317,10 @@ class FocusAxis:
     def ceiling_um(self, centre_um: float) -> float:
         if self.key not in FREE_WD_UM:
             raise GuardError(f"no free working distance recorded for {self.key!r}")
-        return min(self.window[1], centre_um + WD_FRACTION * FREE_WD_UM[self.key])
+        top = _rules.sweep_ceiling(centre_um, self.window[1], FREE_WD_UM[self.key], WD_FRACTION)
+        if top is None:  # only a lens released from the rule (Q4) has none; this axis asks for none
+            raise GuardError(f"no sweep ceiling for {self.key!r}")
+        return top
 
     def plan(self, centre_um: float, half_um: float, step_um: float) -> SweepPlan:
         c, h, s = plain(centre_um, "centre"), plain(half_um, "half"), plain(step_um, "step")
@@ -353,26 +368,25 @@ class FocusAxis:
                "tol_um": self.tol, "basis": {"tol_um": PROVISIONAL, **(basis or {})}}
         self.motions.append(rec)
         self.emit(Event("motion", self.op_id, rec))
-        if abs(read - z) > self.tol:
-            raise GuardError(f"ZDrive commanded {z:.3f}, read {read:.3f} um "
-                             f"(tolerance {self.tol} um)")
+        why = _rules.readback_ok(z, read, self.tol, "ZDrive")
+        if why:
+            raise GuardError(why)
         return read
 
     def move_to(self, z_um: float, allow_ascent_um: float = 0.0) -> float:
         z, up = plain(z_um, "z target"), plain(allow_ascent_um, "allowed ascent")
-        if not self.window[0] <= z <= self.window[1]:
-            raise GuardError(f"z {z:.2f} um is outside the window {self.window}")
-        rise = z - self.position_um()
-        if rise > up + self.tol:
-            raise GuardError(f"move up by {rise:.2f} um; only {up:.2f} um allowed")
+        why = (_rules.inside_window(z, self.window)
+               or _rules.may_move_up(self.position_um(), z, up, self.tol))
+        if why:
+            raise GuardError(why)
         return self._send(z, "move_to")
 
     def park_at(self, z_um: float) -> float:
         z = plain(z_um, "park z")
-        if z < RETRACT_Z_UM or z > self.window[1]:
-            raise GuardError(f"park z {z:.2f} um outside {RETRACT_Z_UM}..{self.window[1]}")
-        if z > self.position_um() + self.tol:
-            raise GuardError("park_at only descends")
+        why = _rules.park_only_descends(self.position_um(), z, self.tol, RETRACT_Z_UM,
+                                        self.window[1])
+        if why:
+            raise GuardError(why)
         return self._send(z, "park_at")
 
     def retract(self) -> dict:
@@ -448,12 +462,10 @@ class FocusAxis:
         if not z:
             raise GuardError("empty sweep plan")
         top = self.ceiling_um(plain(plan.centre_um, "plan centre"))
-        if z[0] < self.window[0] or z[-1] > top + 1e-6:
-            raise GuardError(f"plan {z[0]:.2f}..{z[-1]:.2f} um leaves "
-                             f"{self.window[0]:.0f}..{top:.2f} um")
-        step = plain(plan.step_um, "plan step")
-        if any(not 0 < b - a <= step + 1e-6 for a, b in zip(z, z[1:], strict=False)):
-            raise GuardError(f"plan z is not ascending in steps of at most {step} um")
+        why = (_rules.plan_inside(z, self.window[0], top)
+               or _rules.ascending(z, plain(plan.step_um, "plan step")))
+        if why:
+            raise GuardError(why)
 
     def _send_step(self, z: float, step: float) -> float:
         return self.move_to(z, allow_ascent_um=step)
@@ -481,24 +493,19 @@ class FocusAxis:
             raise GuardError("approach on a bench backend needs a clearance check "
                              "(clearance=callable(z_read) -> bool)")
         row, name = limits_for(self.key)
-        step = row.approach_step_um
-        if step_um is not None:
-            asked = plain(step_um, "approach step")
-            if asked > step:
-                raise GuardError(f"approach step {asked} um is larger than {name}'s "
-                                 f"{step} um ({PROVISIONAL})")
-            step = asked
-        if step <= self.tol:
-            raise GuardError(f"approach step {step} um must exceed the readback tolerance "
-                             f"{self.tol} um")
+        asked = None if step_um is None else plain(step_um, "approach step")
+        step = _rules.approach_step_allowed(asked, row.approach_step_um, self.tol, name)
+        if isinstance(step, str):
+            raise GuardError(f"{step} ({PROVISIONAL})")
         basis = {"approach_step_um": f"OBJECTIVE_LIMITS[{name}].approach_step_um, {PROVISIONAL}"}
         here = self.position_um()
         if here >= z:
             return self.move_to(z)
 
         def check(read: float, before: float) -> float:
-            if read <= before:
-                raise GuardError(f"Z did not rise: read {read:.3f} um after {before:.3f} um")
+            why = _rules.rise_ok(before, read)
+            if why:
+                raise GuardError(why)
             if clearance is not None and not clearance(read):
                 raise GuardError(f"clearance check stopped the approach at {read:.3f} um")
             return read
@@ -519,13 +526,17 @@ def rotate_nosepiece(backend: Backend, focus: FocusAxis, state: int) -> str:
     z = focus.position_um()
     basis = {"z_um": z, "retracted_max_um": RETRACTED_MAX_Z_UM,
              "basis": {"retracted_max_um": PROVISIONAL}}
-    if z > RETRACTED_MAX_Z_UM:
+    if not _rules.retracted(z, RETRACTED_MAX_Z_UM):
         raise GuardError(f"Z {z:.2f} um is not retracted (<= {RETRACTED_MAX_Z_UM})")
     if not focus.allow_motion and not focus.dry_run:
         raise GuardError("FocusAxis was made with allow_motion=False")
     s = focus.require_pfs_quiet(disable=True)
-    if not s.out_of_range and not focus.dry_run:
-        raise GuardError(f"PFS reads {s.in_range!r} after retract; refusing to rotate")
+    if not focus.dry_run:
+        # the whole rule, on the state read back after the PFS was switched off: an unknown
+        # PFS state refuses here (D-01b; before, only an enabled one did)
+        why = _rules.nosepiece_turn_allowed(z, RETRACTED_MAX_Z_UM, s.enabled, s.in_range)
+        if why:
+            raise GuardError(why)
     if focus.dry_run:
         focus.emit(Event("motion", focus.op_id, {"axis": "nosepiece", "target": state,
                                                  "sent": False, **basis}))
@@ -611,8 +622,10 @@ class XYAxis:
 
     def goto(self, x_um: float, y_um: float) -> tuple[float, float]:
         x, y = plain(x_um, "x target"), plain(y_um, "y target")
-        if not self.box.contains(x, y):
-            raise GuardError(f"XY ({x:.0f}, {y:.0f}) is outside the box {self.box}")
+        why = _rules.inside_box(x, y, (self.box.x_min, self.box.x_max, self.box.y_min,
+                                       self.box.y_max))
+        if why:
+            raise GuardError(why)
         p = self.b.positions()
         if p.x_um is None or p.y_um is None or p.z_um is None:
             raise GuardError(f"position unreadable before an XY move: {p.errors}")
@@ -620,6 +633,8 @@ class XYAxis:
         basis = {"long_move_um": f"OBJECTIVE_LIMITS[{row}].long_xy_um, {PROVISIONAL}",
                  "tol_um": PROVISIONAL,
                  "retracted_max_um": PROVISIONAL}
+        # not `_rules.needs_retract_before_xy` until D-04 names the lens kind (Q4): today
+        # every lens, dry or immersion, is held to its table row
         if math.hypot(x - p.x_um, y - p.y_um) > long_um and p.z_um > RETRACTED_MAX_Z_UM:
             raise GuardError(f"XY move over {long_um:.0f} um ({row}) needs Z retracted; "
                              f"Z reads {p.z_um:.2f} um")
@@ -634,9 +649,9 @@ class XYAxis:
                "z_um": p.z_um, "long_move_um": long_um, "tol_um": self.tol, "basis": basis}
         self.motions.append(rec)
         self.emit(Event("motion", self.op_id, rec))
-        if math.hypot(read[0] - x, read[1] - y) > self.tol:
-            raise GuardError(f"XY commanded ({x:.1f}, {y:.1f}), read ({read[0]:.1f}, "
-                             f"{read[1]:.1f}) um")
+        why = _rules.xy_readback_ok((x, y), read, self.tol)
+        if why:
+            raise GuardError(why)
         return read
 
 
