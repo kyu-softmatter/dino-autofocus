@@ -21,11 +21,13 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from ...engine.backend import is_bench
 from ...engine.operations.sample_ops import ensure_sample_created
 from ...records import (
     AutoCommitter,
@@ -87,6 +89,9 @@ class SessionDetailOut(SessionSummaryOut):
     code: CodeOut
     hardware_profile: SessionHardwareProfileOut | None = None
     sma_run_id: str | None = None
+    #: what the session ran on (T-106b); `bench` is True only on the real stand
+    backend_kind: str | None = None
+    bench: bool | None = None
     close_note: str = ""
     log_tail: list[dict[str, Any]]
     records: list[RecordFileOut]
@@ -133,6 +138,15 @@ def _snapshot(eng: Any) -> dict[str, Any]:
         return eng.snapshot() or {}
     except Exception:  # noqa: BLE001 - a read problem here must not hide the sessions list
         return {}
+
+
+def _backend(eng: Any) -> tuple[str | None, bool | None]:
+    """(backend kind, bench) from the engine's snapshot, by the engine's own bench rule
+    (`is_bench`, fail-safe); (None, None) when the engine reports no backend info."""
+    info = _snapshot(eng).get("backend_info")
+    if not isinstance(info, dict) or not info.get("kind"):
+        return None, None
+    return str(info["kind"]), is_bench(SimpleNamespace(**info))
 
 
 def _current_sample(eng: Any) -> str | None:
@@ -185,6 +199,7 @@ def _detail(store: Any, s: ExperimentSession, log_tail: int) -> SessionDetailOut
         code=CodeOut(**{k: info["code"].get(k) for k in ("repo", "commit", "dirty", "error")
                         if k in info["code"]}),
         hardware_profile=info.get("hardware_profile"), sma_run_id=info.get("sma_run_id"),
+        backend_kind=info.get("backend_kind"), bench=info.get("bench"),
         close_note=info.get("close_note", ""),
         log_tail=lines[-log_tail:] if log_tail > 0 else [],
         records=[RecordFileOut(**r) for r in s.record_files()],
@@ -221,9 +236,11 @@ def _no_open_session(store: Any) -> None:
 def _open(request: Request, eng: Any, me: Any, seat: Any, store: Any, sample_id: str,
           continues: str | None) -> ExperimentSession:
     try:
+        kind, bench = _backend(eng)
         s = ExperimentSession.open(store, me.info.user_id, sample_id, user_name=me.info.name,
                                    hardware_profile=_profile_path(eng), continues=continues,
-                                   code=_code(request), committer=_committer(request))
+                                   code=_code(request), committer=_committer(request),
+                                   backend_kind=kind, bench=bench)
     except ValueError as exc:
         raise Refusal(422, "bad_sample", str(exc)).http() from None
     seat.set(s)

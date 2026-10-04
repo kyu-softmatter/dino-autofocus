@@ -86,6 +86,35 @@ def test_skips_a_closed_session_that_is_not_committed(tmp_path):
     assert MockLibrarian(store).run_once().reflected == [s.session_id]
 
 
+def test_a_real_root_skips_sessions_not_recorded_on_the_bench(tmp_path):
+    """T-106c: the rule the soft-matter-agents librarian applies, tested here first."""
+    store = FolderStore(cfg_for(tmp_path))  # root "records": not a *-mock root
+    mock = ExperimentSession.open(store, USER, "s1", backend_kind="mock", bench=False)
+    mock.close()
+    bench = ExperimentSession.open(store, USER, "s1", backend_kind="mm-real", bench=True)
+    bench.close()
+    older = ExperimentSession.open(store, USER, "s1")  # no flag: reflected, like before
+    older.close()
+    lib = MockLibrarian(store)
+    assert lib.bench_only is True
+    run = lib.run_once()
+    assert sorted(run.reflected) == sorted([bench.session_id, older.session_id])
+    assert "bench: false" in run.skipped[mock.session_id]
+    assert MockLibrarian(store).run_once().reflected == []  # the skip is not a reflection
+
+
+def test_a_mock_root_keeps_reflecting_its_simulated_sessions(tmp_path):
+    cfg = RecordsConfig(records_root=tmp_path / "records-mock", data_root=tmp_path / "data-mock")
+    store = FolderStore(cfg)
+    s = ExperimentSession.open(store, USER, "s1", backend_kind="mock", bench=False)
+    s.close()
+    lib = MockLibrarian(store)
+    assert lib.bench_only is False
+    assert lib.run_once().reflected == [s.session_id]
+    strict = MockLibrarian(FolderStore(cfg), bench_only=True)  # the flag wins over the name
+    assert strict.run_once().reflected == [] and strict.bench_only is True
+
+
 def test_works_on_the_folder_store_too(tmp_path):
     store = FolderStore(cfg_for(tmp_path))
     s = ExperimentSession.open(store, USER, "s1")

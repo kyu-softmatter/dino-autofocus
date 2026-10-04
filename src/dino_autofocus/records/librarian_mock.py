@@ -19,7 +19,16 @@ from pathlib import Path
 from typing import Any
 
 from .events import SampleEvent, fold
-from .layout import append_jsonl, now_iso, read_json, read_jsonl, write_json_atomic
+from .layout import (
+    (,
+)
+    MOCK_ROOT_SUFFIX,
+    append_jsonl,
+    now_iso,
+    read_json,
+    read_jsonl,
+    write_json_atomic,
+)
 from .manifest import Manifest, verify
 from .store import Author, FolderStore, GitFolderStore
 
@@ -35,10 +44,20 @@ class LibrarianRun:
 
 
 class MockLibrarian:
-    def __init__(self, store: FolderStore, author: Author = LIBRARIAN):
+    """`bench_only` (T-106c): skip closed sessions whose ``session.json`` says
+    ``bench: false`` (a mock or simulated backend), the rule the soft-matter-agents librarian
+    applies to the real records root. None: decided by the root's name, a ``*-mock`` root
+    (``layout.MOCK_ROOT_SUFFIX``, the server's naming for every backend but mm-real) keeps
+    reflecting its simulated sessions; any other root is treated as the real one."""
+
+    def __init__(self, store: FolderStore, author: Author = LIBRARIAN, *,
+                 bench_only: bool | None = None):
         self.store = store
         self.author = author
         self.dir = Path(store.config.records_root) / "librarian"
+        root_name = Path(store.config.records_root).name
+        self.bench_only = (not root_name.endswith(MOCK_ROOT_SUFFIX) if bench_only is None
+                           else bool(bench_only))
 
     @property
     def ledger(self) -> Path:
@@ -54,6 +73,9 @@ class MockLibrarian:
         for info in self.store.list_sessions():
             sid = info["session_id"]
             if info.get("status") != "closed" or sid in done:
+                continue
+            if self.bench_only and info.get("bench") is False:
+                run.skipped[sid] = "not recorded on the bench (session.json bench: false)"
                 continue
             sdir = self.store.config.session_dir(sid)
             source = None
