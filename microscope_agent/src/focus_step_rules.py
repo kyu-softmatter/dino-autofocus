@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/src/focus_step_rules.py
+# body-sha256: 68adadc8094da4406f00230528cc138f7680beb58f71a59d101035ab09264540
 """The step rules of the focus drive, the XY stage and the PFS as pure functions (D-01).
 
 These are the comparisons dino-autofocus's engine guards make

@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/tests/test_focus_search.py
+# body-sha256: 34ccbf778fd70d3ab5220fc7234d85117d6692a91046585066d2a236554cef72
 """focus_search.py, the 100x search as steps: loaded by path, stdlib + numpy only.
 
 Runs with `python -m unittest` from this folder and under pytest."""

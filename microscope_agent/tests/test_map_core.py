@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/tests/test_map_core.py
+# body-sha256: 08fd53006181c876aff7da398058cd65b319d9c722cddbaaa04b9cd15fba323e
 """The flat map files in the soft-matter-agents style: loaded by path, stdlib + numpy only.
 
 map_geometry (stage <-> camera, sample geometry, hole loop), map_mosaic (mosaic, filters,

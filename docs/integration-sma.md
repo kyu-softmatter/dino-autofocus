@@ -167,6 +167,14 @@ src/dino_autofocus/          단독 실행용 나머지 (engine, backends, opera
     −60, 암전 102, 신호 바닥 50, 노출 20, 스팬 40/2/3/0.2, 판정 문턱 20/0.05/3/1.0/3.0, 포화 0.001, 드롭아웃 0.02,
     이중 피크 0.2, 4x 보정 1.625 와 행렬)를 `src/dino_autofocus/bench_values.py` 로 옮기고 함수 인자로 받게 함;
     `tests/test_sma_shape.py` 가 파일별 숫자 리터럴 허용 목록 밖의 숫자를 거부한다.
+  - D-03 (완료 2026-10-03): 평탄 src·test 파일마다 출처 헤더 세 줄 — `# origin: dino-autofocus, public since
+    2026-10-03:`, 공개 URL `https://github.com/kyu-softmatter/dino-autofocus/blob/<commit>/<path>`,
+    `# body-sha256: <헤더 아래 본문의 해시, 줄끝 LF 로 정규화>`. `<commit>` 은 그 본문이 처음 들어간 커밋이라
+    본문을 고치면 커밋 둘(본문, 그 커밋을 적는 헤더)이 필요하고 그 사이 `tests/test_sma_shape.py` 가 실패한다
+    (`python -m dino_autofocus.flat_origin --check` / `--commit <sha>`). 평탄 파일 안의 `dino_autofocus`·
+    `scripts/`·`docs/` 토큰 금지(복사 뒤 다른 뜻이 됨), 거울이 따르는 SMA 커밋 고정(`SMA_SHAPE_COMMIT`), 옆에
+    soft-matter-agents 체크아웃이 있으면 읽기만으로 표류 검사(고정 커밋이 이력에 있는지, 검사 13·16·82 가 아직
+    있는지, 양쪽에 다 있는 파일의 본문이 같은지). 복사 뒤에는 헤더가 soft-matter-agents 를 가리키게 돌린다(D-06).
 - S4 `console/` 로 서버·웹·런처 옮기기 (import 약 100 곳, gen:api, 런처 경로).
 - S5 `hw_port.py`: 화면이 엔진을 직접 부르지 않고 포트 하나로 (그 뒤 console 은 `dino_autofocus` 를 import 하지 않는다).
 - S6 합치는 주: 그쪽 승인 순서 (사람: 좌석 → architecture: seats.json, pixi, ALLOWED_PATHS 명세 → manager: validate.py →

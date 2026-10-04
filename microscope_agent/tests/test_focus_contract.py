@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/tests/test_focus_contract.py
+# body-sha256: 1a6a1d8993a3f2422c3c01af5e6094485a144331a46b85af1bfcf60ec5963971
 """The verdict and run-log event contracts (D-07): what goes in, what comes out, in JSON.
 
 Pins the module docstrings' "Contract" sections of focus_verdict.py and focus_run_log.py so a

@@ -3,14 +3,29 @@ there (docs/integration-sma.md section 9; that repository's contracts/validate.p
 16 and 82 at ``SMA_SHAPE_COMMIT``): flat src (or src/devices/<file>), flat tests, stdlib +
 numpy imports only, no relative or dino_autofocus imports, no device importing a sibling,
 and (D-03) no dino path in any text under microscope_agent/: the files must read the same
-after the copy, where ``scripts/`` and ``docs/`` would mean that repository's folders."""
+after the copy, where ``scripts/`` and ``docs/`` would mean that repository's folders.
+
+D-03 also gives every flat file an origin header (``dino_autofocus.flat_origin``): the commit
+that holds this body, as a public URL, and the body's SHA-256. The tests at the end check the
+header against the body, the named commit against the body (via git), and -- when a
+soft-matter-agents checkout is beside this repository or at ``DINO_AF_SMA_ROOT`` -- that the
+pin is in its history, that the checks the mirror follows still exist, and that no file that
+exists on both sides has drifted."""
 
 import ast
+import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from dino_autofocus import flat_origin
+
 ROOT = Path(__file__).resolve().parents[1] / "microscope_agent"
+REPO = ROOT.parent
 ALLOWED_THIRD_PARTY = {"numpy"}  # what the soft-matter-agents `mic` environment has
 # The soft-matter-agents commit whose validate.py checks the mirror's shape follows. Re-pin
 # it (and re-read checks 13, 16 and 82) when the drift test below says the checkout moved.
@@ -137,3 +152,76 @@ def test_devices_import_no_sibling():
     bad = [f"{p.name}: {m}" for p in _files(ROOT / "src" / "devices")
            for m, _ in _imports(p) if m in siblings]
     assert not bad, bad
+
+
+# D-03: origin headers. A body edit without a new header fails here; so does a header that
+# names a commit whose file has a different body.
+
+def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess | None:
+    if shutil.which("git") is None:
+        return None
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True)
+
+
+def test_every_flat_file_has_an_origin_header_naming_its_body():
+    assert flat_origin.flat_files(REPO), "nothing to check"
+    assert not flat_origin.check(REPO), flat_origin.check(REPO)
+
+
+def test_the_named_commit_holds_this_body():
+    """The header's URL resolves to a file with exactly this body."""
+    shallow = _git("rev-parse", "--is-shallow-repository", cwd=REPO)
+    if shallow is None or shallow.returncode or shallow.stdout.strip() == b"true":
+        pytest.skip("no git or a shallow clone: the named commit cannot be read")
+    problems = []
+    for p in flat_origin.flat_files(REPO):
+        header, body = flat_origin.split(p.read_text(encoding="utf-8"))
+        if header is None:
+            continue  # reported by the test above
+        shown = _git("show", f"{header.commit}:{header.path}", cwd=REPO)
+        if shown.returncode:
+            problems.append(f"{header.path}: commit {header.commit[:12]} is not in this"
+                            f" repository or has no such file")
+            continue
+        _, named = flat_origin.split(shown.stdout.decode("utf-8"))
+        if flat_origin.body_sha256(named) != flat_origin.body_sha256(body):
+            problems.append(f"{header.path}: the body at {header.commit[:12]} differs; name"
+                            f" the commit that holds this body")
+    assert not problems, problems
+
+
+def _sma_root() -> Path | None:
+    env = os.environ.get("DINO_AF_SMA_ROOT")
+    candidates = ([Path(env)] if env else
+                  [REPO.parent / "soft-matter-agents", REPO.parents[1] / "soft-matter-agents"])
+    return next((c for c in candidates if (c / "contracts" / "validate.py").is_file()), None)
+
+
+SMA_CHECKS_FOLLOWED = ("check_13_paths", "check_16_dependency_direction",
+                       "check_82_imports_are_declared")
+
+
+def test_soft_matter_agents_checkout_has_the_pin_and_no_drift():
+    """Read-only look at the soft-matter-agents checkout, when there is one."""
+    sma = _sma_root()
+    if sma is None:
+        pytest.skip("no soft-matter-agents checkout beside this repository (DINO_AF_SMA_ROOT)")
+    problems = []
+    anc = _git("merge-base", "--is-ancestor", SMA_SHAPE_COMMIT, "HEAD", cwd=sma)
+    if anc is not None and anc.returncode:
+        problems.append(f"SMA_SHAPE_COMMIT {SMA_SHAPE_COMMIT[:12]} is not in the checkout's"
+                        f" history: re-pin and re-read the checks")
+    validate = (sma / "contracts" / "validate.py").read_text(encoding="utf-8")
+    problems += [f"validate.py no longer defines {name}" for name in SMA_CHECKS_FOLLOWED
+                 if f"def {name}(" not in validate]
+    for p in flat_origin.flat_files(REPO):
+        rel = p.relative_to(REPO)
+        theirs = sma / rel
+        if not theirs.is_file():
+            continue  # not copied yet (or held back): nothing to compare
+        _, ours = flat_origin.split(p.read_text(encoding="utf-8"))
+        _, there = flat_origin.split(theirs.read_text(encoding="utf-8"))
+        if flat_origin.body_sha256(ours) != flat_origin.body_sha256(there):
+            problems.append(f"{rel.as_posix()}: body differs from the soft-matter-agents copy"
+                            f" (drift: mirror the change back or forward, by card)")
+    assert not problems, problems

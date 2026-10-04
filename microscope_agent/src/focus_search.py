@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/src/focus_search.py
+# body-sha256: 7ffaf28f014ffdd87587f803f2481e3d9eff47219fde15432d97932483655bc6
 """The 100x focus search as steps, pure: what to sweep, not whether a move is allowed.
 
 The search (the engine's ``focus_100x`` operation, a port of the 2026-09-30 bench script):
