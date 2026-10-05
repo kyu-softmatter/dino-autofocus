@@ -6,8 +6,9 @@
 The search (the engine's ``focus_100x`` operation, a port of the 2026-09-30 bench script):
 a coarse sweep around a centre; a peak inside it gets a fine sweep around the coarse peak; a
 peak on the top end is **not** climbed: Z goes back to the low end and the operator is asked
-whether to extend upward, one span higher from the old top, at most ``MAX_EXTENSIONS`` times
-and never past the ceiling; a peak on the low end is reported ("re-centre lower").
+whether to extend upward, one span higher from the old top, at most ``max_extensions`` times
+(the caller's count, a method choice) and never past the ceiling; a peak on the low end is
+reported ("re-centre lower").
 
 This file only yields the spans and the Z points. The limits (floor, ceiling) are
 arguments: in this repository the engine's guards (``FocusAxis.plan``) compute them, check
@@ -47,12 +48,15 @@ def _load(name: str, filename: str):
     return module
 
 
+#: Origin kind of each number, not an evidence grade. A caller derives its own grade from
+#: this; nothing here assigns one.
 GRADE_COMPUTED = "computed"  # the engine's records.GRADE_COMPUTED
 PROVISIONAL = "unmeasured provisional"  # the engine's backend.PROVISIONAL
 # The bench numbers this search once carried (sweep centre, parfocal offset, dark offset,
 # signal floor, exposure, span sizes) are the caller's: dino-autofocus keeps them in its
-# bench_values module; soft-matter-agents takes them from an approved plan.
-MAX_EXTENSIONS = 3  # times a top-end peak may be followed upward: a count, not a bench value
+# bench_values module; soft-matter-agents takes them from an approved plan. So is the
+# extension count (``max_extensions``), and so is the light: the search sets none, it runs
+# under whatever illumination the caller's plan set before it.
 METRICS = ("peak", "vollath")
 REDUCE_EXPOSURE = "reduce exposure"
 DARK_SIGNAL = "signal at dark level"
@@ -66,14 +70,14 @@ class FocusArgs:
     fine_half_um: float
     fine_step_um: float
     exposure_ms: float
+    max_extensions: int  # times a top-end peak may be followed upward (the caller's count)
     centre_um: float | None = None  # None: the caller's centre (4x plane + parfocal offset)
-    aura_line: str = "GREEN"
-    aura_percent: float = 1.0
     metric: str = "peak"
     oil_loaded: bool | None = None  # True when this session recorded load_immersion
 
 
-REQUIRED = ("half_um", "step_um", "fine_half_um", "fine_step_um", "exposure_ms")
+REQUIRED = ("half_um", "step_um", "fine_half_um", "fine_step_um", "exposure_ms",
+            "max_extensions")
 
 
 def parse(args: dict, defaults: Mapping[str, Any]) -> FocusArgs:
@@ -95,6 +99,9 @@ def parse(args: dict, defaults: Mapping[str, Any]) -> FocusArgs:
         v = float(getattr(a, name))
         if not math.isfinite(v) or v <= 0:
             raise ValueError(f"{name} {v} must be a finite number > 0")
+    if isinstance(a.max_extensions, bool) or int(a.max_extensions) != a.max_extensions \
+            or a.max_extensions < 0:
+        raise ValueError(f"max_extensions {a.max_extensions!r} must be a whole number >= 0")
     return a
 
 

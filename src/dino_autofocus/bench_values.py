@@ -73,7 +73,11 @@ FOCUS_ARG_DEFAULTS = {
     "fine_half_um": 3.0,
     "fine_step_um": 0.2,
     "exposure_ms": FOCUS_DEFAULT_EXPOSURE_MS,
+    "max_extensions": 3,  # times a top-end peak may be followed upward (the 100x script)
 }
+#: The light focus_100x switches on before the search (the flat search sets none): Aura
+#: GREEN at 1 % on 2026-09-30.
+FOCUS_LIGHT_DEFAULTS = {"aura_line": "GREEN", "aura_percent": 1.0}
 
 # -- 4x stage <-> camera calibration of 2026-09-30 (L-031, L-032, L-033) ---------------------
 #: docs/runs/2026-09-30_substrate-scan.yaml; d_px = M @ d_stage, mirrored in y, ~0.1 degree

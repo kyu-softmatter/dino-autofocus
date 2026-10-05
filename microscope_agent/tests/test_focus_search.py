@@ -29,7 +29,7 @@ fs = _load("_mic_focus_search", SRC / "focus_search.py")
 # The caller's numbers (dino-autofocus bench_values.FOCUS_ARG_DEFAULTS and the 2026-09-30
 # bench values); the flat module holds none of its own.
 DEFAULTS = {"half_um": 40.0, "step_um": 2.0, "fine_half_um": 3.0, "fine_step_um": 0.2,
-            "exposure_ms": 20.0}
+            "exposure_ms": 20.0, "max_extensions": 3}
 CENTRE = {"default_centre_um": 2930.0, "parfocal_offset_um": -60.0}
 DARK = {"dark_offset_adu": 102.0, "signal_min_adu": 50.0}
 
@@ -39,11 +39,16 @@ class FocusSearch(unittest.TestCase):
         a = fs.parse({"sample_id": "s", "half_um": 30}, DEFAULTS)
         self.assertEqual((a.half_um, a.step_um, a.metric), (30, 2.0, "peak"))
         for bad in ({"metric": "dino"}, {"step_um": 0}, {"fine_half_um": float("nan")},
-                    {"nope": 1}):
+                    {"nope": 1}, {"max_extensions": -1}, {"max_extensions": 1.5},
+                    {"aura_line": "GREEN"}):  # the search takes no light
             with self.assertRaises(ValueError):
                 fs.parse(bad, DEFAULTS)
         with self.assertRaises(ValueError):  # no number and no default: refused, not guessed
             fs.parse({}, {k: v for k, v in DEFAULTS.items() if k != "exposure_ms"})
+        with self.assertRaises(ValueError):  # the extension count is the caller's too
+            fs.parse({}, {k: v for k, v in DEFAULTS.items() if k != "max_extensions"})
+        self.assertFalse(hasattr(fs, "MAX_EXTENSIONS"))
+        self.assertNotIn("aura_line", fs.FocusArgs.__dataclass_fields__)
 
     def test_sweep_z_ascends_and_stays_inside_the_limits(self):
         z = fs.sweep_z(2930.0, 40.0, 2.0, floor_um=2800.0, ceiling_um=2982.0)

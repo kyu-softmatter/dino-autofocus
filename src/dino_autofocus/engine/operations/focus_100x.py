@@ -34,7 +34,7 @@ import json
 import queue
 import time
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -44,6 +44,7 @@ from ..._flat import load
 from ...bench_values import (
     DOUBLE_PEAK_PROMINENCE,
     FOCUS_ARG_DEFAULTS,
+    FOCUS_LIGHT_DEFAULTS,
     MAX_SATURATED_FRACTION,
     PEAK_BIN_PX,
 )
@@ -79,11 +80,9 @@ from ._focus_search import (  # noqa: E402, F401 - re-exported
     DARK_SIGNAL,
     INTERIOR,
     LOW_END,
-    MAX_EXTENSIONS,
     METRICS,
     REDUCE_EXPOSURE,
     TOP_END,
-    FocusArgs,
     centre_grade,
     coarse_span,
     extension_span,
@@ -91,6 +90,7 @@ from ._focus_search import (  # noqa: E402, F401 - re-exported
     peak_at,
     room_above,
 )
+from ._focus_search import FocusArgs as SearchArgs  # noqa: E402
 from ._focus_search import at_dark_level as _at_dark_level  # noqa: E402
 from ._focus_search import centre_from_plane as _centre_from_plane  # noqa: E402
 from ._focus_search import parse as _parse  # noqa: E402
@@ -101,10 +101,25 @@ __all__ = ["DARK_OFFSET_ADU", "DEFAULT_CENTRE_UM", "DEFAULT_EXPOSURE_MS",
            "centre_from_plane", "at_dark_level", "too_bright", "run_focus_100x", "plan"]
 
 
+MAX_EXTENSIONS = FOCUS_ARG_DEFAULTS["max_extensions"]  # this repository's default count
+
+
+@dataclass(frozen=True)
+class FocusArgs(SearchArgs):
+    """The flat search's arguments plus the light this operation switches on before it
+    (the flat search sets no light: in soft-matter-agents the plan does, D-03f)."""
+
+    aura_line: str = FOCUS_LIGHT_DEFAULTS["aura_line"]
+    aura_percent: float = FOCUS_LIGHT_DEFAULTS["aura_percent"]
+
+
 # The flat search takes every bench number as an argument (D-02); these wrappers supply
 # this repository's values from bench_values so the rest of the engine reads as before.
 def parse(args: dict) -> FocusArgs:
-    return _parse(args, FOCUS_ARG_DEFAULTS)
+    light = {k: args[k] for k in FOCUS_LIGHT_DEFAULTS if k in args}
+    a = _parse({k: v for k, v in args.items() if k not in FOCUS_LIGHT_DEFAULTS},
+               FOCUS_ARG_DEFAULTS)
+    return FocusArgs(**asdict(a), **light)
 
 
 def centre_from_plane(plane: dict | None) -> dict:
@@ -255,7 +270,7 @@ def run_body(backend: Backend, a: FocusArgs, pl: dict, host: Host) -> dict:
     coarse = axis.sweep(axis.plan(*coarse_span(centre, a)), grab, score=score,
                         settle_s=SETTLE_COARSE_S)
     spans = [[coarse.plan.z_um[0], coarse.plan.z_um[-1]]]
-    while coarse.at_top and len(spans) <= MAX_EXTENSIONS:
+    while coarse.at_top and len(spans) <= a.max_extensions:
         lo, hi = coarse.points[0].z_um, coarse.points[-1].z_um
         axis.move_to(lo)  # back down to the low end (the retract direction), as the script
         # the extension re-sweeps from the low end in steps, so Z never jumps upward
