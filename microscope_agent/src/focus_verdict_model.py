@@ -47,6 +47,15 @@ def _load(name: str, filename: str):
 
 _verdict = _load("_mic_focus_verdict", "focus_verdict.py")
 
+#: This file's own source and origin kind, added to the sibling's vocabularies only here.
+SOURCE = "dino"
+MODEL = "model"  # a number a learned model produced (E6 in soft-matter-agents)
+
+
+def has_model_numbers(v: Any) -> bool:
+    """True when any evidence item of verdict `v` is a model number."""
+    return any(e.grade == MODEL for e in v.evidence)
+
 
 def _num(x: float | None) -> float | None:
     return None if x is None or not math.isfinite(x) else float(x)
@@ -74,13 +83,13 @@ def from_reading(reading: ReadingLike, z_um: float | None, frame_index: int | No
     above focus, so the drive should step down.
     """
     dz, sigma = reading.score, reading.sigma
-    ev = [_verdict.Evidence("dz", _num(dz), "model", "DoF"),
-          _verdict.Evidence("sigma", _num(sigma), "model", "DoF"),
+    ev = [_verdict.Evidence("dz", _num(dz), MODEL, "DoF"),
+          _verdict.Evidence("sigma", _num(sigma), MODEL, "DoF"),
           _verdict.Evidence("n_tiles", len(reading.tiles), "computed"),
-          _verdict.Evidence("n_used", reading.n_used, "model")]
+          _verdict.Evidence("n_used", reading.n_used, MODEL)]
 
     def v(verdict: Any, reason: str) -> _verdict.FocusVerdict:
-        return _verdict.FocusVerdict(verdict, "dino", reason, frame_index=frame_index,
+        return _verdict.FocusVerdict(verdict, SOURCE, reason, frame_index=frame_index,
                             z_um=None if z_um is None else float(z_um), evidence=ev)
 
     if not reading.tiles:

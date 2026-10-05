@@ -13,8 +13,8 @@ Vocabulary: ``in_focus | step_up | step_down | no_sample_here | unsure``.
   move up (larger ZDrive um). ``step_down`` the opposite. At 100x a step up is the
   operator's call (2026-09-30 rule); the verdict only reports it.
 * The z of a verdict is the **encoder readback of a real frame** that was taken. It is never
-  a model output and never an interpolated z. Computed numbers (a parabola vertex) and model
-  numbers (DINO dz, sigma) are kept as evidence with their grade.
+  a model output and never an interpolated z. Computed numbers (a parabola vertex) are kept
+  as evidence labelled with their origin kind.
 
 The mapping here, ``from_sweep`` -- a classical z sweep (scores of frames at known encoder z):
   no frame with more than dark-level dynamic range -> ``no_sample_here``;
@@ -40,7 +40,10 @@ cites it):
   (a list of ``{name, value, grade, unit}`` with ``grade`` in ``GRADES``) and ``z_grade``
   (``"measured"`` when ``z_um`` is set, else None).
 * A verdict can refuse and cannot permit: it carries no limit, no target and no command.
-* Model numbers appear only as evidence graded ``"model"``; ``has_model_numbers`` says so.
+* Each evidence item's ``grade`` field holds an origin kind (``GRADES``), not an evidence
+  grade; a caller derives its own grade from it. Model output is not produced here: the
+  model-reading verdict, its ``"dino"`` source and ``"model"`` kind live in
+  ``focus_verdict_model.py``.
 """
 
 from __future__ import annotations
@@ -78,11 +81,10 @@ analyse_sweep = _classical.analyse_sweep
 # caller's arguments: dino-autofocus keeps its provisional values in its bench_values
 # module; soft-matter-agents carries them in the plan.
 
-#: Grade of a number in a verdict record. "measured": read from the hardware (encoder z,
-#: pixel statistics); "computed": deterministic from measured values (a classical metric,
-#: a parabola vertex); "model": produced by a learned model -- grade E6 in soft-matter-agents,
-#: kept out of any decision. Field name to be aligned with engine.records (T-002).
-Grade = Literal["measured", "computed", "model"]
+#: Origin kind of a number in a verdict record. "measured": read from the hardware (encoder
+#: z, pixel statistics); "computed": deterministic from measured values (a classical metric,
+#: a parabola vertex).
+Grade = Literal["measured", "computed"]
 
 
 class Verdict(StrEnum):
@@ -93,11 +95,13 @@ class Verdict(StrEnum):
     UNSURE = "unsure"
 
 
-#: The contract's fixed vocabularies (soft-matter-agents plan.md 13.2 branches; this module's
-#: sources and grades) and the exact key set of ``FocusVerdict.as_record()``.
+#: The contract's fixed vocabularies (soft-matter-agents plan.md 13.2 branches; what this
+#: module produces) and the exact key set of ``FocusVerdict.as_record()``.
 VERDICTS = tuple(str(v) for v in Verdict)
-SOURCES = ("sweep", "dino")
-GRADES = ("measured", "computed", "model")
+SOURCES = ("sweep",)
+#: Origin kind of each number, not an evidence grade. A caller derives its own grade from
+#: this; nothing here assigns one.
+GRADES = ("measured", "computed")
 RECORD_KEYS = ("verdict", "source", "reason", "frame_index", "z_um", "evidence", "z_grade")
 
 
@@ -105,22 +109,18 @@ RECORD_KEYS = ("verdict", "source", "reason", "frame_index", "z_um", "evidence",
 class Evidence:
     name: str
     value: float | int | str | None
-    grade: Grade
+    grade: str  # an origin kind: one of GRADES here; a sibling file may add its own
     unit: str = ""
 
 
 @dataclass
 class FocusVerdict:
     verdict: Verdict
-    source: Literal["sweep", "dino"]
+    source: str  # "sweep" here (SOURCES); a sibling file may name its own
     reason: str
     frame_index: int | None = None   # the real frame the verdict points at
     z_um: float | None = None        # that frame's encoder readback, never a model value
     evidence: list[Evidence] = field(default_factory=list)
-
-    @property
-    def has_model_numbers(self) -> bool:
-        return any(e.grade == "model" for e in self.evidence)
 
     def as_record(self) -> dict[str, Any]:
         """JSON-ready dict (``json.dumps`` works on it as is)."""

@@ -45,7 +45,8 @@ class ReadingRecord(unittest.TestCase):
         v = model.from_reading(Reading(score=2.5, sigma=0.5), 3010.0, 7, **DOF)
         self.assertEqual(v.verdict, verdict.Verdict.STEP_DOWN)
         self.assertEqual((v.source, v.frame_index, v.z_um), ("dino", 7, 3010.0))
-        self.assertTrue(v.has_model_numbers)
+        self.assertTrue(model.has_model_numbers(v))
+        self.assertEqual((model.SOURCE, model.MODEL), ("dino", "model"))
         grades = {e.name: e.grade for e in v.evidence}
         self.assertEqual((grades["dz"], grades["sigma"]), ("model", "model"))
         rec = v.as_record()

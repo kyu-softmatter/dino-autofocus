@@ -56,8 +56,8 @@ def _sweep(blurs=(6.0, 3.5, 2.0, 3.5, 6.0)):
 class Vocabulary(unittest.TestCase):
     def test_the_vocabulary_is_the_soft_matter_agents_focus_branches(self):
         self.assertEqual(verdict.VERDICTS, SMA_BRANCHES)
-        self.assertEqual(verdict.SOURCES, ("sweep", "dino"))
-        self.assertEqual(verdict.GRADES, ("measured", "computed", "model"))
+        self.assertEqual(verdict.SOURCES, ("sweep",))
+        self.assertEqual(verdict.GRADES, ("measured", "computed"))  # origin kinds, not grades
 
 
 class SweepRecord(unittest.TestCase):
@@ -80,7 +80,6 @@ class SweepRecord(unittest.TestCase):
         self.assertIsNotNone(v.frame_index)
         self.assertEqual(v.z_um, z[v.frame_index])
         self.assertEqual(v.as_record()["z_grade"], "measured")
-        self.assertFalse(v.has_model_numbers)
 
     def test_a_refusing_verdict_carries_no_z_and_no_frame(self):
         z, stats = _sweep()
