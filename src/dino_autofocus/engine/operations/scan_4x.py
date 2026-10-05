@@ -51,9 +51,9 @@ from ...bench_values import (
     DROPOUT_TOLERANCE,
 )
 from ...bench_values import M_PX_PER_UM_4X as DEFAULT_M_PX_PER_UM
+from ...bench_values import SCAN_BLOCKS_PER_SIDE as BLOCKS
 from ...bench_values import UM_PER_PX_4X as DEFAULT_UM_PER_PX
 from ...focus.classical import (
-    BLOCKS,
     block_scores,
     dropout_mask,
     parabola_peak,

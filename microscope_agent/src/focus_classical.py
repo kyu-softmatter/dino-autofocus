@@ -3,8 +3,10 @@
 # body-sha256: 2fa776faeb2b366f5dd1892345715d087e63a702cc168e179e81cb0bfd3f2af3
 """Classical focus metrics for live frames and the sweep-curve tools built on them.
 
-Pure numpy, no hardware. Inputs are mono camera frames (uint16; the Kinetix reads out
-12-bit, ceiling 4095, or 16-bit, ceiling 65535). Every metric peaks at best focus.
+Pure numpy, no hardware. Inputs are mono camera frames (uint16). Every metric peaks at best
+focus. Nothing camera- or tuning-specific is written here: the clip level (``ceiling``),
+the peak metric's bin size (``bin_px``) and the block grid (``n``) are the caller's
+required arguments, with no default in this file.
 
 The metrics come from the scripts that ran on the bench on 2026-09-30 and keep their
 formulas exactly, so values in old scan records stay comparable:
@@ -13,9 +15,9 @@ formulas exactly, so values in old scan records stay comparable:
   and divided by its mean absolute deviation, so a brighter exposure does not read as
   sharper. Vollath F4 (lag-1 minus lag-2 autocorrelation, both axes) cancels uncorrelated
   noise; Brenner (lag-2 squared differences) rises on dim, noisy frames.
-* ``peak_brightness`` -- the 100x focus script's ``--metric peak``: brightest 4 x 4-binned
-  spot minus the binned median. For sparse particle fields at 100x, where a whole-frame
-  sharpness barely moves.
+* ``peak_brightness`` -- the 100x focus script's ``--metric peak``: brightest binned spot
+  (``bin_px`` x ``bin_px``, the caller's) minus the binned median. For sparse particle
+  fields at 100x, where a whole-frame sharpness barely moves.
 * ``tenengrad`` -- Sobel gradient energy, one of the ``RELIABLE`` metrics of the vendored
   synthetic ``synth.sim.metrics`` module, here on the valid interior only and with the same
   normalisation as the two above.
@@ -38,13 +40,9 @@ from typing import Literal
 
 import numpy as np
 
-#: Camera clip levels. The Kinetix_red ran 12-bit on 2026-09-30.
-CEILING_12BIT = 4095
-CEILING_16BIT = 65535
-
-# The saturated-fraction limit, the dropout tolerance and the double-peak prominence are
-# the caller's arguments (dino-autofocus keeps them in its bench_values module).
-PEAK_BIN = 4  # 4 x 4 binning before the peak metric, so one hot pixel cannot win (structure)
+# The clip level, the peak bin size, the block grid, the saturated-fraction limit, the
+# dropout tolerance and the double-peak prominence are the caller's arguments
+# (dino-autofocus keeps them in its bench_values module; soft-matter-agents in the plan).
 
 Edge = Literal["interior", "top", "bottom"]
 
@@ -96,13 +94,16 @@ def tenengrad(img: np.ndarray) -> float:
     return float((gx**2 + gy**2).mean())
 
 
-def peak_brightness(img: np.ndarray, bin_px: int = PEAK_BIN) -> float:
-    """Brightest `bin_px` x `bin_px`-binned spot minus the binned median, in ADU.
+def peak_brightness(img: np.ndarray, bin_px: int) -> float:
+    """Brightest `bin_px` x `bin_px`-binned spot minus the binned median, in ADU. Binning
+    first means one hot pixel cannot win.
 
     Not scale invariant on purpose: at 100x on a sparse field it tracks how much light the
     in-focus particle concentrates. A clipped particle caps at the ceiling, so check
     ``saturated_fraction`` (the 2026-09-30 100x runs saturated at 30-50 ms).
     """
+    if int(bin_px) != bin_px or bin_px < 1:
+        raise ValueError(f"bin_px {bin_px!r} must be a positive whole number")
     a = np.asarray(img)
     h, w = (a.shape[0] // bin_px) * bin_px, (a.shape[1] // bin_px) * bin_px
     if h == 0 or w == 0:
@@ -120,12 +121,17 @@ METRICS: dict[str, Callable[[np.ndarray], float]] = {
 }
 
 
-def score(img: np.ndarray, metric: str = "vollath4") -> float:
-    """Focus score of `img` by name: one of ``METRICS``."""
+def score(img: np.ndarray, metric: str = "vollath4", *, bin_px: int | None = None) -> float:
+    """Focus score of `img` by name: one of ``METRICS``. The ``peak`` metric needs the
+    caller's `bin_px`; the others take no parameter."""
     try:
         fn = METRICS[metric]
     except KeyError:
         raise KeyError(f"unknown metric {metric!r}; available: {sorted(METRICS)}") from None
+    if fn is peak_brightness:
+        if bin_px is None:
+            raise ValueError("the peak metric needs bin_px, the caller's bin size")
+        return peak_brightness(img, bin_px)
     return fn(img)
 
 
@@ -142,11 +148,13 @@ class FrameStats:
     saturated_fraction: float
 
 
-def frame_stats(img: np.ndarray, metric: str = "vollath4",
-                ceiling: int = CEILING_16BIT) -> FrameStats:
-    """Score `img` and record the brightness numbers the sweep checks need."""
+def frame_stats(img: np.ndarray, metric: str = "vollath4", *, ceiling: int,
+                bin_px: int | None = None) -> FrameStats:
+    """Score `img` and record the brightness numbers the sweep checks need. `ceiling` is the
+    camera's clip level for this readout (``ceiling_for_bits``), always the caller's."""
     a = np.asarray(img)
-    return FrameStats(score=score(a, metric), metric=metric, mean=float(a.mean()),
+    return FrameStats(score=score(a, metric, bin_px=bin_px), metric=metric,
+                      mean=float(a.mean()),
                       median=float(np.median(a)), p999=float(np.percentile(a, 99.9)),
                       max=int(a.max()), saturated_fraction=saturated_fraction(a, ceiling))
 
@@ -287,12 +295,12 @@ def analyse_sweep(z_um: Sequence[float], scores: Sequence[float],
 
 # -- helpers for the scan_4x and focus_100x operations (T-031)
 
-BLOCKS = 6  # 6 x 6 blocks per tile, one focus z per block (structure, not a bench value)
 OIL_WARNING = "check immersion oil"
 
 
-def block_scores(img: np.ndarray, n: int = BLOCKS) -> list[float]:
-    """``vollath4`` of each block of an ``n`` x ``n`` grid, row-major (the 4x scan script).
+def block_scores(img: np.ndarray, n: int) -> list[float]:
+    """``vollath4`` of each block of the caller's ``n`` x ``n`` grid, row-major (the 4x scan
+    script; one focus z per block).
     Pixels beyond a whole number of blocks on the right and bottom are not used."""
     if img.ndim != 2 or n < 1 or img.shape[0] < 3 * n or img.shape[1] < 3 * n:
         raise ValueError(f"need a 2-D frame of at least {3 * n} px a side for {n} x {n} blocks,"

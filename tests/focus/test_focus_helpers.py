@@ -15,7 +15,7 @@ def test_block_scores_grid_and_order():
     rng = np.random.default_rng(0)
     img = np.full((120, 120), 100, np.uint16)
     img[:20, 100:] = rng.integers(0, 4000, (20, 20))  # texture only in block (0, 5)
-    s = C.block_scores(img)
+    s = C.block_scores(img, 6)
     assert len(s) == 36
     assert int(np.argmax(np.abs(s))) == 5  # row-major: row 0, column 5
     assert C.block_scores(img, n=2)[1] == pytest.approx(C.vollath4(img[:60, 60:]))
@@ -23,11 +23,11 @@ def test_block_scores_grid_and_order():
 
 def test_block_scores_ignores_remainder_and_rejects_small():
     img = np.random.default_rng(1).integers(0, 4000, (125, 127)).astype(np.uint16)
-    assert C.block_scores(img)[0] == pytest.approx(C.vollath4(img[:20, :21]))
+    assert C.block_scores(img, 6)[0] == pytest.approx(C.vollath4(img[:20, :21]))
     with pytest.raises(ValueError):
-        C.block_scores(np.zeros((10, 10), np.uint16))
+        C.block_scores(np.zeros((10, 10), np.uint16), 6)
     with pytest.raises(ValueError):
-        C.block_scores(np.zeros((3, 60, 60), np.uint16))
+        C.block_scores(np.zeros((3, 60, 60), np.uint16), 6)
 
 
 def test_parabola_peak_none_at_either_end():

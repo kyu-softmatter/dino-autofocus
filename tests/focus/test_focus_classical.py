@@ -7,7 +7,13 @@ import numpy as np
 import pytest
 from scipy import ndimage
 
-from dino_autofocus.bench_values import DROPOUT_TOLERANCE, MAX_SATURATED_FRACTION
+from dino_autofocus.bench_values import (
+    CEILING_12BIT,
+    CEILING_16BIT,
+    DROPOUT_TOLERANCE,
+    MAX_SATURATED_FRACTION,
+    PEAK_BIN_PX,
+)
 from dino_autofocus.focus import classical as C
 from dino_autofocus.synth.sim import metrics as synth_metrics
 
@@ -33,7 +39,7 @@ def stack(n=11, focus=6, step_blur=0.8, **kw):
 @pytest.mark.parametrize("metric", sorted(C.METRICS))
 def test_every_metric_peaks_at_focus(metric):
     frames = stack()
-    s = [C.score(f, metric) for f in frames]
+    s = [C.score(f, metric, bin_px=PEAK_BIN_PX) for f in frames]
     assert int(np.argmax(s)) == 6
 
 
@@ -74,12 +80,14 @@ def test_peak_brightness_ignores_a_single_hot_pixel():
     img = np.full((64, 64), 100, np.uint16)
     img[10, 10] = 1100  # hot pixel: +1000 ADU, but 1/16 of a 4 x 4 bin
     img[40:44, 40:44] = 400  # a real 4 x 4 spot at +300 ADU
-    assert C.peak_brightness(img) == pytest.approx(300.0)
+    assert C.peak_brightness(img, PEAK_BIN_PX) == pytest.approx(300.0)
+    with pytest.raises(ValueError):
+        C.score(img, "peak")  # the bin size is the caller's, never a default
 
 
 def test_ceilings_and_saturation():
-    assert C.ceiling_for_bits(12) == C.CEILING_12BIT == 4095
-    assert C.ceiling_for_bits(16) == C.CEILING_16BIT == 65535
+    assert C.ceiling_for_bits(12) == CEILING_12BIT == 4095
+    assert C.ceiling_for_bits(16) == CEILING_16BIT == 65535
     with pytest.raises(ValueError):
         C.ceiling_for_bits(17)
     img = np.full((10, 10), 1000, np.uint16)

@@ -16,19 +16,15 @@ Vocabulary: ``in_focus | step_up | step_down | no_sample_here | unsure``.
   a model output and never an interpolated z. Computed numbers (a parabola vertex) and model
   numbers (DINO dz, sigma) are kept as evidence with their grade.
 
-Two mappings:
-
-``from_sweep`` -- a classical z sweep (scores of frames at known encoder z):
+The mapping here, ``from_sweep`` -- a classical z sweep (scores of frames at known encoder z):
   no frame with more than dark-level dynamic range -> ``no_sample_here``;
   too few readable frames or a flat curve -> ``unsure``;
   peak at the top of the span -> ``step_up``; at the bottom -> ``step_down``;
   peak inside -> ``in_focus`` at the real frame nearest the parabola vertex.
 
-``from_reading`` -- one frame's signed DINO reading (the live module's ``FocusReading``),
-  in DoF units with dz = stage - best focus (positive: the stage is above focus):
-  no tile with sample signal -> ``no_sample_here``; tiles but none readable, or sigma above
-  ``max_sigma_dof`` -> ``unsure``; ``|dz| <= in_focus_dof`` -> ``in_focus``; sign known
-  (``|dz| > sigma``) -> ``step_down`` for dz > 0, ``step_up`` for dz < 0; else ``unsure``.
+The model-reading mapping (``from_reading``, a signed DINO reading) lives in the sibling
+``focus_verdict_model.py``: its inputs are model numbers (E6 in soft-matter-agents), so it
+is kept apart and out of a copy until a place for model output exists there (plan.md 13.1).
 
 Contract (D-07; ``test_focus_contract.py`` pins it, soft-matter-agents' card for the copy
 cites it):
@@ -36,9 +32,7 @@ cites it):
 * Inputs of ``from_sweep``: ``z_um`` -- the encoder readback of each frame, floats, one per
   frame, in sweep order; ``stats`` -- one ``FrameStats`` per frame (``score``, ``metric``,
   ``mean``, ``median``, ``p999``, ``max``, ``saturated_fraction``), same order; and every
-  threshold as a keyword argument with no default. Inputs of ``from_reading``: an object
-  with ``score``, ``sigma``, ``n_used``, ``tiles`` and ``sign_known``, the frame's encoder
-  ``z_um`` (or None) and its ``frame_index``, plus both DoF thresholds by keyword.
+  threshold as a keyword argument with no default.
 * Output: a ``FocusVerdict`` whose ``as_record()`` is JSON-native and has exactly the keys
   ``RECORD_KEYS``: ``verdict`` (one of ``VERDICTS``), ``source`` (one of ``SOURCES``),
   ``reason`` (a sentence), ``frame_index`` (an index into ``z_um`` or None), ``z_um`` (the
@@ -58,7 +52,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -201,49 +195,3 @@ def from_sweep(z_um: Sequence[float], stats: Sequence[FrameStats], *,
                         f"peak inside the span; nearest real frame to the vertex "
                         f"{a.z_vertex_um:.2f} um" + (f" ({notes})" if notes else ""),
                         frame_index=j, z_um=float(z_um[j]), evidence=ev)
-
-
-# -- mapping 2: one signed model reading ----------------------------------------------------
-
-class ReadingLike(Protocol):
-    """What the live module's ``FocusReading`` provides (no import of live here)."""
-
-    score: float | None
-    sigma: float | None
-    n_used: int
-    tiles: list[Any]
-
-    @property
-    def sign_known(self) -> bool: ...
-
-
-def from_reading(reading: ReadingLike, z_um: float | None, frame_index: int | None = None, *,
-                 in_focus_dof: float, max_sigma_dof: float) -> FocusVerdict:
-    """Verdict from one frame's signed reading; `z_um` is that frame's encoder readback.
-
-    dz (``reading.score``) is in DoF, dz = stage - best focus: dz > 0 means the stage is
-    above focus, so the drive should step down.
-    """
-    dz, sigma = reading.score, reading.sigma
-    ev = [Evidence("dz", _num(dz), "model", "DoF"),
-          Evidence("sigma", _num(sigma), "model", "DoF"),
-          Evidence("n_tiles", len(reading.tiles), "computed"),
-          Evidence("n_used", reading.n_used, "model")]
-
-    def v(verdict: Verdict, reason: str) -> FocusVerdict:
-        return FocusVerdict(verdict, "dino", reason, frame_index=frame_index,
-                            z_um=None if z_um is None else float(z_um), evidence=ev)
-
-    if not reading.tiles:
-        return v(Verdict.NO_SAMPLE_HERE, "no tile with sample signal in the frame")
-    if dz is None or not math.isfinite(dz):
-        return v(Verdict.UNSURE, f"{len(reading.tiles)} tiles, none readable")
-    if sigma is None or not math.isfinite(sigma) or sigma > max_sigma_dof:
-        return v(Verdict.UNSURE, f"model sigma {sigma} DoF above {max_sigma_dof:g}")
-    if abs(dz) <= in_focus_dof:
-        return v(Verdict.IN_FOCUS, f"|dz| {abs(dz):.2f} <= {in_focus_dof:g} DoF (model)")
-    if reading.sign_known:
-        if dz > 0:
-            return v(Verdict.STEP_DOWN, f"dz {dz:+.2f} DoF: stage above focus (model)")
-        return v(Verdict.STEP_UP, f"dz {dz:+.2f} DoF: stage below focus (model)")
-    return v(Verdict.UNSURE, f"dz {dz:+.2f} DoF but |dz| <= sigma {sigma:.2f}: sign unknown")

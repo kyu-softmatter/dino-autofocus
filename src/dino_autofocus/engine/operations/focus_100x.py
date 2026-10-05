@@ -45,6 +45,7 @@ from ...bench_values import (
     DOUBLE_PEAK_PROMINENCE,
     FOCUS_ARG_DEFAULTS,
     MAX_SATURATED_FRACTION,
+    PEAK_BIN_PX,
 )
 from ...bench_values import FOCUS_DARK_OFFSET_ADU as DARK_OFFSET_ADU
 from ...bench_values import FOCUS_DEFAULT_CENTRE_UM as DEFAULT_CENTRE_UM
@@ -235,7 +236,7 @@ def run_body(backend: Backend, a: FocusArgs, pl: dict, host: Host) -> dict:
 
     def score(f: np.ndarray) -> dict:
         v = vollath4(f)
-        d = {"sharp": peak_brightness(f) if a.metric == "peak" else v, "vollath": v,
+        d = {"sharp": peak_brightness(f, PEAK_BIN_PX) if a.metric == "peak" else v, "vollath": v,
              "mean": float(f.mean()), "max": int(f.max()), "sat": float(np.mean(f >= ceiling))}
         emit(Event("progress", op, {"pass": cur["pass"], "z_um": axis.position_um(), **d}))
         return d

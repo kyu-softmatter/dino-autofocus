@@ -29,6 +29,9 @@ def _load(name, path):
 
 classical = _load("_mic_focus_classical", SRC / "focus_classical.py")
 verdict = _load("_mic_focus_verdict", SRC / "focus_verdict.py")
+# This repository's camera clip level (bench_values.CEILING_16BIT); the flat modules hold
+# no clip level of their own (D-03c).
+CEILING = 65535
 
 
 def _frame(sigma_px: float) -> np.ndarray:
@@ -48,14 +51,14 @@ class FocusCore(unittest.TestCase):
     def test_sweep_through_focus_is_in_focus_at_a_real_frame(self):
         z = [100.0, 102.0, 104.0, 106.0, 108.0]
         frames = [_frame(s) for s in (6.0, 3.5, 2.0, 3.5, 6.0)]
-        stats = [classical.frame_stats(f, "vollath4") for f in frames]
+        stats = [classical.frame_stats(f, "vollath4", ceiling=CEILING) for f in frames]
         v = verdict.from_sweep(z, stats, **RULES)
         self.assertEqual(v.verdict, verdict.Verdict.IN_FOCUS)
         self.assertIn(v.z_um, z)  # an encoder z of a frame, never an interpolated one
 
     def test_dark_sweep_has_no_sample(self):
         dark = [np.full((64, 64), 100, np.uint16) for _ in range(4)]
-        stats = [classical.frame_stats(f, "vollath4") for f in dark]
+        stats = [classical.frame_stats(f, "vollath4", ceiling=CEILING) for f in dark]
         v = verdict.from_sweep([0.0, 1.0, 2.0, 3.0], stats, **RULES)
         self.assertEqual(v.verdict, verdict.Verdict.NO_SAMPLE_HERE)
 

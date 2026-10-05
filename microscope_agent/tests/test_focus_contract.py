@@ -31,11 +31,13 @@ def _load(name, path):
 
 classical = _load("_mic_focus_classical", SRC / "focus_classical.py")
 verdict = _load("_mic_focus_verdict", SRC / "focus_verdict.py")
+# This repository's camera clip level (bench_values.CEILING_16BIT); the flat modules hold
+# no clip level of their own (D-03c).
+CEILING = 65535
 
 # This repository's provisional thresholds; the modules hold none of their own (D-02).
 RULES = {"min_dynamic_range_adu": 20.0, "min_contrast": 0.05, "min_frames": 3,
          "dropout_tolerance": 0.02, "max_saturated": 0.001}
-DOF = {"in_focus_dof": 1.0, "max_sigma_dof": 3.0}
 SMA_BRANCHES = ("in_focus", "step_up", "step_down", "no_sample_here", "unsure")
 
 
@@ -47,16 +49,8 @@ def _frame(sigma_px):
 
 def _sweep(blurs=(6.0, 3.5, 2.0, 3.5, 6.0)):
     z = [100.0 + 2.0 * i for i in range(len(blurs))]
-    stats = [classical.frame_stats(_frame(s), "vollath4") for s in blurs]
+    stats = [classical.frame_stats(_frame(s), "vollath4", ceiling=CEILING) for s in blurs]
     return z, stats
-
-
-class Reading:
-    """What the live module's ``FocusReading`` provides, with model numbers."""
-
-    def __init__(self, score, sigma, tiles=(0, 1, 2), n_used=3, sign_known=True):
-        self.score, self.sigma, self.n_used = score, sigma, n_used
-        self.tiles, self.sign_known = list(tiles), sign_known
 
 
 class Vocabulary(unittest.TestCase):
@@ -90,7 +84,8 @@ class SweepRecord(unittest.TestCase):
 
     def test_a_refusing_verdict_carries_no_z_and_no_frame(self):
         z, stats = _sweep()
-        dark = [classical.frame_stats(np.full((64, 64), 100, np.uint16), "vollath4")
+        dark = [classical.frame_stats(np.full((64, 64), 100, np.uint16), "vollath4",
+                                       ceiling=CEILING)
                 for _ in z]
         v = verdict.from_sweep(z, dark, **RULES)
         self.assertEqual(v.verdict, verdict.Verdict.NO_SAMPLE_HERE)
@@ -105,32 +100,6 @@ class SweepRecord(unittest.TestCase):
             verdict.from_sweep(z, stats)  # no defaults: the caller names every threshold
         with self.assertRaises(ValueError):
             verdict.from_sweep(z[:-1], stats, **RULES)
-
-
-class ReadingRecord(unittest.TestCase):
-    def test_model_numbers_are_evidence_graded_model_and_z_stays_the_readback(self):
-        v = verdict.from_reading(Reading(score=2.5, sigma=0.5), 3010.0, 7, **DOF)
-        self.assertEqual(v.verdict, verdict.Verdict.STEP_DOWN)
-        self.assertEqual((v.source, v.frame_index, v.z_um), ("dino", 7, 3010.0))
-        self.assertTrue(v.has_model_numbers)
-        grades = {e.name: e.grade for e in v.evidence}
-        self.assertEqual((grades["dz"], grades["sigma"]), ("model", "model"))
-        rec = v.as_record()
-        self.assertEqual(tuple(rec), verdict.RECORD_KEYS)
-        self.assertEqual(json.loads(json.dumps(rec, allow_nan=False)), rec)
-
-    def test_dof_thresholds_are_required(self):
-        with self.assertRaises(TypeError):
-            verdict.from_reading(Reading(score=0.1, sigma=0.5), 3000.0, 0)
-
-    def test_each_branch_is_reachable(self):
-        v = verdict.from_reading
-        self.assertEqual(v(Reading(0.1, 0.5), 3000.0, 0, **DOF).verdict, verdict.Verdict.IN_FOCUS)
-        self.assertEqual(v(Reading(-2.0, 0.5), 3000.0, 0, **DOF).verdict, verdict.Verdict.STEP_UP)
-        self.assertEqual(v(Reading(2.0, 0.5), 3000.0, 0, **DOF).verdict, verdict.Verdict.STEP_DOWN)
-        self.assertEqual(v(Reading(2.0, 0.5, tiles=()), 3000.0, 0, **DOF).verdict,
-                         verdict.Verdict.NO_SAMPLE_HERE)
-        self.assertEqual(v(Reading(2.0, 9.0), 3000.0, 0, **DOF).verdict, verdict.Verdict.UNSURE)
 
 
 if __name__ == "__main__":

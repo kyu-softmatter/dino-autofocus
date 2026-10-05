@@ -16,7 +16,8 @@ import numpy as np
 
 from ..bench_values import VERDICT_IN_FOCUS_DOF as IN_FOCUS_DOF
 from ..bench_values import VERDICT_MAX_SIGMA_DOF as MAX_SIGMA_DOF
-from .verdict import FocusVerdict, ReadingLike, from_reading
+from .verdict import FocusVerdict
+from .verdict_model import ReadingLike, from_reading
 
 Scorer = Callable[..., ReadingLike]
 

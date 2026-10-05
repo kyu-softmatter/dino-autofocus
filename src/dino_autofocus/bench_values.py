@@ -30,6 +30,15 @@ DROPOUT_TOLERANCE = 0.02
 #: rise beside the real peak on 2026-09-30 (focus100x -202226).
 DOUBLE_PEAK_PROMINENCE = 0.2
 
+# -- camera and grid structure (D-03c: these left focus_classical too) ---------------------
+#: Camera clip levels: 12-bit readout (the Kinetix_red on 2026-09-30) and 16-bit (2026-10-02).
+CEILING_12BIT = 4095
+CEILING_16BIT = 65535
+#: Peak metric: bin x bin binning first, so one hot pixel cannot win (the 100x script).
+PEAK_BIN_PX = 4
+#: scan_4x: a tile is split into an n x n grid, one focus z per block (the 4x script).
+SCAN_BLOCKS_PER_SIDE = 6
+
 # -- focus verdict thresholds (Q5: provisional until bench data; L-077..L-081) --------------
 #: Frames whose 99.9th percentile is less than this many ADU above their median hold no
 #: sample: a 30 ms 100x Vollath run on 2026-09-30 read only the dark offset (~102 ADU).

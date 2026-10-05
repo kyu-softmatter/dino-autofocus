@@ -31,6 +31,10 @@ def _load(name, path):
 
 classical = _load("_mic_focus_classical", SRC / "focus_classical.py")
 verdict = _load("_mic_focus_verdict", SRC / "focus_verdict.py")
+model = _load("_mic_focus_verdict_model", SRC / "focus_verdict_model.py")
+# This repository's camera clip level (bench_values.CEILING_16BIT); the flat modules hold
+# no clip level of their own (D-03c).
+CEILING = 65535
 run_log = _load("_mic_focus_run_log", SRC / "focus_run_log.py")
 
 # This repository's provisional thresholds; the modules hold none of their own (D-02).
@@ -48,7 +52,7 @@ def _frame(sigma_px):
 
 def _sweep(blurs=(6.0, 3.5, 2.0, 3.5, 6.0)):
     z = [100.0 + 2.0 * i for i in range(len(blurs))]
-    stats = [classical.frame_stats(_frame(s), "vollath4") for s in blurs]
+    stats = [classical.frame_stats(_frame(s), "vollath4", ceiling=CEILING) for s in blurs]
     return z, stats
 
 
@@ -93,7 +97,7 @@ class RunLogEvent(unittest.TestCase):
 
     def test_model_numbers_become_signals_without_a_grade_and_no_e6_anywhere(self):
         ev = run_log.to_run_log_event(
-            verdict.from_reading(Reading(2.5, 0.5), 3010.0, 7, **DOF), 3.0, time_base="device")
+            model.from_reading(Reading(2.5, 0.5), 3010.0, 7, **DOF), 3.0, time_base="device")
         self.assertEqual(ev["time_base"], "device")
         self.assertEqual({s["name"] for s in ev["signals"]}, {"dz", "sigma", "n_used"})
         for s in ev["signals"]:
@@ -110,7 +114,7 @@ class RunLogEvent(unittest.TestCase):
             run_log.to_run_log_event(v, 1.0, time_base="wall")
 
     def test_non_finite_evidence_becomes_none(self):
-        v = verdict.from_reading(Reading(float("nan"), 0.5), None, None, **DOF)
+        v = model.from_reading(Reading(float("nan"), 0.5), None, None, **DOF)
         ev = run_log.to_run_log_event(v, 0.0)
         self.assertIsNone(ev["z"])
         dz = next(s for s in ev["signals"] if s["name"] == "dz")

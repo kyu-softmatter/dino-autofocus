@@ -88,11 +88,14 @@ def test_imports_are_stdlib_or_numpy_and_never_relative():
 # keeps in dino until a soft-matter-agents place exists (they are tuning, not bench facts).
 ALWAYS_OK = {0, 1, -1, 2, 0.5, 100, 255}
 ALLOWED_LITERALS: dict[str, set[float]] = {
-    "focus_classical.py": {4095, 65535, 4, 6, 16, 3, 99.9, 1e-06, 1e-12, 1e-30},
+    # bit-depth range of a uint16 frame, block minimum size, 99.9th percentile, epsilons;
+    # no clip level, bin size or block grid since D-03c
+    "focus_classical.py": {16, 3, 99.9, 1e-06, 1e-12, 1e-30},
     "focus_run_log.py": set(),
     "focus_search.py": {3, 4, 1e-06, 1e-09},  # MAX_EXTENSIONS, rounding digits, epsilons
     "focus_step_rules.py": {1e-06},  # one float epsilon; every limit is an argument
     "focus_verdict.py": {1e-12},
+    "focus_verdict_model.py": set(),  # the model-reading verdict, out of the first copy
     "map_edge.py": {8.0, 150, 3, 1.4826, 5, 36, 30, 6, 256, 1e-12, 1e-06, 1e-09, 0.001, 4,
                     0.03, 1000},
     # loop arc; coverslip and sample-size form defaults (lab values, candidates for cards)
