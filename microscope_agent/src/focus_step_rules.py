@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/src/focus_step_rules.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/src/focus_step_rules.py
 # body-sha256: 68adadc8094da4406f00230528cc138f7680beb58f71a59d101035ab09264540
 """The step rules of the focus drive, the XY stage and the PFS as pure functions (D-01).
 

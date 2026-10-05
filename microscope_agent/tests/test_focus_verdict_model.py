@@ -1,6 +1,6 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/tests/test_focus_verdict_model.py
-# body-sha256: 9a90d8f7aa25069a36a024793a308a7c8f37ed41f0e0d1b075a260e6f9d0aa86
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/tests/test_focus_verdict_model.py
+# body-sha256: d3005378309b408bc27a9ba9a2c851b25fb136ce3f8b4eb89745283bd1968faa
 """focus_verdict_model.py, the model-reading verdict: loaded by path, stdlib only.
 
 Kept apart from test_focus_contract.py so that the classical verdict and its tests can be

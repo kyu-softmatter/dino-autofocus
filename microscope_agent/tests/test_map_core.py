@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/tests/test_map_core.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/tests/test_map_core.py
 # body-sha256: 08fd53006181c876aff7da398058cd65b319d9c722cddbaaa04b9cd15fba323e
 """The flat map files in the soft-matter-agents style: loaded by path, stdlib + numpy only.
 

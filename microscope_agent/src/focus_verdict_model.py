@@ -1,6 +1,6 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/src/focus_verdict_model.py
-# body-sha256: 8b3bc23a7bfc585a57bf21c2125e013b85267b76b36e530fac63fc31e081d572
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/src/focus_verdict_model.py
+# body-sha256: f666a8e696ad91f1426355a8e216eecf15f2900f507a64b3490d15fced4e627f
 """The model-reading focus verdict: one frame's signed DINO reading -> a ``FocusVerdict``.
 
 Kept apart from ``focus_verdict.py`` because its inputs are model numbers (E6 in
