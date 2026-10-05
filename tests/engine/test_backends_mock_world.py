@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from dino_autofocus.bench_values import PEAK_BIN_PX
 from dino_autofocus.engine.backends.mock_world import (
     OBJECTIVES,
     MockWorld,
@@ -162,7 +163,7 @@ def test_100x_peak_metric_finds_a_sparse_particle_where_vollath_does_not(world):
     for z in zs:
         world.move_z(z)
         f = world.snap()
-        pk.append(peak(f))
+        pk.append(peak(f, PEAK_BIN_PX))
         vo.append(vollath4(f))
     assert abs(zs[int(np.argmax(pk))] - zt) <= 1.0
     assert max(abs(v) for v in vo) < 0.5  # vs ~17 at 4x: Vollath sees nothing (2026-09-30)
