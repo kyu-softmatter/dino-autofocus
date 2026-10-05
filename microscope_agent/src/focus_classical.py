@@ -1,6 +1,6 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/42daf8b2cbd02c303c762b5381b916fab7c6ce5e/microscope_agent/src/focus_classical.py
-# body-sha256: ad23a9d80e1698b634585a7c019612afcb16eb1300c4df9cdfe46e44a5950fe0
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/4de858612239b83a9c107d28fd508502b387c1bc/microscope_agent/src/focus_classical.py
+# body-sha256: e384ccbaa0e7c534f2ce3e7b4168199f508259e038640d1ec0af71e6a9cce759
 """Classical focus metrics for live frames and the sweep-curve tools built on them.
 
 Pure numpy, no hardware. Inputs are mono camera frames (uint16). Every metric peaks at best
@@ -49,6 +49,7 @@ Edge = Literal["interior", "top", "bottom"]
 
 def ceiling_for_bits(bits: int) -> int:
     """Clip level of a camera read out at `bits` bits (``2**bits - 1``)."""
+    # definition: a uint16 frame holds 1..16 bits, and 2**bits - 1 is the unsigned maximum
     if not 1 <= bits <= 16:
         raise ValueError(f"bit depth {bits} outside 1..16 for a uint16 frame")
     return (1 << bits) - 1
@@ -63,7 +64,7 @@ def _normalise(img: np.ndarray) -> np.ndarray:
     """Median-subtracted, divided by the mean absolute deviation (mm_grab.py, float32)."""
     a = np.asarray(img).astype(np.float32)
     a = a - np.median(a)
-    a /= max(float(np.abs(a).mean()), 1e-6)
+    a /= max(float(np.abs(a).mean()), 1e-6)  # numerical guard: no division by zero on a flat frame
     return a
 
 
@@ -84,7 +85,7 @@ def brenner(img: np.ndarray) -> float:
 def tenengrad(img: np.ndarray) -> float:
     """Scale-invariant Sobel gradient energy on the valid interior (no border padding)."""
     a = _normalise(img)
-    if a.shape[0] < 3 or a.shape[1] < 3:
+    if a.shape[0] < 3 or a.shape[1] < 3:  # definition: the Sobel stencil is 3 x 3
         raise ValueError(f"tenengrad needs at least 3 x 3 pixels, got {a.shape}")
     # Sobel = [1, 2, 1] smoothing across the derivative axis, [-1, 0, 1] along it
     sy = a[:-2] + 2 * a[1:-1] + a[2:]
@@ -155,6 +156,7 @@ def frame_stats(img: np.ndarray, metric: str = "vollath4", *, ceiling: int,
     a = np.asarray(img)
     return FrameStats(score=score(a, metric, bin_px=bin_px), metric=metric,
                       mean=float(a.mean()),
+                      # definition: p999 is the 99.9th percentile; its threshold is the caller's
                       median=float(np.median(a)), p999=float(np.percentile(a, 99.9)),
                       max=int(a.max()), saturated_fraction=saturated_fraction(a, ceiling))
 
@@ -197,11 +199,11 @@ def parabola_vertex(z: Sequence[float], s: Sequence[float]) -> float:
     x0, x1, x2 = zz[j - 1:j + 2]
     y0, y1, y2 = ss[j - 1:j + 2]
     den = (x0 - x1) * (x0 - x2) * (x1 - x2)
-    if abs(den) < 1e-30:
+    if abs(den) < 1e-30:  # numerical guard: two of the three z coincide
         return float(x1)
     a = (x2 * (y1 - y0) + x1 * (y0 - y2) + x0 * (y2 - y1)) / den
     b = (x2**2 * (y0 - y1) + x1**2 * (y2 - y0) + x0**2 * (y1 - y2)) / den
-    if abs(a) < 1e-30:
+    if abs(a) < 1e-30:  # numerical guard: collinear points, no curvature
         return float(x1)
     return float(np.clip(-b / (2 * a), x0, x2))
 
@@ -289,7 +291,7 @@ def analyse_sweep(z_um: Sequence[float], scores: Sequence[float],
     out.nearest_index = idx[int(np.argmin(np.abs(kz - out.z_vertex_um)))]
     o = np.argsort(kz, kind="stable")
     smax, ends = float(ks.max()), max(float(ks[o][0]), float(ks[o][-1]))
-    out.prominence = (smax - ends) / max(abs(smax), 1e-12)
+    out.prominence = (smax - ends) / max(abs(smax), 1e-12)  # numerical guard: zero curve
     return out
 
 
@@ -302,6 +304,7 @@ def block_scores(img: np.ndarray, n: int) -> list[float]:
     """``vollath4`` of each block of the caller's ``n`` x ``n`` grid, row-major (the 4x scan
     script; one focus z per block).
     Pixels beyond a whole number of blocks on the right and bottom are not used."""
+    # definition: vollath4's lag-2 stencil needs at least 3 px a side in every block
     if img.ndim != 2 or n < 1 or img.shape[0] < 3 * n or img.shape[1] < 3 * n:
         raise ValueError(f"need a 2-D frame of at least {3 * n} px a side for {n} x {n} blocks,"
                          f" got {img.shape}")

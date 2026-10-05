@@ -1,6 +1,6 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/42daf8b2cbd02c303c762b5381b916fab7c6ce5e/microscope_agent/src/focus_verdict.py
-# body-sha256: 7139f2a96fa266af3bacf6c8432e77a5922c08763aeed1d7aacd024fc1525021
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/4de858612239b83a9c107d28fd508502b387c1bc/microscope_agent/src/focus_verdict.py
+# body-sha256: df3e2a48a4aa15ecfab2ba34175e1b0de3a92052b7b0a0b5750ca8d5d6c044e1
 """Focus verdicts in the soft-matter-agents focus-seat vocabulary (task 026).
 
 A verdict is **for display and for the record only**. It never sets a motion limit, never
@@ -170,7 +170,7 @@ def from_sweep(z_um: Sequence[float], stats: Sequence[FrameStats], *,
                             + (f" ({notes})" if notes else ""), evidence=ev)
     kept = [s.score for s, k in zip(stats, a.kept, strict=True) if k]
     hi, lo = max(kept), min(kept)
-    contrast = (hi - lo) / max(abs(hi), abs(lo), 1e-12)
+    contrast = (hi - lo) / max(abs(hi), abs(lo), 1e-12)  # numerical guard: an all-zero curve
     ev += [Evidence("curve_contrast", contrast, "computed"),
            Evidence("peak_edge", a.edge, "computed"),
            Evidence("z_vertex_um", _num(a.z_vertex_um), "computed", "um")]
