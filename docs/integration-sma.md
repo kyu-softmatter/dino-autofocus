@@ -94,6 +94,37 @@ Q5 설명: 판정기는 확신이 낮으면 `step_up` / `step_down` 대신 `unsu
 3 배를 넘으면 기권), `MIN_CURVE_CONTRAST = 0.05`, `MIN_DYNAMIC_RANGE_ADU = 20` 이고 모두 임시값이다. 그쪽 과제 026
 §9 는 이 문턱을 "미정" 으로 둔다. 권고: 임시값으로 시작하고, 벤치에서 사람이 맞춘 초점과 비교한 기록으로 정한다.
 
+### 7.1 결정 묶음 A (사용자, 2026-10-05)
+
+사용자가 2026-10-05 에 작업계획(`integration-sma-workplan.md`) 5절의 묶음 A 를 "모두 승인" 했다. 그래서 각 질문의
+**권고안을 그대로 결정으로** 적는다. 2026-10-03~04 에 soft-matter-agents 쪽이 먼저 정한 것(키 이름, 정지 채널, 10.2 확장)은
+그쪽 커밋을 함께 적었다. 묶음 B(OD-9, 11, 14, 17, 21, 22)는 벤치 방문(B-01) 뒤에 묻는다.
+
+| # | 질문 | 결정 |
+|---|---|---|
+| OD-1 | SMA 의 autofocus 좌석 이름과 번호 | `microscope-<YYYYMMDD>-<n>` 형식, 기존 `microscope-20261001-1` 행을 코드로 복사, 소유 `['microscope_agent']`; 카드에서 "autofocus 좌석" 이라 부른다. 어느 세션이 그 좌석인지는 사용자가 그 세션 창에서 말한다 |
+| OD-2 | dino-autofocus 를 SMA plan.md 10.2 의 출처로 여는가 | 예, 2026-09-17 조건 그대로. **이미 기록됨**: SMA 96db738(10.2 확장, 사용자가 architecture 좌석에게 직접 진술 = OD-31) |
+| OD-3 | 복사 뒤 어느 쪽이 원본인가 | (i) 복사 뒤 **SMA 가 원본**, (ii) dino 는 해시로 고정한 **읽기 전용 거울**을 남기고 표류는 `tests/test_sma_shape.py` 가 잡는다, (iii) 갱신은 SMA 의 날짜 카드로만(D-06) |
+| OD-5 | 콘솔 plan 초안의 위치와 들여보내는 쪽 | 콘솔 설정 폴더 `<config_dir>/plans/drafts/<draft_id>.json`; autofocus 좌석이 제 이름으로 SMA `questions/<qid>/` 에 복사; SMA 에 새 폴더 없음; 초안 `author` 는 `human` |
+| OD-6 | 초안·공개 기록의 사람 id | 승인 이름과 같은 손잡이, 그 밖은 무작위 `p-xxxxxx`; 초안·내보내기에는 id 만, 이메일은 절대 없음; 감사 기록은 지역; 손잡이가 `runs/` 에 나오는 것은 허용 |
+| OD-7 | 지역 기록 git 과 SMA `runs/` | `D:\AutoFocus\records` git 이 비공개 전체 원본(푸시 안 함); SMA `runs/` 에는 좌석이 넣는 비식별화 `console.*`; 세션을 닫은 뒤 세션 화면에서 수동 내보내기(R-03 의 bench 전용 규칙) |
+| OD-8 | SMA 에서 침지 렌즈의 Z 를 묶는 것 | 봉투의 **렌즈별 명시 키**(사람이 씀)와 실행 시 간극 검사 둘 다. 키 이름은 SMA 가 정한 `focus_z_<objective>_{min,max}`(e079983; 계획 행의 `z_drive_position_*` 안은 쓰지 않음); 상한은 사람이 쓰고 유도하지 않는다(250a138); 건식 렌즈의 "해제" 는 사람이 쓴 넓은 값 |
+| OD-10 | 벤치의 패턴 | 표현 가능한 부분집합만(압전 한 축 구간·한 축 사인; 트랩은 `.tpf` 또는 작은 스텝 열거와 보류); 원·나선 스키마(P-04)는 첫 초점 뒤 필요할 때만; 반복과 Z 주기 운동은 언제나 거부 |
+| OD-12 | `trap_move/trap_set/pattern_run` 을 mock 데모로 남기나 | 남긴다, operations-spec 에 "mock 데모" 표시 |
+| OD-13 | S5 뒤 콘솔의 직접 하드웨어와 벤치 프레임 | 콘솔은 G-14 프레임 탭(SMA 0c6452d)을 쓸 때까지 mm_real 의 cfg 적재·읽기·조명(모션 없음)만; 그 전 벤치 라이브 보기 없음(한 Micro-Manager 에 코어 둘은 알려진 실패); 콘솔 mm_real 은 SMA operator 와 동시에 열지 않는다 |
+| OD-15 | 콘솔이 초안을 검증해도 되나 | 콘솔 안 jsonschema 검사만(SMA `plan.schema.json` 의 읽기 전용 사본, 출처 헤더로 고정, "schema-valid (console check)" 라벨); SMA `validate.py` 는 들여보낸 뒤 그쪽에서 |
+| OD-16 | `scripts/focus_servo.py` | R-05 에서 삭제(이력에 남음); 유한한 방향 찾기는 SMA G-12 의 일 |
+| OD-18 | 콘솔 도구의 MCP 노출 | 이번 계획에서 제외; 뒤에 SMA architecture 가 등록하는 읽기 전용 서버로 다시 본다(C-14) |
+| OD-19 | `/api/commands` 뒤의 독립 dino 엔진 | 유지(`LocalEnginePort` 로 mock/replay/mm-demo); 벤치 모션은 D-05 에서 제거 |
+| OD-20 | 이번 합병의 XY 이동 | 전부 보류하고 지금 기록(G-17); scan_4x/sample_map/edge_trace/비켜서기는 B-03 뒤 XY 카드까지 mock/replay |
+| OD-23 | 정지 통로 전 SMA 모드의 Abort/confirm | 정직한 이유와 함께 비활성("장비 앞 또는 operator 터미널에서"); SMA 의 정지 채널(f6c0996, 11-25 b)이 생겼으므로 C-08 에서 재활성; "Abort 는 항상 켜짐" 약속은 "지역 엔진에 한해" |
+| OD-25 | `D:\AutoFocus\data`·`samples`·하드웨어 프로필과 기록 git 의 백업 | 원시 프레임은 지역 보관(SMA `runs/<run_id>/raw/` 복사는 좌석이 run 마다 결정); 샘플 폴더·하드웨어 프로필 내보내기는 보류; 기록 git 은 둘째 디스크 또는 암호화 사본으로 백업(사용자가 한다) |
+| OD-26 | 시뮬레이션 화면과 PLAN 10 절 F6/F7 | 화면은 콘솔에 남고 `SmaFilesPort` 가 SMA `simulation_agent/questions`·`runs/` 를 읽음(C-03) |
+| OD-27 | 콘솔 제목과 문서의 랩 이름 | 콘솔 제목은 중립("Autofocus Console")으로 바꾼다; 문서의 랩 이름은 결정 P3 대로 유지 |
+| OD-28 | 공개 트리의 언어 | 설계 문서는 한국어 그대로; README 에 영어 한 단락과 "설계 문서는 한국어" 표시; SMA 독자용 영어 요약은 이 문서 첫머리 |
+| OD-29 | `map_*.py` 를 첫 복사에 넣나 | 빼고 보류(SMA 10.2 도 같은 판정: 샘플 맵 자리가 없다); 첫 복사는 `focus_classical`·`focus_verdict`·`focus_search` 와 그 테스트(SMA 카드 059, dino b802837) |
+| OD-30 | D14(뷰어가 끊기면 자동 중단)를 SMA 가 돌리는 plan 에도 | 지금은 **적용하지 않는다**(SMA 의 임시 기본값과 같다: 뷰어가 끊겨도 run 은 계속, f297a28); 정지 채널을 hw_port 가 쓰게 되면 다시 정한다 |
+
 ## 8. 측정이 먼저인 것 (현미경 PC)
 
 과제 018 §6 과 이 저장소 BACKLOG 의 벤치 항목이 겹친다. 한 번의 벤치 방문으로 양쪽을 채운다:
