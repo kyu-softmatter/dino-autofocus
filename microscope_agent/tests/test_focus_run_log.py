@@ -1,6 +1,6 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/2de3a9f54ea907b341e42b080e0080157b97c7de/microscope_agent/tests/test_focus_run_log.py
-# body-sha256: e8a09f42a7622b43ab349a4dcd44c365965825d1d9a9091316dc9f1f0aa63ce3
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/42daf8b2cbd02c303c762b5381b916fab7c6ce5e/microscope_agent/tests/test_focus_run_log.py
+# body-sha256: 7c347f28e8debcda42a910a9356317df455c2cd293772c031af93ddf1565c5aa
 """The run-log event contract (D-07): a verdict as one soft-matter-agents run-log event.
 
 Pins the "Contract" section of focus_run_log.py's docstring. Kept apart from

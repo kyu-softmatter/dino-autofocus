@@ -1,6 +1,6 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/2de3a9f54ea907b341e42b080e0080157b97c7de/microscope_agent/src/focus_verdict.py
-# body-sha256: 07bc1342a4c868e5856b549bc8bc6a8c3a5af8fd8bd6dd83cc6c6970d01be099
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/42daf8b2cbd02c303c762b5381b916fab7c6ce5e/microscope_agent/src/focus_verdict.py
+# body-sha256: 7139f2a96fa266af3bacf6c8432e77a5922c08763aeed1d7aacd024fc1525021
 """Focus verdicts in the soft-matter-agents focus-seat vocabulary (task 026).
 
 A verdict is **for display and for the record only**. It never sets a motion limit, never
