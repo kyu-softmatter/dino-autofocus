@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/tests/test_focus_contract.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/ab4978710228bb7f392a1f9050b95dfb10b42a92/microscope_agent/tests/test_focus_contract.py
 # body-sha256: d863c62cee1f1894ee92a7e395ac53408bd7e0aeae4902a861f48b9b5407c3d4
 """The verdict contract (D-07): what goes in, what comes out, in JSON.
 
