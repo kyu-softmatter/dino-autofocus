@@ -65,3 +65,25 @@ mock and the bench.
   The bench gets no piezo and no tweezers.
 - Screens: "Run on piezo / traps" with repeats and "Abort run" in the designer (saved patterns)
   and in the live view's pattern overlay; the overlay's time follows the run's progress.
+
+## 5. On the stand (merge rules, P-01)
+
+Running a pattern on the real instrument is not this app's job after the merge with
+soft-matter-agents (docs/integration-sma.md 7 and 9): the console drafts a plan, the person approves
+it, soft-matter-agents' operator executes it. What a pattern can become there today:
+
+- **Trap tracks** become `.tpf` pattern files (`write_pattern` in soft-matter-agents'
+  `devices/python_tcp.py`: one point per line, x, y and strength, relative to the trap) loaded with
+  `LOAD_PATTERN` and started by `TRAP_ASSIGN_PATTERN`, or a list of `trap_steps` (absolute
+  positions, one trap per step, at most 1 um per step, a `hold_for_person` after a step a later one
+  relies on). Nothing is streamed at 20 Hz to the tweezers; the device reports nothing back.
+- **Piezo tracks** have only the shapes an `operation` plan allows: steps and a host-timed sine on
+  X or Y, Z only as a direction-finding step. A circle, spiral or raster (two axes at once), a Z
+  track, a loop, a trap z, or piezo and traps in one plan is refused with that reason until
+  soft-matter-agents designs a trajectory shape (workplan P-04, a manager decision).
+- **Ranges** come from the person's `envelope/safety.json` there, per objective; the provisional
+  numbers in `engine/patterns.py` are for the mock only (workplan P-02).
+- **The live overlay and the merged or side-by-side camera view are display only.** Frames are
+  paired by host arrival time (`WsFrame.time_base: "software"`), not by a hardware trigger: no
+  timing, correlation or coincidence analysis may be read off them. Simultaneous capture is a
+  hardware-triggered soft-matter-agents plan.

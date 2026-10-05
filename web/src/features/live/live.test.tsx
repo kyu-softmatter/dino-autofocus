@@ -121,6 +121,8 @@ describe("LiveView", () => {
     expect(screen.getByRole("img", { name: "Live frame Kinetix_blue" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Live frame Kinetix_red" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Side by side" }).getAttribute("aria-pressed")).toBe("true");
+    // P-01: two cameras on screen always carry the software-time-base note
+    expect(screen.getByTestId("live-timebase").textContent).toContain("display only");
 
     act(() => screen.getByRole("button", { name: "Kinetix_red" }).click());
     expect(screen.getByRole("img", { name: "Live frame Kinetix_red" })).toBeTruthy();

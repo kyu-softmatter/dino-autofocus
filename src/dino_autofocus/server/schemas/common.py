@@ -192,6 +192,12 @@ class WsFrame(BaseModel):
     #: the signed gauge reading of this frame (`meta.focus_dz` from the engine); null when the
     #: engine has none (no head loaded and no mock truth)
     focus_dz: FocusDz | None = None
+    #: how `t` was taken. "software": the host clock when the frame was popped from the camera
+    #: buffer. Two cameras' frames are paired by arrival, not by a hardware trigger, so a merged
+    #: or side-by-side view is display only: no timing, correlation or coincidence analysis may
+    #: be read off it (soft-matter-agents plan.md 4.6.9: physics never from a software timestamp;
+    #: simultaneous capture is a hardware-triggered plan there).
+    time_base: Literal["software"] = "software"
     meta: dict[str, Any] = Field(default_factory=dict)
 
 

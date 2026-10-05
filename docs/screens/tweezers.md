@@ -30,12 +30,22 @@ Mock trap spots are at least 3 camera pixels wide so they stay visible at low ma
 (a picture aid, not optics). Trapping is a high-magnification job: at 4x the ±60 µm range is
 about ±12 displayed pixels.
 
-## 3. Tweez300 (`engine/backends/tweez300.py`)
+## 3. Tweez300 (`engine/backends/tweez300.py`): a refusing stub, not a driver
 
-Tweez300 stays running on the microscope PC; the app never starts or closes it. The adapter
-refuses every call and opens nothing until the Python API / TCP command reference is in
-(command names, units, port, calibration from Tweez300 units to um per objective). Wiring it
-is its own reviewed card; `bench=True` keeps it behind the bench-motion lock.
+Tweez300 stays running on the microscope PC; the app never starts or closes it. The real
+driver is soft-matter-agents' `microscope_agent/src/devices/python_tcp.py` (the GUI's TCP text
+interface; wrapped verbs with `LASER_ON` left out; `.tpf` pattern files via `write_pattern`,
+`LOAD_PATTERN`, `TRAP_ASSIGN_PATTERN`; a silence is never retried; every dispatch is
+`verification: none` because the device reports nothing back) with its live checklist
+`microscope_agent/src/tweezers_live_checklist.md`. The merge decisions (integration-sma.md 7 and
+9; integration-sma-workplan.md P-01, P-03, D-05) make that the only path to the real tweezers:
+trap moves on the stand happen only as soft-matter-agents plans the person approves
+(`trap_steps`, absolute positions, one trap per step, a `hold_for_person` after any step a later
+one relies on), and the console's trap tracks become `.tpf` pattern files carried by such a plan.
+So this stub is not wired here and is deleted once that path is in use on the bench (D-05); until
+then it refuses every call and opens nothing, and `bench=True` keeps it behind the bench-motion
+lock. What the console shows for real traps is therefore what was commanded, never a read-back
+(the Tweez300 has none), and a trap's `z_um` exists only in the mock.
 
 ## 4. Screens
 

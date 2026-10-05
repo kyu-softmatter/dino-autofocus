@@ -11,6 +11,13 @@ type Conn = "connecting" | "open" | "closed" | "unsupported";
 /** Several cameras: both at once, one composite, or one of them. */
 export type Mode = "side" | "merged" | `one:${string}`;
 
+/** Shown whenever more than one camera is on screen: the frames are paired by the host
+ * clock, not a hardware trigger (the server's `time_base: "software"`). */
+export const TIME_BASE_NOTE =
+  "Frames overlaid by host arrival time, not simultaneous; display only. " +
+  "No timing, correlation or coincidence analysis from this view. " +
+  "Simultaneous capture is a hardware-triggered soft-matter-agents plan.";
+
 export interface CamFrame {
   camera: string;
   url: string;
@@ -113,7 +120,10 @@ function CameraPanel({ frame, overlay, onPick }: { frame: CamFrame; overlay?: Ov
  * the frame, its time and the receive rate. With two (the dual-camera stand)
  * both arrive on the same socket, told apart by `camera`: side by side, merged
  * (blue camera green, red camera magenta) or one at a time. Display only: raw
- * frames stay on disk.
+ * frames stay on disk, and the two cameras' frames are paired by host arrival time
+ * (`time_base: "software"`), not by a hardware trigger, so nothing about timing,
+ * correlation or coincidence may be read off a side-by-side or merged view (P-01;
+ * simultaneous capture is a hardware-triggered soft-matter-agents plan).
  */
 export function LiveView({
   now = performanceNow,
@@ -218,6 +228,11 @@ export function LiveView({
         )}
       </div>
       {detail && conn === "unsupported" && <p className="muted">{detail}</p>}
+      {frames.length > 1 && (
+        <p className="muted" data-testid="live-timebase">
+          {TIME_BASE_NOTE}
+        </p>
+      )}
       {frames.length === 0 && <p className="muted">No frame yet.</p>}
       {single && (
         <Stack frame={single} overlay={overlay} onPick={onPick}>
