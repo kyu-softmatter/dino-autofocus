@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/src/map_geometry.py
+# body-sha256: f9d96d68d4a2c6dd53a3fa411816ed220c1b4704568fe0e9bc39fd403c000a13
 """Stage <-> camera geometry and the sample geometry values, pure (no hardware, no guards).
 
 Camera convention (PLAN v1.2, the 2026-09-30 run): the camera image is mirrored against the
@@ -8,15 +11,15 @@ at stage t is
     stage = t + inv(M) @ (centre - p),      centre = ((w - 1) / 2, (h - 1) / 2)
 
 Sample geometry (F3, WP-H). ``GEOMETRY_FIELDS`` is the one list of geometry fields
-(docs/screens/sample.md section 2); the server serves it and the screen renders from it.
+(the sample screen spec, section 2); the server serves it and the screen renders from it.
 Values are entered as ``geometry_set`` sample events; ``geometry_view`` and ``loading_view``
 project the folded events into what the screens show. Sample thickness and orientation have
 no default on purpose: a guessed safety value must not look entered.
 
 ``hole_loop`` tells a closed hole trace from a partial arc (the re-trace rule and scan_4x).
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib +
-numpy only. ``dino_autofocus.engine.sample`` and ``engine.mosaic`` re-export these names.
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib +
+numpy only. The engine's ``sample`` and ``mosaic`` modules re-export these names.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from typing import Any
 
 import numpy as np
 
-GRADE_MODEL = "model"  # dino_autofocus.engine.records.GRADE_MODEL
+GRADE_MODEL = "model"  # the engine's records.GRADE_MODEL
 
 
 # ---------------------------------------------------------------- stage <-> camera
@@ -64,7 +67,7 @@ def stage_to_tile_pixel(M: Any, tile_um: Sequence[float], x_um: float, y_um: flo
 
 
 # ---------------------------------------------------------------- sample geometry
-ORIENTATIONS = ("upright", "flipped")  # docs/screens/sample.md; F3.1 not yet confirmed
+ORIENTATIONS = ("upright", "flipped")  # the sample screen spec; F3.1 not yet confirmed
 CHAMBER_SHAPES = ("hole",)  # more to come (screen gap G5)
 
 # sample event kinds (records.events.fold keeps them in .other)
@@ -103,7 +106,7 @@ class GeometryError(ValueError):
 
 
 def _is_graded(v: Any) -> bool:
-    """A graded value (dino_autofocus.engine.records.Graded or the like): value + grade."""
+    """A graded value (the engine's ``records.Graded`` or the like): value + grade."""
     return hasattr(v, "grade") and hasattr(v, "value")
 
 
@@ -198,7 +201,7 @@ def geometry_view(entries: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]
 
 
 def loading_view(entries: Iterable[dict[str, Any]], session_id: str | None) -> dict[str, Any]:
-    """LoadingState for the open session (docs/screens/sample.md sections 3 and 6).
+    """LoadingState for the open session (the sample screen spec, sections 3 and 6).
 
     Step 1 is done when every safety field has an entered or default value. Steps 2 and 3
     count only in `session_id`, and a change of a safety value after them clears them

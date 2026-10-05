@@ -1,8 +1,11 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/src/focus_verdict.py
+# body-sha256: 727286e55ac0f4b2b613e0bc0cc8d37b67e1c8bb7a9e8bfb18da6450b69e267c
 """Focus verdicts in the soft-matter-agents focus-seat vocabulary (task 026).
 
 A verdict is **for display and for the record only**. It never sets a motion limit, never
 opens a gate and never takes part in a safety decision: those are decided by the engine's
-guards from encoder readbacks and fixed limits (docs/PLAN.md, design rules 2 and 3).
+guards from encoder readbacks and fixed limits (PLAN design rules 2 and 3).
 
 Vocabulary: ``in_focus | step_up | step_down | no_sample_here | unsure``.
 
@@ -10,22 +13,37 @@ Vocabulary: ``in_focus | step_up | step_down | no_sample_here | unsure``.
   move up (larger ZDrive um). ``step_down`` the opposite. At 100x a step up is the
   operator's call (2026-09-30 rule); the verdict only reports it.
 * The z of a verdict is the **encoder readback of a real frame** that was taken. It is never
-  a model output and never an interpolated z. Computed numbers (a parabola vertex) and model
-  numbers (DINO dz, sigma) are kept as evidence with their grade.
+  a model output and never an interpolated z. Computed numbers (a parabola vertex) are kept
+  as evidence labelled with their origin kind.
 
-Two mappings:
-
-``from_sweep`` -- a classical z sweep (scores of frames at known encoder z):
+The mapping here, ``from_sweep`` -- a classical z sweep (scores of frames at known encoder z):
   no frame with more than dark-level dynamic range -> ``no_sample_here``;
   too few readable frames or a flat curve -> ``unsure``;
   peak at the top of the span -> ``step_up``; at the bottom -> ``step_down``;
   peak inside -> ``in_focus`` at the real frame nearest the parabola vertex.
 
-``from_reading`` -- one frame's signed DINO reading (``dino_autofocus.live.FocusReading``),
-  in DoF units with dz = stage - best focus (positive: the stage is above focus):
-  no tile with sample signal -> ``no_sample_here``; tiles but none readable, or sigma above
-  ``MAX_SIGMA_DOF`` -> ``unsure``; ``|dz| <= IN_FOCUS_DOF`` -> ``in_focus``; sign known
-  (``|dz| > sigma``) -> ``step_down`` for dz > 0, ``step_up`` for dz < 0; else ``unsure``.
+The model-reading mapping (``from_reading``, a signed DINO reading) lives in the sibling
+``focus_verdict_model.py``: its inputs are model numbers (E6 in soft-matter-agents), so it
+is kept apart and out of a copy until a place for model output exists there (plan.md 13.1).
+
+Contract (D-07; ``test_focus_contract.py`` pins it, soft-matter-agents' card for the copy
+cites it):
+
+* Inputs of ``from_sweep``: ``z_um`` -- the encoder readback of each frame, floats, one per
+  frame, in sweep order; ``stats`` -- one ``FrameStats`` per frame (``score``, ``metric``,
+  ``mean``, ``median``, ``p999``, ``max``, ``saturated_fraction``), same order; and every
+  threshold as a keyword argument with no default.
+* Output: a ``FocusVerdict`` whose ``as_record()`` is JSON-native and has exactly the keys
+  ``RECORD_KEYS``: ``verdict`` (one of ``VERDICTS``), ``source`` (one of ``SOURCES``),
+  ``reason`` (a sentence), ``frame_index`` (an index into ``z_um`` or None), ``z_um`` (the
+  readback at that index or None -- never a model value, never interpolated), ``evidence``
+  (a list of ``{name, value, grade, unit}`` with ``grade`` in ``GRADES``) and ``z_grade``
+  (``"measured"`` when ``z_um`` is set, else None).
+* A verdict can refuse and cannot permit: it carries no limit, no target and no command.
+* Each evidence item's ``grade`` field holds an origin kind (``GRADES``), not an evidence
+  grade; a caller derives its own grade from it. Model output is not produced here: the
+  model-reading verdict, its ``"dino"`` source and ``"model"`` kind live in
+  ``focus_verdict_model.py``.
 """
 
 from __future__ import annotations
@@ -37,7 +55,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -55,33 +73,18 @@ def _load(name: str, filename: str):
 
 
 _classical = _load("_mic_focus_classical", "focus_classical.py")
-DROPOUT_TOLERANCE = _classical.DROPOUT_TOLERANCE
-MAX_SATURATED_FRACTION = _classical.MAX_SATURATED_FRACTION
 FrameStats = _classical.FrameStats
 analyse_sweep = _classical.analyse_sweep
 
-#: Frames whose 99.9th percentile is less than this many ADU above their median hold no
-#: sample: 2026-09-30, a 30 ms 100x Vollath run read only the dark offset (~102 ADU) and
-#: gave no focus. Provisional; set from dark frames on the microscope PC.
-MIN_DYNAMIC_RANGE_ADU = 20.0
+# The thresholds (dynamic range floor in ADU, curve contrast, readable frames, in-focus
+# band and model sigma ceiling in DoF, dropout tolerance, saturated fraction) are the
+# caller's arguments: dino-autofocus keeps its provisional values in its bench_values
+# module; soft-matter-agents carries them in the plan.
 
-#: A curve whose (max - min) / max(|max|, |min|) is below this is flat: no peak to trust.
-MIN_CURVE_CONTRAST = 0.05
-
-#: Fewer readable sweep frames than this cannot place a peak.
-MIN_SWEEP_FRAMES = 3
-
-#: |dz| at or under this many DoF reads as in focus (the live view's green band).
-IN_FOCUS_DOF = 1.0
-
-#: A model reading with a larger sigma (DoF) is ``unsure``. Provisional.
-MAX_SIGMA_DOF = 3.0
-
-#: Grade of a number in a verdict record. "measured": read from the hardware (encoder z,
-#: pixel statistics); "computed": deterministic from measured values (a classical metric,
-#: a parabola vertex); "model": produced by a learned model -- grade E6 in soft-matter-agents,
-#: kept out of any decision. Field name to be aligned with engine.records (T-002).
-Grade = Literal["measured", "computed", "model"]
+#: Origin kind of a number in a verdict record. "measured": read from the hardware (encoder
+#: z, pixel statistics); "computed": deterministic from measured values (a classical metric,
+#: a parabola vertex).
+Grade = Literal["measured", "computed"]
 
 
 class Verdict(StrEnum):
@@ -92,26 +95,32 @@ class Verdict(StrEnum):
     UNSURE = "unsure"
 
 
+#: The contract's fixed vocabularies (soft-matter-agents plan.md 13.2 branches; what this
+#: module produces) and the exact key set of ``FocusVerdict.as_record()``.
+VERDICTS = tuple(str(v) for v in Verdict)
+SOURCES = ("sweep",)
+#: Origin kind of each number, not an evidence grade. A caller derives its own grade from
+#: this; nothing here assigns one.
+GRADES = ("measured", "computed")
+RECORD_KEYS = ("verdict", "source", "reason", "frame_index", "z_um", "evidence", "z_grade")
+
+
 @dataclass
 class Evidence:
     name: str
     value: float | int | str | None
-    grade: Grade
+    grade: str  # an origin kind: one of GRADES here; a sibling file may add its own
     unit: str = ""
 
 
 @dataclass
 class FocusVerdict:
     verdict: Verdict
-    source: Literal["sweep", "dino"]
+    source: str  # "sweep" here (SOURCES); a sibling file may name its own
     reason: str
     frame_index: int | None = None   # the real frame the verdict points at
     z_um: float | None = None        # that frame's encoder readback, never a model value
     evidence: list[Evidence] = field(default_factory=list)
-
-    @property
-    def has_model_numbers(self) -> bool:
-        return any(e.grade == "model" for e in self.evidence)
 
     def as_record(self) -> dict[str, Any]:
         """JSON-ready dict (``json.dumps`` works on it as is)."""
@@ -128,12 +137,9 @@ def _num(x: float | None) -> float | None:
 # -- mapping 1: classical sweep -------------------------------------------------------------
 
 def from_sweep(z_um: Sequence[float], stats: Sequence[FrameStats], *,
-               min_dynamic_range_adu: float = MIN_DYNAMIC_RANGE_ADU,
-               min_contrast: float = MIN_CURVE_CONTRAST,
-               min_frames: int = MIN_SWEEP_FRAMES,
-               dropout_tolerance: float = DROPOUT_TOLERANCE,
-               max_saturated: float = MAX_SATURATED_FRACTION) -> FocusVerdict:
-    """Verdict from a classical sweep.
+               min_dynamic_range_adu: float, min_contrast: float, min_frames: int,
+               dropout_tolerance: float, max_saturated: float) -> FocusVerdict:
+    """Verdict from a classical sweep. Every threshold is the caller's (no defaults).
 
     `z_um` is the encoder readback of each frame (not the commanded z), `stats` the
     ``classical.frame_stats`` of the same frames, in the same order.
@@ -164,7 +170,7 @@ def from_sweep(z_um: Sequence[float], stats: Sequence[FrameStats], *,
                             + (f" ({notes})" if notes else ""), evidence=ev)
     kept = [s.score for s, k in zip(stats, a.kept, strict=True) if k]
     hi, lo = max(kept), min(kept)
-    contrast = (hi - lo) / max(abs(hi), abs(lo), 1e-12)
+    contrast = (hi - lo) / max(abs(hi), abs(lo), 1e-12)  # numerical guard: an all-zero curve
     ev += [Evidence("curve_contrast", contrast, "computed"),
            Evidence("peak_edge", a.edge, "computed"),
            Evidence("z_vertex_um", _num(a.z_vertex_um), "computed", "um")]
@@ -189,50 +195,3 @@ def from_sweep(z_um: Sequence[float], stats: Sequence[FrameStats], *,
                         f"peak inside the span; nearest real frame to the vertex "
                         f"{a.z_vertex_um:.2f} um" + (f" ({notes})" if notes else ""),
                         frame_index=j, z_um=float(z_um[j]), evidence=ev)
-
-
-# -- mapping 2: one signed model reading ----------------------------------------------------
-
-class ReadingLike(Protocol):
-    """What ``dino_autofocus.live.FocusReading`` provides (no import of live here)."""
-
-    score: float | None
-    sigma: float | None
-    n_used: int
-    tiles: list[Any]
-
-    @property
-    def sign_known(self) -> bool: ...
-
-
-def from_reading(reading: ReadingLike, z_um: float | None, frame_index: int | None = None, *,
-                 in_focus_dof: float = IN_FOCUS_DOF,
-                 max_sigma_dof: float = MAX_SIGMA_DOF) -> FocusVerdict:
-    """Verdict from one frame's signed reading; `z_um` is that frame's encoder readback.
-
-    dz (``reading.score``) is in DoF, dz = stage - best focus: dz > 0 means the stage is
-    above focus, so the drive should step down.
-    """
-    dz, sigma = reading.score, reading.sigma
-    ev = [Evidence("dz", _num(dz), "model", "DoF"),
-          Evidence("sigma", _num(sigma), "model", "DoF"),
-          Evidence("n_tiles", len(reading.tiles), "computed"),
-          Evidence("n_used", reading.n_used, "model")]
-
-    def v(verdict: Verdict, reason: str) -> FocusVerdict:
-        return FocusVerdict(verdict, "dino", reason, frame_index=frame_index,
-                            z_um=None if z_um is None else float(z_um), evidence=ev)
-
-    if not reading.tiles:
-        return v(Verdict.NO_SAMPLE_HERE, "no tile with sample signal in the frame")
-    if dz is None or not math.isfinite(dz):
-        return v(Verdict.UNSURE, f"{len(reading.tiles)} tiles, none readable")
-    if sigma is None or not math.isfinite(sigma) or sigma > max_sigma_dof:
-        return v(Verdict.UNSURE, f"model sigma {sigma} DoF above {max_sigma_dof:g}")
-    if abs(dz) <= in_focus_dof:
-        return v(Verdict.IN_FOCUS, f"|dz| {abs(dz):.2f} <= {in_focus_dof:g} DoF (model)")
-    if reading.sign_known:
-        if dz > 0:
-            return v(Verdict.STEP_DOWN, f"dz {dz:+.2f} DoF: stage above focus (model)")
-        return v(Verdict.STEP_UP, f"dz {dz:+.2f} DoF: stage below focus (model)")
-    return v(Verdict.UNSURE, f"dz {dz:+.2f} DoF but |dz| <= sigma {sigma:.2f}: sign unknown")

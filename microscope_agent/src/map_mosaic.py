@@ -1,6 +1,9 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/src/map_mosaic.py
+# body-sha256: cf68b394daeabf54926cb8fac579b56c2d027ea8de85aab960e807454b4ac884
 """4x mosaic and classical particle candidates (WP-I, T-032), pure numpy.
 
-Nothing here talks to a backend. ``dino_autofocus.engine.operations.sample_map`` calls it on
+Nothing here talks to a backend. The engine's ``sample_map`` operation calls it on
 scan_4x tile outputs; the server renders the saved mosaic for the map screen.
 
 Stage <-> image mapping is ``map_geometry`` (``stage = t + inv(M) @ (centre - p)``).
@@ -8,7 +11,7 @@ Stage <-> image mapping is ``map_geometry`` (``stage = t + inv(M) @ (centre - p)
 The mosaic is stored in **stage orientation**: column index grows with stage x, row index
 grows with stage y, row 0 is the lowest y (draw it with origin "lower"). Each tile is binned,
 then flipped and, if the camera is turned by about 90 degrees, transposed, so that only the
-signs and the axis order of inv(M) are used (as scripts/plot_scan.py does). The rotation
+signs and the axis order of inv(M) are used (as the bench plot script does). The rotation
 left over (about 0.1 degree on the bench) is recorded in `rotation_ignored_deg`.
 
 Mosaic pixel (col, row) covers stage x in [x0 + col * s, x0 + (col + 1) * s) with
@@ -26,8 +29,8 @@ The Gaussian, Laplacian-of-Gaussian and maximum filters are numpy ports of
 ``scipy.ndimage``'s (mode "reflect", truncate 4, the same kernels and the same order of
 operations: bit-identical results); the soft-matter-agents ``mic`` environment has no scipy.
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib +
-numpy only, siblings loaded by path. ``dino_autofocus.engine.mosaic`` re-exports it and adds
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib +
+numpy only, siblings loaded by path. The engine's ``mosaic`` module re-exports it and adds
 ``mosaic_from_scan`` (which names the objective through the engine's guards).
 """
 
@@ -65,12 +68,12 @@ um_per_px = _geometry.um_per_px
 tile_pixel_to_stage = _geometry.tile_pixel_to_stage
 stage_to_tile_pixel = _geometry.stage_to_tile_pixel
 
-GRADE_COMPUTED = "computed"  # dino_autofocus.engine.records.GRADE_COMPUTED
+GRADE_COMPUTED = "computed"  # the engine's records.GRADE_COMPUTED
 BIN = 8  # plot_scan.py
 ORIENTATION = "stage"
 CANDIDATE_SOURCE = "classical_candidate"
-# 2026-09-30 4x calibration (docs/runs/2026-09-30_substrate-scan.yaml); used when a sample has none
-BENCH_M_4X = [[0.61602, 0.00236], [0.00126, -0.61456]]
+# The bench 4x calibration a sample without one falls back to is the caller's
+# (dino-autofocus keeps it in its bench_values module).
 
 
 # ---------------------------------------------------------------- tile orientation
@@ -202,15 +205,18 @@ def build_mosaic(tiles: Sequence[Tile], M: Any, *, objective: str = "4x", bin: i
     return mosaic, meta
 
 
-def calibration_for(sample_json: Path | None, objective: str = "4x") -> tuple[list, str]:
-    """M from the sample's stage_camera_calibration for this objective, else the bench 4x M."""
+def calibration_for(sample_json: Path | None, objective: str = "4x", *,
+                    fallback_m: Sequence[Sequence[float]] | None = None,
+                    fallback_source: str = "caller fallback") -> tuple[list, str]:
+    """M from the sample's stage_camera_calibration for this objective, else the caller's
+    fallback; no fallback means no calibration (an error, never a guess)."""
     if sample_json is not None and sample_json.exists():
         cal = json.loads(sample_json.read_text(encoding="utf-8")).get("stage_camera_calibration")
         if cal and cal.get("M_px_per_um") and cal.get("objective", objective) == objective:
             return cal["M_px_per_um"], "sample stage_camera_calibration"
-    if objective != "4x":
-        raise ValueError(f"no calibration for {objective!r} and no bench default")
-    return BENCH_M_4X, "2026-09-30 bench 4x (docs/runs/2026-09-30_substrate-scan.yaml)"
+    if fallback_m is None:
+        raise ValueError(f"no calibration for {objective!r} in the sample and no fallback given")
+    return [[float(v) for v in r] for r in fallback_m], fallback_source
 
 
 def load_scan_tiles(scan_dir: Path) -> tuple[dict, list[Tile]]:

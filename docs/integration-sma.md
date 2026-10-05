@@ -159,7 +159,27 @@ src/dino_autofocus/          단독 실행용 나머지 (engine, backends, opera
   - `map_tiles` (완료): 뱀 모양 타일 순서, 스캔 사각형, `fit_plane` / `plane_z`, 카메라 보정 기본값 (`scan_4x.py`, `sample_map.py`). 허용 XY 상자는 guards (`XYBox.around`) 라 남음.
   - `map_edge` (완료): `edge_trace.py` 의 검출부 (`find_edge`, 원 맞춤, `hole_fit`); `remove_small_regions` 의 scipy label → numpy run 묶기 (같은 영역).
   - `focus_search` (완료): `focus_100x.py` 의 인자, 중심, coarse·fine·위로 늘리기 구간, 피크 위치, 경고 규칙, `sweep_z` (한계는 인자, guards 의 `FocusAxis.plan` 과 같은 Z). 실제 계획·검사는 guards 에 남음.
-  - `focus_step_rules` (건너뜀): `guards.py` 안에 있고 다른 세션이 고치는 중이라 이번에 손대지 않음.
+  - `focus_step_rules` (완료 2026-10-03, 순수 파일만; 작업계획 D-01): Z 창·후퇴·복귀·읽기 허용·렌즈별 작동 거리·긴 이동
+    문턱·접근 스텝을 모두 **인자로** 받는 규칙 함수(상향 스윕, 읽기 확인, 상승 확인, 접근 단계 열거, 스윕·접근 상한,
+    PFS 꺼짐·범위 밖, 터릿 회전 조건, 긴 XY 이동 전 후퇴 — Q4 의 건식 렌즈 해제 포함, 모델 등급 거부)와 평탄 unittest.
+    **D-01b (완료 2026-10-03)**: `guards.py` 가 규칙 20 개 중 16 개를 비교 시점에 호출한다 (한계·백엔드 호출·기록·벤치
+    잠금은 그대로 guards 에). 위임하지 않은 넷 — `approach_steps`(접근의 다음 목표는 읽기값에서 나온다),
+    `needs_retract_before_xy`(D-04 의 렌즈 종류가 필요; 지금은 모든 렌즈를 표의 행으로 묶음), `pfs_quiet`·
+    `pfs_out_of_range`(`nosepiece_turn_allowed` 안에서 쓰임). 엄격해진 것 하나: PFS 상태를 읽지 못하면 터릿 회전을
+    거부한다 (전에는 켜진 상태만 거부). `tests/engine/test_guards_delegation.py` 가 거부 문장이 평탄 규칙의 문장과
+    같음을 고정한다.
+  - D-02 (완료 2026-10-03, 작업계획 `integration-sma-workplan.md`): 평탄 파일의 벤치·튜닝 숫자(스윕 중심 2930, 동초점
+    −60, 암전 102, 신호 바닥 50, 노출 20, 스팬 40/2/3/0.2, 판정 문턱 20/0.05/3/1.0/3.0, 포화 0.001, 드롭아웃 0.02,
+    이중 피크 0.2, 4x 보정 1.625 와 행렬)를 `src/dino_autofocus/bench_values.py` 로 옮기고 함수 인자로 받게 함;
+    `tests/test_sma_shape.py` 가 파일별 숫자 리터럴 허용 목록 밖의 숫자를 거부한다.
+  - D-03 (완료 2026-10-03): 평탄 src·test 파일마다 출처 헤더 세 줄 — `# origin: dino-autofocus, public since
+    2026-10-03:`, 공개 URL `https://github.com/kyu-softmatter/dino-autofocus/blob/<commit>/<path>`,
+    `# body-sha256: <헤더 아래 본문의 해시, 줄끝 LF 로 정규화>`. `<commit>` 은 그 본문이 처음 들어간 커밋이라
+    본문을 고치면 커밋 둘(본문, 그 커밋을 적는 헤더)이 필요하고 그 사이 `tests/test_sma_shape.py` 가 실패한다
+    (`python -m dino_autofocus.flat_origin --check` / `--commit <sha>`). 평탄 파일 안의 `dino_autofocus`·
+    `scripts/`·`docs/` 토큰 금지(복사 뒤 다른 뜻이 됨), 거울이 따르는 SMA 커밋 고정(`SMA_SHAPE_COMMIT`), 옆에
+    soft-matter-agents 체크아웃이 있으면 읽기만으로 표류 검사(고정 커밋이 이력에 있는지, 검사 13·16·82 가 아직
+    있는지, 양쪽에 다 있는 파일의 본문이 같은지). 복사 뒤에는 헤더가 soft-matter-agents 를 가리키게 돌린다(D-06).
 - S4 `console/` 로 서버·웹·런처 옮기기 (import 약 100 곳, gen:api, 런처 경로).
 - S5 `hw_port.py`: 화면이 엔진을 직접 부르지 않고 포트 하나로 (그 뒤 console 은 `dino_autofocus` 를 import 하지 않는다).
 - S6 합치는 주: 그쪽 승인 순서 (사람: 좌석 → architecture: seats.json, pixi, ALLOWED_PATHS 명세 → manager: validate.py →

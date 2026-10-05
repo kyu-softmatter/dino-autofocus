@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/tests/test_map_core.py
+# body-sha256: 08fd53006181c876aff7da398058cd65b319d9c722cddbaaa04b9cd15fba323e
 """The flat map files in the soft-matter-agents style: loaded by path, stdlib + numpy only.
 
 map_geometry (stage <-> camera, sample geometry, hole loop), map_mosaic (mosaic, filters,
@@ -160,9 +163,12 @@ class Tiles(unittest.TestCase):
         self.assertIsNone(tiles.fit_plane([]))
 
     def test_camera_calibration(self):
-        um, m, src = tiles.camera_calibration(None)
+        bench = {"default_um_per_px": 1.625, "default_m_px_per_um": BENCH_M,
+                 "default_source": "2026-09-30 4x calibration"}
+        um, m, src = tiles.camera_calibration(None, **bench)
         self.assertEqual((um, src), (1.625, "2026-09-30 4x calibration"))
-        self.assertEqual(tiles.camera_calibration({"M_px_per_um": [[1, 0], [0, 1]]})[1],
+        self.assertEqual(m, [[float(v) for v in r] for r in BENCH_M])
+        self.assertEqual(tiles.camera_calibration({"M_px_per_um": [[1, 0], [0, 1]]}, **bench)[1],
                          [[1.0, 0.0], [0.0, 1.0]])
 
 

@@ -1,6 +1,9 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/src/focus_search.py
+# body-sha256: 7ffaf28f014ffdd87587f803f2481e3d9eff47219fde15432d97932483655bc6
 """The 100x focus search as steps, pure: what to sweep, not whether a move is allowed.
 
-The search (``dino_autofocus.engine.operations.focus_100x``, port of scripts/focus_100x.py):
+The search (the engine's ``focus_100x`` operation, a port of the 2026-09-30 bench script):
 a coarse sweep around a centre; a peak inside it gets a fine sweep around the coarse peak; a
 peak on the top end is **not** climbed: Z goes back to the low end and the operator is asked
 whether to extend upward, one span higher from the old top, at most ``MAX_EXTENSIONS`` times
@@ -15,7 +18,7 @@ The span helpers return ``(centre_um, half_um, step_um)``, the arguments of
 ``FocusAxis.plan`` and of ``sweep_z``; ``sweep_z`` gives the same Z list as the guards' plan
 for the same floor and ceiling.
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib +
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib +
 numpy only, siblings loaded by path.
 """
 
@@ -25,7 +28,7 @@ import importlib.util
 import math
 import os
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,17 +47,12 @@ def _load(name: str, filename: str):
     return module
 
 
-_classical = _load("_mic_focus_classical", "focus_classical.py")
-MAX_SATURATED_FRACTION = _classical.MAX_SATURATED_FRACTION
-
-GRADE_COMPUTED = "computed"  # dino_autofocus.engine.records.GRADE_COMPUTED
-PROVISIONAL = "unmeasured provisional"  # dino_autofocus.engine.backend.PROVISIONAL
-DEFAULT_CENTRE_UM = 2930.0
-PARFOCAL_4X_TO_100X_UM = -60.0  # 2026-09-30, one sample; unmeasured provisional
-DARK_OFFSET_ADU = 102.0  # Kinetix_red dark offset on 2026-09-30
-SIGNAL_MIN_ADU = 50.0  # a first frame whose max is within this of the dark offset: no signal
-DEFAULT_EXPOSURE_MS = 20.0  # provisional (2026-09-30, one run)
-MAX_EXTENSIONS = 3
+GRADE_COMPUTED = "computed"  # the engine's records.GRADE_COMPUTED
+PROVISIONAL = "unmeasured provisional"  # the engine's backend.PROVISIONAL
+# The bench numbers this search once carried (sweep centre, parfocal offset, dark offset,
+# signal floor, exposure, span sizes) are the caller's: dino-autofocus keeps them in its
+# bench_values module; soft-matter-agents takes them from an approved plan.
+MAX_EXTENSIONS = 3  # times a top-end peak may be followed upward: a count, not a bench value
 METRICS = ("peak", "vollath")
 REDUCE_EXPOSURE = "reduce exposure"
 DARK_SIGNAL = "signal at dark level"
@@ -63,26 +61,34 @@ TOP_END, LOW_END, INTERIOR = "top_end", "low_end", "interior"
 
 @dataclass(frozen=True)
 class FocusArgs:
-    centre_um: float | None = None  # None: 4x plane + parfocal offset, else 2930
-    half_um: float = 40.0
-    step_um: float = 2.0
-    fine_half_um: float = 3.0
-    fine_step_um: float = 0.2
-    # provisional (2026-09-30, one run): 20 ms gave a clean peak without saturation; the
-    # script's default was 30
-    exposure_ms: float = DEFAULT_EXPOSURE_MS
+    half_um: float
+    step_um: float
+    fine_half_um: float
+    fine_step_um: float
+    exposure_ms: float
+    centre_um: float | None = None  # None: the caller's centre (4x plane + parfocal offset)
     aura_line: str = "GREEN"
     aura_percent: float = 1.0
     metric: str = "peak"
     oil_loaded: bool | None = None  # True when this session recorded load_immersion
 
 
-def parse(args: dict) -> FocusArgs:
+REQUIRED = ("half_um", "step_um", "fine_half_um", "fine_step_um", "exposure_ms")
+
+
+def parse(args: dict, defaults: Mapping[str, Any]) -> FocusArgs:
+    """`args` over `defaults`: the caller's numbers (span sizes, exposure) fill what the
+    request leaves out; a request may not name anything FocusArgs does not have."""
     known = set(FocusArgs.__dataclass_fields__)
     extra = sorted(set(args) - known - {"sample_id"})
     if extra:
         raise ValueError(f"unknown focus_100x arguments: {extra}")
-    a = FocusArgs(**{k: v for k, v in args.items() if k in known})
+    merged = {**{k: v for k, v in defaults.items() if k in known},
+              **{k: v for k, v in args.items() if k in known}}
+    missing = [k for k in REQUIRED if k not in merged]
+    if missing:
+        raise ValueError(f"focus_100x arguments without a value or a default: {missing}")
+    a = FocusArgs(**merged)
     if a.metric not in METRICS:
         raise ValueError(f"metric {a.metric!r} is not one of {METRICS}")
     for name in ("half_um", "step_um", "fine_half_um", "fine_step_um", "exposure_ms"):
@@ -93,17 +99,18 @@ def parse(args: dict) -> FocusArgs:
 
 
 # ---------------------------------------------------------------- where to start
-def centre_from_plane(plane: dict | None) -> dict:
+def centre_from_plane(plane: dict | None, *, default_centre_um: float,
+                      parfocal_offset_um: float) -> dict:
     """The suggested sweep centre and where it came from (computed, not model): the 4x focus
-    plane at this XY ({z_um, scan}, scan_4x.focus_plane_4x) plus the parfocal offset, else
-    the script default."""
+    plane at this XY ({z_um, scan}, scan_4x.focus_plane_4x) plus the caller's parfocal
+    offset, else the caller's default centre."""
     if plane is not None:
-        return {"centre_um": plane["z_um"] + PARFOCAL_4X_TO_100X_UM, "z_4x_um": plane["z_um"],
+        return {"centre_um": plane["z_um"] + parfocal_offset_um, "z_4x_um": plane["z_um"],
                 "source": f"4x plane of {plane['scan']} + parfocal "
-                          f"{PARFOCAL_4X_TO_100X_UM:g} um ({PROVISIONAL})",
+                          f"{parfocal_offset_um:g} um ({PROVISIONAL})",
                 "grade": GRADE_COMPUTED}
-    return {"centre_um": DEFAULT_CENTRE_UM, "z_4x_um": None,
-            "source": "script default (no 4x scan)", "grade": None}
+    return {"centre_um": float(default_centre_um), "z_4x_um": None,
+            "source": "caller default (no 4x scan)", "grade": None}
 
 
 def centre_grade(pl: dict) -> str | None:
@@ -159,12 +166,12 @@ def peak_at(at_top: bool, argmax_index: int | None) -> str:
     return INTERIOR
 
 
-def at_dark_level(first_max_adu: float) -> bool:
-    """The first frame's max within SIGNAL_MIN_ADU of the dark offset: no signal."""
-    return float(first_max_adu) <= DARK_OFFSET_ADU + SIGNAL_MIN_ADU
+def at_dark_level(first_max_adu: float, *, dark_offset_adu: float,
+                  signal_min_adu: float) -> bool:
+    """The first frame's max within `signal_min_adu` of the dark offset: no signal."""
+    return float(first_max_adu) <= float(dark_offset_adu) + float(signal_min_adu)
 
 
-def too_bright(saturated_fractions: Iterable[Any],
-               limit: float = MAX_SATURATED_FRACTION) -> bool:
+def too_bright(saturated_fractions: Iterable[Any], limit: float) -> bool:
     """Any plane with more clipped pixels than `limit` (None counts as 0): reduce exposure."""
     return any((s or 0) > limit for s in saturated_fractions)

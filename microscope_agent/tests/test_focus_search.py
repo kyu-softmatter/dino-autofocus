@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/tests/test_focus_search.py
+# body-sha256: 34ccbf778fd70d3ab5220fc7234d85117d6692a91046585066d2a236554cef72
 """focus_search.py, the 100x search as steps: loaded by path, stdlib + numpy only.
 
 Runs with `python -m unittest` from this folder and under pytest."""
@@ -23,14 +26,24 @@ def _load(name, path):
 fs = _load("_mic_focus_search", SRC / "focus_search.py")
 
 
+# The caller's numbers (dino-autofocus bench_values.FOCUS_ARG_DEFAULTS and the 2026-09-30
+# bench values); the flat module holds none of its own.
+DEFAULTS = {"half_um": 40.0, "step_um": 2.0, "fine_half_um": 3.0, "fine_step_um": 0.2,
+            "exposure_ms": 20.0}
+CENTRE = {"default_centre_um": 2930.0, "parfocal_offset_um": -60.0}
+DARK = {"dark_offset_adu": 102.0, "signal_min_adu": 50.0}
+
+
 class FocusSearch(unittest.TestCase):
     def test_parse(self):
-        a = fs.parse({"sample_id": "s", "half_um": 30})
+        a = fs.parse({"sample_id": "s", "half_um": 30}, DEFAULTS)
         self.assertEqual((a.half_um, a.step_um, a.metric), (30, 2.0, "peak"))
         for bad in ({"metric": "dino"}, {"step_um": 0}, {"fine_half_um": float("nan")},
                     {"nope": 1}):
             with self.assertRaises(ValueError):
-                fs.parse(bad)
+                fs.parse(bad, DEFAULTS)
+        with self.assertRaises(ValueError):  # no number and no default: refused, not guessed
+            fs.parse({}, {k: v for k, v in DEFAULTS.items() if k != "exposure_ms"})
 
     def test_sweep_z_ascends_and_stays_inside_the_limits(self):
         z = fs.sweep_z(2930.0, 40.0, 2.0, floor_um=2800.0, ceiling_um=2982.0)
@@ -48,7 +61,7 @@ class FocusSearch(unittest.TestCase):
                 fs.sweep_z(*args, floor_um=2800.0, ceiling_um=3200.0)
 
     def test_spans(self):
-        a = fs.FocusArgs()
+        a = fs.FocusArgs(**DEFAULTS)
         self.assertEqual(fs.coarse_span(2930.0, a), (2930.0, 40.0, 2.0))
         self.assertEqual(fs.fine_span(2911.3, a), (2911.3, 3.0, 0.2))
         # one span higher, swept up from the old low end: centre at the old top
@@ -63,19 +76,19 @@ class FocusSearch(unittest.TestCase):
         self.assertEqual(fs.peak_at(True, 0), fs.TOP_END)
 
     def test_centre(self):
-        c = fs.centre_from_plane({"z_um": 2990.0, "scan": "scan4x_x"})
+        c = fs.centre_from_plane({"z_um": 2990.0, "scan": "scan4x_x"}, **CENTRE)
         self.assertEqual((c["centre_um"], c["z_4x_um"], c["grade"]), (2930.0, 2990.0, "computed"))
         self.assertIn("unmeasured provisional", c["source"])
-        d = fs.centre_from_plane(None)
-        self.assertEqual((d["centre_um"], d["grade"]), (fs.DEFAULT_CENTRE_UM, None))
+        d = fs.centre_from_plane(None, **CENTRE)
+        self.assertEqual((d["centre_um"], d["grade"]), (2930.0, None))
         self.assertEqual(fs.centre_grade(c), "computed")
         self.assertIsNone(fs.centre_grade(d))
 
     def test_warnings(self):
-        self.assertTrue(fs.at_dark_level(152.0))
-        self.assertFalse(fs.at_dark_level(153.0))
-        self.assertTrue(fs.too_bright([0.0, None, 0.5]))
-        self.assertFalse(fs.too_bright([None, 0.0]))
+        self.assertTrue(fs.at_dark_level(152.0, **DARK))
+        self.assertFalse(fs.at_dark_level(153.0, **DARK))
+        self.assertTrue(fs.too_bright([0.0, None, 0.5], 0.001))
+        self.assertFalse(fs.too_bright([None, 0.0], 0.001))
 
 
 if __name__ == "__main__":

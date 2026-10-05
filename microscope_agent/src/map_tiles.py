@@ -1,6 +1,9 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/src/map_tiles.py
+# body-sha256: 17d6279d467e09da0c0b88d3bd9b1e6e5691f4faf3beb7ff25084acd4a01673e
 """4x tile layout and the focus plane through the tiles, pure (no hardware, no guards).
 
-Tile order is serpentine (rows alternate direction), as on 2026-09-30 (scripts/scan_4x.py).
+Tile order is serpentine (rows alternate direction), as the 2026-09-30 4x scan script did.
 The scan square is centred on the hole fit with half side ``diameter_mm * 500 + margin_um``;
 the allowed XY box around it is the engine guards' business (``XYBox.around``), not this
 file's.
@@ -8,8 +11,8 @@ file's.
 ``fit_plane`` / ``plane_z``: z = a + b (x - x0) + c (y - y0) through the tiles' measured
 focus z; slopes in um per mm. Grade "computed" (from measured tile z; never a model value).
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib +
-numpy only. ``dino_autofocus.engine.operations.scan_4x`` re-exports these names.
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib +
+numpy only. The engine's ``scan_4x`` operation re-exports these names.
 """
 
 from __future__ import annotations
@@ -20,10 +23,9 @@ from typing import Any
 
 import numpy as np
 
-GRADE_COMPUTED = "computed"  # dino_autofocus.engine.records.GRADE_COMPUTED
-DEFAULT_UM_PER_PX = 1.625
-#: 2026-09-30 4x calibration (docs/runs/2026-09-30_substrate-scan.yaml); d_px = M @ d_stage
-DEFAULT_M_PX_PER_UM = ((0.61602, 0.00236), (0.00126, -0.61456))
+GRADE_COMPUTED = "computed"  # the engine's records.GRADE_COMPUTED
+# The bench camera calibration (um per pixel, the stage -> pixel matrix) is the caller's:
+# dino-autofocus keeps the 2026-09-30 4x values in its bench_values module.
 
 
 def grid(centre: tuple[float, float], half_side_um: float, fov_um: float,
@@ -60,13 +62,16 @@ def square_box_um(centre: Sequence[float], half: float) -> list[float]:
     return [centre[0] - half, centre[0] + half, centre[1] - half, centre[1] + half]
 
 
-def camera_calibration(cal: dict | None) -> tuple[float, list[list[float]], str]:
-    """(um_per_px, M_px_per_um, source) from a sample's stage_camera_calibration dict."""
+def camera_calibration(cal: dict | None, *, default_um_per_px: float,
+                       default_m_px_per_um: Sequence[Sequence[float]],
+                       default_source: str) -> tuple[float, list[list[float]], str]:
+    """(um_per_px, M_px_per_um, source) from a sample's stage_camera_calibration dict,
+    else the caller's defaults."""
     cal = cal or {}
-    um_px = float(cal.get("um_per_px", DEFAULT_UM_PER_PX))
+    um_px = float(cal.get("um_per_px", default_um_per_px))
     m = cal.get("M_px_per_um")
     if m is None:
-        return um_px, [list(r) for r in DEFAULT_M_PX_PER_UM], "2026-09-30 4x calibration"
+        return um_px, [[float(v) for v in r] for r in default_m_px_per_um], default_source
     return um_px, [[float(v) for v in r] for r in m], "sample stage_camera_calibration"
 
 

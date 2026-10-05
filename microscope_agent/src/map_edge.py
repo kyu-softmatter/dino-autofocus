@@ -1,5 +1,8 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/399be77ced010eeb513159c770d8e054bd6c5264/microscope_agent/src/map_edge.py
+# body-sha256: 8f9a22d29fbe6b6b420123c99f4d97189c7f0441efd0ea236fd3aeb377812a5e
 """Chamber edge detection and the hole circle fit, pure numpy (the detection half of
-``dino_autofocus.engine.operations.edge_trace``, port of scripts/edge_track.py).
+the engine's ``edge_trace`` operation, a port of the 2026-09-30 edge-tracking script).
 
 Image vectors are (x, y) = (column, row) in full-resolution pixels; ``find_edge`` returns the
 boundary point nearest the field centre and its normal (dark -> bright). Mapping it to the
@@ -9,7 +12,7 @@ file's: nothing here moves anything.
 ``hole_fit`` turns boundary points (stage um) into the sample.json ``hole`` fields with a
 Kasa circle, refitted without outliers (``robust_circle``).
 
-Flat file in the soft-matter-agents layout (docs/integration-sma.md section 9): stdlib +
+Flat file in the soft-matter-agents layout (integration-sma.md section 9): stdlib +
 numpy only (``remove_small_regions`` labels regions with its own 4-neighbour run union;
 scipy.ndimage.label gave the same regions). ``edge_trace`` re-exports these names.
 """

@@ -41,6 +41,17 @@ from typing import Any, ClassVar
 import numpy as np
 
 from ..._flat import load
+from ...bench_values import (
+    DOUBLE_PEAK_PROMINENCE,
+    FOCUS_ARG_DEFAULTS,
+    MAX_SATURATED_FRACTION,
+    PEAK_BIN_PX,
+)
+from ...bench_values import FOCUS_DARK_OFFSET_ADU as DARK_OFFSET_ADU
+from ...bench_values import FOCUS_DEFAULT_CENTRE_UM as DEFAULT_CENTRE_UM
+from ...bench_values import FOCUS_DEFAULT_EXPOSURE_MS as DEFAULT_EXPOSURE_MS
+from ...bench_values import FOCUS_PARFOCAL_4X_TO_100X_UM as PARFOCAL_4X_TO_100X_UM
+from ...bench_values import FOCUS_SIGNAL_MIN_ADU as SIGNAL_MIN_ADU
 from ...focus.classical import (
     OIL_WARNING,
     double_peak,
@@ -65,30 +76,49 @@ from .scan_4x import Host, _checks, focus_plane_4x, runner_folder
 
 load("focus_search", f"{__package__}._focus_search")
 from ._focus_search import (  # noqa: E402, F401 - re-exported
-    DARK_OFFSET_ADU,
     DARK_SIGNAL,
-    DEFAULT_CENTRE_UM,
-    DEFAULT_EXPOSURE_MS,
     INTERIOR,
     LOW_END,
     MAX_EXTENSIONS,
     METRICS,
-    PARFOCAL_4X_TO_100X_UM,
     REDUCE_EXPOSURE,
-    SIGNAL_MIN_ADU,
     TOP_END,
     FocusArgs,
-    at_dark_level,
-    centre_from_plane,
     centre_grade,
     coarse_span,
     extension_span,
     fine_span,
-    parse,
     peak_at,
     room_above,
-    too_bright,
 )
+from ._focus_search import at_dark_level as _at_dark_level  # noqa: E402
+from ._focus_search import centre_from_plane as _centre_from_plane  # noqa: E402
+from ._focus_search import parse as _parse  # noqa: E402
+from ._focus_search import too_bright as _too_bright  # noqa: E402
+
+__all__ = ["DARK_OFFSET_ADU", "DEFAULT_CENTRE_UM", "DEFAULT_EXPOSURE_MS",
+           "PARFOCAL_4X_TO_100X_UM", "SIGNAL_MIN_ADU", "FocusArgs", "parse",
+           "centre_from_plane", "at_dark_level", "too_bright", "run_focus_100x", "plan"]
+
+
+# The flat search takes every bench number as an argument (D-02); these wrappers supply
+# this repository's values from bench_values so the rest of the engine reads as before.
+def parse(args: dict) -> FocusArgs:
+    return _parse(args, FOCUS_ARG_DEFAULTS)
+
+
+def centre_from_plane(plane: dict | None) -> dict:
+    return _centre_from_plane(plane, default_centre_um=DEFAULT_CENTRE_UM,
+                              parfocal_offset_um=PARFOCAL_4X_TO_100X_UM)
+
+
+def at_dark_level(first_max_adu: float) -> bool:
+    return _at_dark_level(first_max_adu, dark_offset_adu=DARK_OFFSET_ADU,
+                          signal_min_adu=SIGNAL_MIN_ADU)
+
+
+def too_bright(saturated_fractions) -> bool:
+    return _too_bright(saturated_fractions, MAX_SATURATED_FRACTION)
 
 NAME = "focus_100x"
 PREFIX = "focus100x"
@@ -206,7 +236,7 @@ def run_body(backend: Backend, a: FocusArgs, pl: dict, host: Host) -> dict:
 
     def score(f: np.ndarray) -> dict:
         v = vollath4(f)
-        d = {"sharp": peak_brightness(f) if a.metric == "peak" else v, "vollath": v,
+        d = {"sharp": peak_brightness(f, PEAK_BIN_PX) if a.metric == "peak" else v, "vollath": v,
              "mean": float(f.mean()), "max": int(f.max()), "sat": float(np.mean(f >= ceiling))}
         emit(Event("progress", op, {"pass": cur["pass"], "z_um": axis.position_um(), **d}))
         return d
@@ -253,7 +283,8 @@ def run_body(backend: Backend, a: FocusArgs, pl: dict, host: Host) -> dict:
         fine = axis.sweep(axis.plan(*fine_span(coarse.peak_z_um, a)), grab,
                           score=score, settle_s=SETTLE_FINE_S)
     zf, why = best_z_um(coarse, fine)
-    if double_peak([p.z_readback_um for p in coarse.points], [p.score for p in coarse.points]):
+    if double_peak([p.z_readback_um for p in coarse.points], [p.score for p in coarse.points],
+                   DOUBLE_PEAK_PROMINENCE):
         warnings.append(OIL_WARNING)
     if too_bright(p.diagnostics.get("sat")
                   for p in coarse.points + (fine.points if fine else [])):

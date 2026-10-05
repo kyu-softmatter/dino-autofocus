@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pytest
 
-from dino_autofocus.focus import FrameStats, Verdict, from_reading, from_sweep
+from dino_autofocus.focus import FrameStats, Verdict, from_reading, from_sweep, verdict_model
 
 
 def stats_for(scores, means=None, sat=None, dyn=500.0):
@@ -29,7 +29,7 @@ def test_interior_peak_is_in_focus_at_the_nearest_real_frame():
     assert v.z_um in Z and v.frame_index == 3 and v.z_um == Z[3]
     vertex = next(e for e in v.evidence if e.name == "z_vertex_um")
     assert vertex.grade == "computed" and vertex.value != v.z_um
-    assert not v.has_model_numbers
+    assert not verdict_model.has_model_numbers(v)
 
 
 def test_peak_at_top_is_step_up_and_at_bottom_step_down():
@@ -103,7 +103,7 @@ def test_reading_branches(reading, expected):
     v = from_reading(reading, z_um=2988.45, frame_index=7)
     assert v.verdict is expected and v.source == "dino"
     assert v.z_um == 2988.45 and v.frame_index == 7  # the caller's encoder z, not dz
-    assert v.has_model_numbers
+    assert verdict_model.has_model_numbers(v)
     assert {e.name for e in v.evidence if e.grade == "model"} >= {"dz", "sigma"}
     json.dumps(v.as_record())
 
