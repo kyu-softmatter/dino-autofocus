@@ -74,7 +74,10 @@ IP 주소는 어디에도 쓰지 않는다 (loopback 판정에만 쓰고 버림,
   closed 세션 + people.json --redact_session--> 바뀐 사본 (메모리) --> runs/<run_id>/console.*
 ```
 
-1. `closed` 이고 모두 커밋된 세션만 (라이브러리언과 같은 조건). `bench: false` (mock) 세션은 내보내지 않는다.
+1. `closed` 이고 모두 커밋된 세션만 (라이브러리언과 같은 조건). `session.json` 의 `bench` 가 **정확히 `true`** 인
+   세션만 내보낸다 (R-03): `false` (mock·시뮬레이션) 도, 값이 없는 옛 세션도 거부한다. `bench` 와 `backend_kind` 는
+   세션을 열 때 엔진의 백엔드 정보에서 기록한다 (T-106b). run id 는 그쪽 `runs/` 폴더 이름 규칙(소문자·숫자·`-`,
+   64 자 이하) 을 따르며, `console.*` 문서에는 `card`/`artifact` 최상위 키가 들어가지 않는다 (그쪽 검증기가 카드로 읽는다).
 2. `redact_session(세션 폴더, 대응표)` 가 거부하면 아무것도 쓰지 않고 이유를 화면과 앱 로그에 남긴다.
 3. 이름: 그쪽 `contracts/validate.py:1613` 은 `runs/<run_id>/` 아래에 평평한 이름 (`[A-Za-z0-9_.-]+`)
    과 `raw/...` 만 받는다. 그래서 `console.session.json`, `console.manifest.json`, `console.log.session.jsonl`,
@@ -97,7 +100,7 @@ IP 주소는 어디에도 쓰지 않는다 (loopback 판정에만 쓰고 버림,
 4. **세션과 run**: 그쪽 run 폴더 (`log.json` 이 있는 곳) 옆에 `console.*` 로 붙인다. `export_session` 은
    `session.json` 의 `sma_run_id` (또는 인자 `run_id`) 를 쓰고, 없으면 거부한다. 이 저장소는 그쪽에 쓰지 않으므로
    로컬 준비 폴더 `<out_dir>/<run_id>/console.*` 와 `console.export.json` (파일별 sha256) 을 만들고, 그쪽이 복사한다.
-   열린 세션, `bench: false` 세션, 이미 파일이 있는 run 은 거부하고, 거부하면 아무것도 쓰지 않는다.
+   열린 세션, `bench` 가 `true` 가 아닌 세션, 규칙에 안 맞는 run id, 이미 파일이 있는 run 은 거부하고, 거부하면 아무것도 쓰지 않는다.
 
 남은 일: `session.json` 에 `bench` 를 넣는 것 (T-106b, 지금은 값이 없으면 내보낸다), 세션에 `sma_run_id` 를 붙이는
 때 (통합 뒤, 그쪽 plan 이 실행될 때), 샘플 폴더·하드웨어 프로필·세션 밖 작업 기록 (5절 5).

@@ -76,6 +76,11 @@ class SessionInfo:
     hardware_profile: dict[str, Any] | None = None             # {path, sha256}
     continues: str | None = None       # previous session of the same sample (F7.4)
     sma_run_id: str | None = None      # soft-matter-agents runs/<run_id>/, set at integration
+    #: T-106b: the engine backend this session ran on (`BackendInfo.kind`) and whether it was
+    #: the real stand (`engine.backend.is_bench`). None: not recorded (older sessions, or an
+    #: engine with no backend info); only an exact True counts as the bench downstream.
+    backend_kind: str | None = None
+    bench: bool | None = None
     close_note: str = ""
     schema: str = SCHEMA
 
@@ -113,8 +118,11 @@ class ExperimentSession:
              hardware_profile: str | Path | None = None, continues: str | None = None,
              code_repo: str | Path | None = None, code: CodeVersion | None = None,
              committer: Any | None = None,
-             now: Callable[[], datetime] | None = None) -> ExperimentSession:
-        """Create the folder and ``session.json`` and make the first commit."""
+             now: Callable[[], datetime] | None = None,
+             backend_kind: str | None = None, bench: bool | None = None) -> ExperimentSession:
+        """Create the folder and ``session.json`` and make the first commit. `backend_kind`
+        and `bench` say what the session ran on (T-106b); the export and the librarian read
+        them, and a missing or non-True `bench` never counts as the real stand."""
         if not user_id:
             raise ValueError("an experiment session needs a logged-in user")
         check_id(sample_id)
@@ -135,14 +143,17 @@ class ExperimentSession:
             Path(code_repo) if code_repo is not None else None)
         info = SessionInfo(session_id=sid, user_id=user_id, sample_id=sample_id,
                            started_at=now_iso(), user_name=user_name, code=asdict(cv),
-                           hardware_profile=hw, continues=continues)
+                           hardware_profile=hw, continues=continues,
+                           backend_kind=backend_kind,
+                           bench=None if bench is None else bool(bench))
         s = cls(store, info, committer)
         s.layout.records.mkdir(parents=True, exist_ok=True)
         s.layout.log.parent.mkdir(parents=True, exist_ok=True)
         s._write_info()
         Manifest(s.layout.manifest).save()
         s.log("session opened", sample_id=sample_id, continues=continues,
-              code_commit=cv.commit, code_dirty=cv.dirty)
+              code_commit=cv.commit, code_dirty=cv.dirty, backend_kind=backend_kind,
+              bench=info.bench)
         s._commit("open session")
         return s
 

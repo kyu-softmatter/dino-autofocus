@@ -24,12 +24,14 @@ RUN = "run-20261002-001"
 NOW = lambda: datetime(2026, 10, 2, 21, 0, tzinfo=UTC)  # noqa: E731
 
 
-def _session(tmp_path: Path, *, close: bool = True, run_id: str | None = RUN):
+def _session(tmp_path: Path, *, close: bool = True, run_id: str | None = RUN,
+             bench: bool | None = True):
     store = FolderStore(RecordsConfig(records_root=tmp_path / "records",
                                       data_root=tmp_path / "data", max_tracked_bytes=1000))
     code = CodeVersion("D:/code/dino-autofocus", "abc123", False)
     s = ExperimentSession.open(store, ADA, "20260930_1849_1", user_name="Ada Lovelace",
-                               code=code, now=lambda: datetime(2026, 10, 2, 14, 30))
+                               code=code, now=lambda: datetime(2026, 10, 2, 14, 30),
+                               backend_kind=None if bench is None else "mm-real", bench=bench)
     s.info.sma_run_id = run_id
     s.manual_step("oil loaded", note="oil looked clean")
     s.record("focus_100x", {"event": "operation_started", "op_id": "op-1",
@@ -94,11 +96,71 @@ def test_refusals_write_nothing(tmp_path, people):
 
 
 def test_a_mock_session_is_not_exported(tmp_path, people):
-    s, folder = _session(tmp_path)
-    info = json.loads((folder / "session.json").read_text(encoding="utf-8"))
-    (folder / "session.json").write_text(json.dumps({**info, "bench": False}), encoding="utf-8")
+    s, folder = _session(tmp_path, bench=False)
     with pytest.raises(ExportRefused, match="real microscope"):
         export_session(folder, people, tmp_path / "staging")
+
+
+def test_a_session_that_does_not_say_bench_is_not_exported(tmp_path, people):
+    """R-03: only an exact True counts; an older session with no flag is refused, not guessed."""
+    s, folder = _session(tmp_path, bench=None)
+    info = json.loads((folder / "session.json").read_text(encoding="utf-8"))
+    assert info["bench"] is None
+    with pytest.raises(ExportRefused, match="bench is not True"):
+        export_session(folder, people, tmp_path / "staging")
+    assert not (tmp_path / "staging").exists()
+
+
+def test_run_id_has_the_soft_matter_agents_runs_shape(tmp_path, people):
+    """R-03: that repository's validator admits runs/[a-z0-9-]+/ only."""
+    s, folder = _session(tmp_path, run_id=None)
+    for bad in ("Run_1", "run.20261003", "run-20261003-001/x", "RUN-1", "-" * 70):
+        with pytest.raises(ExportRefused, match="runs/ folder name"):
+            export_session(folder, people, tmp_path / "staging", run_id=bad)
+    assert not (tmp_path / "staging").exists()
+    out = export_session(folder, people, tmp_path / "staging", run_id="run-20261003-001", now=NOW)
+    assert out.run_id == "run-20261003-001"
+
+
+def test_run_id_rule_agrees_with_the_soft_matter_agents_validator():
+    """Read the runs/ path rule from that repository's validator when a checkout is here."""
+    import os
+    import re
+
+    from dino_autofocus.records.export import RUN_ID
+
+    root = Path(os.environ.get("DINO_AF_SMA_ROOT", r"D:\codes\github\soft-matter-agents"))
+    validate = root / "contracts" / "validate.py"
+    if not validate.is_file():
+        pytest.skip("no soft-matter-agents checkout to compare with")
+    text = validate.read_text(encoding="utf-8")
+    m = re.search(r"_agent/runs/(\[[^\]]+\]\+)/", text)
+    assert m, "the runs/ rule moved in contracts/validate.py; update RUN_ID and this test"
+    sma = re.compile(rf"^{m.group(1)}$")
+    for name in ("run-20261003-001", "a", "x-y-z", "0123456789abcdef"):
+        assert RUN_ID.match(name) and sma.match(name), name
+    for name in ("Run-1", "run_1", "run.1", "run 1"):
+        assert not RUN_ID.match(name) and not sma.match(name), name
+
+
+def test_console_files_never_read_as_a_card(tmp_path, people):
+    """R-03: no console.* document carries a top-level card or artifact key, which that
+    repository's validator would read as a card to validate."""
+    s, folder = _session(tmp_path)
+    out = export_session(folder, people, tmp_path / "staging", now=NOW)
+    for p in out.folder.iterdir():
+        docs = ([json.loads(p.read_text(encoding="utf-8"))] if p.suffix == ".json" else
+                [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line])
+        for d in docs:
+            assert not ({"card", "artifact"} & set(d)), p.name
+    # and a record that did would stop the export before anything is written
+    s2, folder2 = _session(tmp_path, run_id="run-20261003-002")
+    rec = folder2 / "records" / "focus_100x.jsonl"
+    rec.write_text(rec.read_text(encoding="utf-8") + json.dumps({"card": "plan", "user_id": ADA})
+                   + "\n", encoding="utf-8")
+    with pytest.raises(ExportRefused, match="card"):
+        export_session(folder2, people, tmp_path / "staging2", now=NOW)
+    assert not (tmp_path / "staging2").exists()
 
 
 def test_an_export_never_overwrites(tmp_path, people):

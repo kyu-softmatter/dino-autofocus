@@ -52,6 +52,7 @@ class SessionEngine:
 
     def snapshot(self) -> dict[str, Any]:
         return {"positions": {"x_um": 1.0, "y_um": 2.0, "z_um": 3000.0}, "running": [],
+                "backend_info": {"kind": "mock", "bench": False},
                 "session": self.session,
                 "sample": {"sample_id": self.sample, "reserved": False,
                            "session_id": (self.session or {}).get("session_id")},
@@ -100,6 +101,7 @@ def test_open_for_the_current_sample(client, store, tmp_path):
     assert d["user_name"] == "Otto Operator"
     assert d["code"] == {"repo": "stub", "commit": "c" * 40, "dirty": True, "error": None}
     assert d["hardware_profile"]["path"] == str(profile)
+    assert (d["backend_kind"], d["bench"]) == ("mock", False)  # T-106b, from the snapshot
     sid = d["session_id"]
     assert eng.session_calls[-1][0] == sid and isinstance(eng.session_calls[-1][1], float)
     assert c.app.state.sessions.session_for(sid) is not None

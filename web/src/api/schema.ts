@@ -3250,6 +3250,10 @@ export interface components {
             hardware_profile?: components["schemas"]["SessionHardwareProfileOut"] | null;
             /** Sma Run Id */
             sma_run_id?: string | null;
+            /** Backend Kind */
+            backend_kind?: string | null;
+            /** Bench */
+            bench?: boolean | null;
             /**
              * Close Note
              * @default

@@ -31,6 +31,11 @@ DEFAULT_MAX_TRACKED_BYTES = 5 * 1024 * 1024
 
 SCHEMA = "dino-autofocus/experiment-session/1"
 
+#: A records root whose folder name ends with this holds simulated sessions only (the server
+#: names them so for every backend but mm-real, `server/__main__.py` `record_roots`); the mock
+#: librarian uses it to tell a real root, where non-bench sessions are skipped, from a mock one.
+MOCK_ROOT_SUFFIX = "-mock"
+
 #: Extra subprocess.run arguments for every git call. The app runs under pythonw (no
 #: console); on Windows a console child of a windowless parent would flash a window on the
 #: user's desktop at every auto-commit.

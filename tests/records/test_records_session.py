@@ -52,6 +52,18 @@ def test_open_writes_the_folder_and_session_json(store, tmp_path):
     assert (root / "records").is_dir() and s.log_lines()[0]["msg"] == "session opened"
 
 
+def test_session_records_what_it_ran_on(store):
+    """T-106b: backend kind and the bench flag, None when the opener does not know."""
+    s = ExperimentSession.open(store, USER, "s1", backend_kind="mock", bench=False)
+    info = json.loads((s.layout.root / "session.json").read_text())
+    assert (info["backend_kind"], info["bench"]) == ("mock", False)
+    assert s.log_lines()[0]["bench"] is False
+    real = ExperimentSession.open(store, USER, "s2", backend_kind="mm-real", bench=True)
+    assert json.loads((real.layout.root / "session.json").read_text())["bench"] is True
+    unknown = ExperimentSession.open(store, USER, "s3")
+    assert json.loads((unknown.layout.root / "session.json").read_text())["bench"] is None
+
+
 def test_session_ids_do_not_collide(store):
     fixed = lambda: datetime(2026, 10, 1, 9, 5)  # noqa: E731
     a = ExperimentSession.open(store, USER, "s1", now=fixed)
