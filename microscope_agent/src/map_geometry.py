@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/42daf8b2cbd02c303c762b5381b916fab7c6ce5e/microscope_agent/src/map_geometry.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/src/map_geometry.py
 # body-sha256: f9d96d68d4a2c6dd53a3fa411816ed220c1b4704568fe0e9bc39fd403c000a13
 """Stage <-> camera geometry and the sample geometry values, pure (no hardware, no guards).
 

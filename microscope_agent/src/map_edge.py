@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/42daf8b2cbd02c303c762b5381b916fab7c6ce5e/microscope_agent/src/map_edge.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/src/map_edge.py
 # body-sha256: 8f9a22d29fbe6b6b420123c99f4d97189c7f0441efd0ea236fd3aeb377812a5e
 """Chamber edge detection and the hole circle fit, pure numpy (the detection half of
 the engine's ``edge_trace`` operation, a port of the 2026-09-30 edge-tracking script).

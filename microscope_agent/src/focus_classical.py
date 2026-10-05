@@ -1,6 +1,6 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/4de858612239b83a9c107d28fd508502b387c1bc/microscope_agent/src/focus_classical.py
-# body-sha256: e384ccbaa0e7c534f2ce3e7b4168199f508259e038640d1ec0af71e6a9cce759
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/src/focus_classical.py
+# body-sha256: a1155a04c9f180ed8d257d081ff03b4e1a205d7d2d886010821e265778e9b127
 """Classical focus metrics for live frames and the sweep-curve tools built on them.
 
 Pure numpy, no hardware. Inputs are mono camera frames (uint16). Every metric peaks at best

@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/42daf8b2cbd02c303c762b5381b916fab7c6ce5e/microscope_agent/src/focus_run_log.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/src/focus_run_log.py
 # body-sha256: cb47d6d43e1d4695be71480afb945ff114a2cda103728c783631098d736a06c6
 """A focus verdict as one soft-matter-agents run-log event (integration-sma.md, P3).
 

@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/4de858612239b83a9c107d28fd508502b387c1bc/microscope_agent/src/focus_verdict.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/49c8e84c78b7c193982e29c51bc8504a0a18367d/microscope_agent/src/focus_verdict.py
 # body-sha256: df3e2a48a4aa15ecfab2ba34175e1b0de3a92052b7b0a0b5750ca8d5d6c044e1
 """Focus verdicts in the soft-matter-agents focus-seat vocabulary (task 026).
 
