@@ -1,13 +1,10 @@
-# origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/tests/test_focus_core.py
-# body-sha256: fc34c734b62e1f1f20ddaab89f8548188822fa6bbed08b28ac25ae735816a60c
 """The flat focus files in the soft-matter-agents style: loaded by path, stdlib + numpy only.
 
 Runs with `python -m unittest` from this folder (as soft-matter-agents runs its tests) and
-under pytest. The data are built inline; no fixture files (that repo's check 13)."""
+under pytest. The data are built inline; no fixture files (that repo's check 13). The run-log
+event has its own file, test_focus_run_log.py, so these tests need no focus_run_log.py."""
 
 import importlib.util
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -29,7 +26,6 @@ def _load(name, path):
 
 classical = _load("_mic_focus_classical", SRC / "focus_classical.py")
 verdict = _load("_mic_focus_verdict", SRC / "focus_verdict.py")
-run_log = _load("_mic_focus_run_log", SRC / "focus_run_log.py")
 
 
 def _frame(sigma_px: float) -> np.ndarray:
@@ -65,17 +61,7 @@ class FocusCore(unittest.TestCase):
         s = np.exp(-((z - 5) ** 2) / 4) + 0.8 * np.exp(-((z - 14) ** 2) / 4)
         self.assertTrue(classical.double_peak(z, s, 0.2))
 
-    def test_run_log_event_is_json_and_has_no_e6(self):
-        z = [100.0, 102.0, 104.0, 106.0, 108.0]
-        stats = [classical.frame_stats(_frame(s), "vollath4") for s in (6.0, 3.5, 2.0, 3.5, 6.0)]
-        ev = run_log.to_run_log_event(verdict.from_sweep(z, stats, **RULES), 1.5)
-        text = json.dumps(ev, allow_nan=False)
-        self.assertNotIn("E6", text)
-        self.assertEqual(ev["event"], "focus_verdict")
-        self.assertEqual(ev["z"]["grade"], "E1")
-
     def test_one_module_object_per_file(self):
-        self.assertIs(run_log.FocusVerdict, verdict.FocusVerdict)
         self.assertIs(verdict.FrameStats, classical.FrameStats)
 
 

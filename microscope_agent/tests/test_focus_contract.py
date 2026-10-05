@@ -1,10 +1,8 @@
-# origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/tests/test_focus_contract.py
-# body-sha256: 1a6a1d8993a3f2422c3c01af5e6094485a144331a46b85af1bfcf60ec5963971
-"""The verdict and run-log event contracts (D-07): what goes in, what comes out, in JSON.
+"""The verdict contract (D-07): what goes in, what comes out, in JSON.
 
-Pins the module docstrings' "Contract" sections of focus_verdict.py and focus_run_log.py so a
-change to either shape is a failing test here before it is a surprise in soft-matter-agents.
+Pins the "Contract" section of focus_verdict.py's docstring so a change to the shape is a
+failing test here before it is a surprise in soft-matter-agents. The run-log event's contract
+is pinned in test_focus_run_log.py, so this file needs no focus_run_log.py.
 Loaded by path, stdlib + numpy only; runs with `python -m unittest` and under pytest."""
 
 import importlib.util
@@ -30,7 +28,6 @@ def _load(name, path):
 
 classical = _load("_mic_focus_classical", SRC / "focus_classical.py")
 verdict = _load("_mic_focus_verdict", SRC / "focus_verdict.py")
-run_log = _load("_mic_focus_run_log", SRC / "focus_run_log.py")
 
 # This repository's provisional thresholds; the modules hold none of their own (D-02).
 RULES = {"min_dynamic_range_adu": 20.0, "min_contrast": 0.05, "min_frames": 3,
@@ -131,52 +128,6 @@ class ReadingRecord(unittest.TestCase):
         self.assertEqual(v(Reading(2.0, 0.5, tiles=()), 3000.0, 0, **DOF).verdict,
                          verdict.Verdict.NO_SAMPLE_HERE)
         self.assertEqual(v(Reading(2.0, 9.0), 3000.0, 0, **DOF).verdict, verdict.Verdict.UNSURE)
-
-
-class RunLogEvent(unittest.TestCase):
-    def test_event_has_exactly_the_contract_keys_and_no_command_fields(self):
-        z, stats = _sweep()
-        ev = run_log.to_run_log_event(verdict.from_sweep(z, stats, **RULES), 12.5)
-        self.assertEqual(tuple(ev), run_log.EVENT_KEYS)
-        self.assertFalse(set(run_log.COMMAND_KEYS) & set(ev))
-        self.assertEqual(json.loads(json.dumps(ev, allow_nan=False)), ev)
-        self.assertEqual((ev["event"], ev["time_base"], ev["t_mono"]),
-                         (run_log.EVENT, "software", 12.5))
-        self.assertIn(ev["choice"], SMA_BRANCHES)
-        self.assertEqual(set(ev["z"]), {"value", "unit", "grade", "read_from"})
-        self.assertEqual((ev["z"]["unit"], ev["z"]["grade"], ev["z"]["read_from"]),
-                         ("um", "E1", "z_drive"))
-        self.assertEqual(ev["z"]["value"], z[ev["frame_index"]])
-        for e in ev["evidence"]:
-            self.assertIn(e["grade"], ("E1", "E4"))
-            self.assertTrue({"name", "value"} <= set(e) <= {"name", "value", "unit", "grade"})
-        self.assertEqual(ev["signals"], [])
-
-    def test_model_numbers_become_signals_without_a_grade_and_no_e6_anywhere(self):
-        ev = run_log.to_run_log_event(
-            verdict.from_reading(Reading(2.5, 0.5), 3010.0, 7, **DOF), 3.0, time_base="device")
-        self.assertEqual(ev["time_base"], "device")
-        self.assertEqual({s["name"] for s in ev["signals"]}, {"dz", "sigma", "n_used"})
-        for s in ev["signals"]:
-            self.assertNotIn("grade", s)
-        self.assertNotIn("E6", json.dumps(ev))
-        self.assertEqual(ev["z"]["value"], 3010.0)
-
-    def test_refused_inputs(self):
-        z, stats = _sweep()
-        v = verdict.from_sweep(z, stats, **RULES)
-        with self.assertRaises(ValueError):
-            run_log.to_run_log_event(v, float("nan"))
-        with self.assertRaises(ValueError):
-            run_log.to_run_log_event(v, 1.0, time_base="wall")
-
-    def test_non_finite_evidence_becomes_none(self):
-        v = verdict.from_reading(Reading(float("nan"), 0.5), None, None, **DOF)
-        ev = run_log.to_run_log_event(v, 0.0)
-        self.assertIsNone(ev["z"])
-        dz = next(s for s in ev["signals"] if s["name"] == "dz")
-        self.assertIsNone(dz["value"])
-        json.dumps(ev, allow_nan=False)
 
 
 if __name__ == "__main__":
