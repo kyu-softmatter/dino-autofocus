@@ -1,8 +1,11 @@
 import numpy as np
 import pytest
-import torch
 
-from dino_autofocus.backbone import (
+# the ml extra (T-035d): a core-only environment skips this module instead of failing at
+# collection; the backbone itself imports torch, so the skip comes before it
+torch = pytest.importorskip("torch")
+
+from dino_autofocus.backbone import (  # noqa: E402
     ALLOWED_BACKBONES,
     IMAGENET_MEAN,
     IMAGENET_STD,
