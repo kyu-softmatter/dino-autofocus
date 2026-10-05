@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/src/map_tiles.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/2de3a9f54ea907b341e42b080e0080157b97c7de/microscope_agent/src/map_tiles.py
 # body-sha256: 17d6279d467e09da0c0b88d3bd9b1e6e5691f4faf3beb7ff25084acd4a01673e
 """4x tile layout and the focus plane through the tiles, pure (no hardware, no guards).
 

@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/tests/test_focus_step_rules.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/2de3a9f54ea907b341e42b080e0080157b97c7de/microscope_agent/tests/test_focus_step_rules.py
 # body-sha256: 848d48ea2e5f3d750c7a5e6413610962318c92ae3abc191977833ca7229f4d20
 """focus_step_rules.py: the guards' comparisons as pure functions, loaded by path, stdlib only.
 

@@ -1,3 +1,6 @@
+# origin: dino-autofocus, public since 2026-10-03:
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/2de3a9f54ea907b341e42b080e0080157b97c7de/microscope_agent/tests/test_focus_contract.py
+# body-sha256: 043d34ffbaf90a45ba1882e06d0a15f4c99256e4828a18fbe4e0ddb042727d81
 """The verdict contract (D-07): what goes in, what comes out, in JSON.
 
 Pins the "Contract" section of focus_verdict.py's docstring so a change to the shape is a

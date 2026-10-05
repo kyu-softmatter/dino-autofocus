@@ -1,5 +1,5 @@
 # origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/fa9790378ea3f06e94b933a2fb65219322f6702a/microscope_agent/src/map_mosaic.py
+#   https://github.com/kyu-softmatter/dino-autofocus/blob/2de3a9f54ea907b341e42b080e0080157b97c7de/microscope_agent/src/map_mosaic.py
 # body-sha256: cf68b394daeabf54926cb8fac579b56c2d027ea8de85aab960e807454b4ac884
 """4x mosaic and classical particle candidates (WP-I, T-032), pure numpy.
 
