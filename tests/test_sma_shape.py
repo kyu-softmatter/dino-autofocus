@@ -92,7 +92,7 @@ ALLOWED_LITERALS: dict[str, set[float]] = {
     # no clip level, bin size or block grid since D-03c
     "focus_classical.py": {16, 3, 99.9, 1e-06, 1e-12, 1e-30},
     "focus_run_log.py": set(),
-    "focus_search.py": {3, 4, 1e-06, 1e-09},  # MAX_EXTENSIONS, rounding digits, epsilons
+    "focus_search.py": {4, 1e-06, 1e-09},  # rounding digits, epsilons (no count since D-03f)
     "focus_step_rules.py": {1e-06},  # one float epsilon; every limit is an argument
     "focus_verdict.py": {1e-12},
     "focus_verdict_model.py": set(),  # the model-reading verdict, out of the first copy

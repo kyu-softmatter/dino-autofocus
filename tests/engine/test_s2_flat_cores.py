@@ -27,7 +27,10 @@ def test_old_modules_hand_out_the_flat_objects():
     assert scan_4x.grid is _flat("map_tiles").grid
     assert edge_trace.find_edge is _flat("map_edge").find_edge
     assert edge_trace.calibration_of is _flat("map_geometry").calibration_of
-    assert focus_100x.FocusArgs is _flat("focus_search").FocusArgs
+    # the engine adds only the light it switches on itself (D-03f)
+    assert issubclass(focus_100x.FocusArgs, _flat("focus_search").FocusArgs)
+    assert set(focus_100x.FocusArgs.__dataclass_fields__) - set(
+        _flat("focus_search").FocusArgs.__dataclass_fields__) == {"aura_line", "aura_percent"}
     assert sys.modules["dino_autofocus.engine._map_mosaic"] is _flat("map_mosaic")
 
 
