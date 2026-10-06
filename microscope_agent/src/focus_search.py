@@ -1,5 +1,5 @@
-# origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/ab4978710228bb7f392a1f9050b95dfb10b42a92/microscope_agent/src/focus_search.py
+# origin: soft-matter-agents, the original since 2026-10-05; dino-autofocus mirrors it:
+#   https://github.com/kyu-softmatter/soft-matter-agents/blob/f2c56dcfc018b23ff784dc2ac06e150db499f556/microscope_agent/src/focus_search.py
 # body-sha256: bbb8da6ff31dfa01a44fc13edb77c86fd1e60e2ab4422589bae6e7130a83e720
 """The 100x focus search as steps, pure: what to sweep, not whether a move is allowed.
 

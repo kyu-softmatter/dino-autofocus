@@ -211,6 +211,15 @@ src/dino_autofocus/          단독 실행용 나머지 (engine, backends, opera
     `scripts/`·`docs/` 토큰 금지(복사 뒤 다른 뜻이 됨), 거울이 따르는 SMA 커밋 고정(`SMA_SHAPE_COMMIT`), 옆에
     soft-matter-agents 체크아웃이 있으면 읽기만으로 표류 검사(고정 커밋이 이력에 있는지, 검사 13·16·82 가 아직
     있는지, 양쪽에 다 있는 파일의 본문이 같은지). 복사 뒤에는 헤더가 soft-matter-agents 를 가리키게 돌린다(D-06).
+- **거울 규칙 (OD-3, 사용자 2026-10-05; 작업계획 G-06·D-06)**: soft-matter-agents 가 카드 059 로
+  `focus_classical`·`focus_verdict`·`focus_search` 와 그 테스트 셋(`test_focus_core`·`test_focus_contract`·
+  `test_focus_search`)을 dino 5cc5057 에서 바이트 그대로 복사했다(SMA f2c56dc). **이제 이 여섯 파일은 SMA 가
+  원본이고, dino 의 `microscope_agent/` 사본은 고정된 읽기 전용 거울이다.** 헤더는
+  `# origin: soft-matter-agents, ...` 와 SMA 커밋의 공개 URL 을 적는다(`flat_origin.MIRRORED`,
+  `SMA_MIRROR_COMMIT`). 이 파일을 고칠 일은 SMA 에서 먼저(카드로) 하고, dino 는 그 커밋의 본문을 받아
+  `python -m dino_autofocus.flat_origin --mirror <sha>` 로 헤더를 다시 가리킨다. `tests/test_sma_shape.py` 가
+  SMA 체크아웃에서 그 커밋의 본문과 같은지 본다. 나머지 평탄 파일(`focus_step_rules`, `focus_run_log`,
+  `focus_verdict_model`, `map_*`)은 dino 가 원본으로 남는다.
 - **XY 보류 (OD-20, 사용자 2026-10-05; 작업계획 G-17 앞 절반)**: 이번 합병에서 XY 는 아무것도 넘어가지 않는다.
   `scan_4x`, `sample_map` 의 `goto_xy`, `edge_trace`, `objective_change` 의 +Y 비켜서기는 합친 뒤에도 dino 의
   mock/replay 전용이다. soft-matter-agents 에 XY plan 모양, 예외, 봉투 키를 요청하지 않는다. 침지 렌즈의 긴 XY

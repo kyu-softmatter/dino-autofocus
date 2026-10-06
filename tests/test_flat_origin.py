@@ -55,6 +55,41 @@ def test_a_moved_file_is_named_wrong(tmp_path):
     assert fo.check(repo) == [f"microscope_agent/src/other.py: header names {SRC}"]
 
 
+def test_a_mirror_header_names_soft_matter_agents_and_round_trips():
+    h = fo.Header(fo.SMA_MIRROR_COMMIT, "microscope_agent/src/focus_search.py",
+                  fo.body_sha256(BODY), origin=fo.SMA)
+    text = h.render() + BODY
+    assert text.startswith("# origin: soft-matter-agents, ")
+    assert "github.com/kyu-softmatter/soft-matter-agents/blob/" in text
+    assert fo.split(text) == (h, BODY)
+
+
+def test_mirror_and_own_headers_are_rewritten_separately(tmp_path):
+    mirrored = "microscope_agent/src/focus_search.py"
+    repo = _repo(tmp_path)
+    (repo / mirrored).write_text(BODY, encoding="utf-8")
+    fo.rewrite(repo, COMMIT)  # dino's own files only
+    assert fo.split((repo / mirrored).read_text(encoding="utf-8"))[0] is None
+    fo.rewrite(repo, fo.SMA_MIRROR_COMMIT, mirror=True)
+    assert fo.check(repo) == []
+    header, _ = fo.split((repo / mirrored).read_text(encoding="utf-8"))
+    assert (header.origin, header.commit) == (fo.SMA, fo.SMA_MIRROR_COMMIT)
+    own, _ = fo.split((repo / SRC).read_text(encoding="utf-8"))
+    assert (own.origin, own.commit) == (fo.ORIGIN, COMMIT)
+
+
+def test_a_mirrored_file_with_a_dino_header_is_reported(tmp_path):
+    mirrored = "microscope_agent/src/focus_verdict.py"
+    repo = _repo(tmp_path)
+    (repo / mirrored).write_text(BODY, encoding="utf-8")
+    fo.rewrite(repo, COMMIT)
+    p = repo / mirrored
+    p.write_text(fo.Header(COMMIT, mirrored, fo.body_sha256(BODY)).render() + BODY,
+                 encoding="utf-8")
+    [problem] = fo.check(repo)
+    assert "should name soft-matter-agents" in problem
+
+
 def test_a_short_commit_is_refused(tmp_path):
     with pytest.raises(ValueError):
         fo.rewrite(_repo(tmp_path), "fa97903")
