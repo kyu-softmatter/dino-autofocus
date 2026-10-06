@@ -127,6 +127,10 @@ Refusals come back synchronously from `POST /api/commands` (403 remote, permissi
 | `aborted` | `data.state` (`awaiting_return` or not), `data.why` | step row "stopped", return banner |
 | `reading` | `source: "classical"`, `verdict`, `z_encoder_um`, warnings | 100x result badge (T-010 shared component) |
 
+**XY hold (OD-20, the person, 2026-10-05; workplan G-17).** Nothing XY crosses to soft-matter-agents in this merge: the +Y step-out of `objective_change` (`escape`) stay mock/replay only in dino after the merge, and no XY plan shape, exemption or envelope key is requested there. The XY design (`motor_stage` steps, `motor_stage_{x,y}_position_min/max`, the retract-before-long-XY interlock) is soft-matter-agents' work after the bench visit B-03.
+
+The retract-before-long-XY table (`guards.OBJECTIVE_LIMITS.long_xy_um`, Q4) stays in dino; question cards L-019 and L-020 ask the person for its values.
+
 ## 4. Gaps and where they went (manager, main 9052f48)
 
 | # | Gap | Owner / answer |

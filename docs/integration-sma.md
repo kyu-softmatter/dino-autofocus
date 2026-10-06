@@ -211,6 +211,12 @@ src/dino_autofocus/          단독 실행용 나머지 (engine, backends, opera
     `scripts/`·`docs/` 토큰 금지(복사 뒤 다른 뜻이 됨), 거울이 따르는 SMA 커밋 고정(`SMA_SHAPE_COMMIT`), 옆에
     soft-matter-agents 체크아웃이 있으면 읽기만으로 표류 검사(고정 커밋이 이력에 있는지, 검사 13·16·82 가 아직
     있는지, 양쪽에 다 있는 파일의 본문이 같은지). 복사 뒤에는 헤더가 soft-matter-agents 를 가리키게 돌린다(D-06).
+- **XY 보류 (OD-20, 사용자 2026-10-05; 작업계획 G-17 앞 절반)**: 이번 합병에서 XY 는 아무것도 넘어가지 않는다.
+  `scan_4x`, `sample_map` 의 `goto_xy`, `edge_trace`, `objective_change` 의 +Y 비켜서기는 합친 뒤에도 dino 의
+  mock/replay 전용이다. soft-matter-agents 에 XY plan 모양, 예외, 봉투 키를 요청하지 않는다. 침지 렌즈의 긴 XY
+  이동 전 후퇴 표(`guards.OBJECTIVE_LIMITS.long_xy_um`, Q4)는 dino 에 남고, 질문 카드 L-019·L-020 이 그 값을
+  사람에게 묻는다. XY 설계(작업계획 G-17 뒤 절반: `motor_stage` 스텝, `motor_stage_{x,y}_position_min/max`,
+  후퇴 검증 인터락)는 B-03 뒤 SMA 의 일이다.
 - S4 `console/` 로 서버·웹·런처 옮기기 (import 약 100 곳, gen:api, 런처 경로).
 - S5 `hw_port.py`: 화면이 엔진을 직접 부르지 않고 포트 하나로 (그 뒤 console 은 `dino_autofocus` 를 import 하지 않는다).
 - S6 합치는 주: 그쪽 승인 순서 (사람: 좌석 → architecture: seats.json, pixi, ALLOWED_PATHS 명세 → manager: validate.py →
