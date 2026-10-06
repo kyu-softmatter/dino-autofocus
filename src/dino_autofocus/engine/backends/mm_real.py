@@ -1,7 +1,8 @@
 """mm-real backend: the Backend protocol (T-002 + T-015) on the bench Ti2 / Kinetix / Aura.
 
 Ported from `scripts/mm_grab.py` (`open_core`, `set_and_read`, `aura_on/off`, `positions`,
-`PiezoReader.read`) and `scripts/change_objective.py` (`state`). pymmcore-plus is imported
+`PiezoReader.read`) and `scripts/change_objective.py` (`state`), both deleted in R-05 (in git
+history). pymmcore-plus is imported
 only when the backend opens; the piezo DLL only when the piezo is read.
 
 - **Config**: `config_path()` = the argument, else `DINO_AF_MM_CONFIG`, else `"mm_config"`
@@ -654,11 +655,17 @@ class MmRealBackend:
 
 
 class _PiezoReadOnly:
-    """The NanoBench 6000 link of `scripts/mm_grab.py::PiezoReader`, reads only.
+    """The NanoBench 6000 link of `scripts/mm_grab.py::PiezoReader` (deleted in R-05), reads only.
 
     `read()` sends `stage.position.measured.get <channel>` for channels 1/2/3 (x/y/z, the
     controller's labelling) and converts picometres to um. There is no write method and no
     security-level call.
+
+    The deleted reader also moved the piezo, and for that raised the controller to its "User"
+    security level. It read that access code at run time from the vendor's own
+    `C:\\Program Files (x86)\\NanoBench 6000\\data\\config.ini` (section SecurityLevels, key
+    User) and never stored or logged it; no code value is in the repository (public-release
+    audit K4). Anything that needs the level again reads it the same way.
     """
 
     LIBRARY = Path(r"C:\Program Files (x86)\NanoBench 6000\data\controller_interface64.dll")

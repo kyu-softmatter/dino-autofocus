@@ -2,7 +2,6 @@
 // opens the browser. Built by tools\launcher\build.ps1; see docs\runbooks\launcher.md.
 //   click             server already answering -> open the browser; else start it, wait for
 //                     GET /api/health, then open the browser
-//   Shift + click     old tkinter launcher (uv run python scripts\launcher.py), or --classic
 //   Ctrl + click      stop the server, or --stop: POST /api/shutdown first (the engine switches
 //                     the lights off and finishes its records), wait up to ShutdownWaitSec for
 //                     /api/health to go quiet, and only then kill the process tree it started.
@@ -341,17 +340,6 @@ static class Program
               + " but check the lights on the microscope.\n\nLog: " + LauncherLogPath);
     }
 
-    static void StartClassic(string uv)
-    {
-        string script = Path.Combine(Repo, @"scripts\launcher.py");
-        if (!File.Exists(script)) { Error("Old launcher not found:\n" + script); return; }
-        var psi = new ProcessStartInfo(uv, "run python \"" + script + "\"");
-        psi.WorkingDirectory = Repo;
-        psi.UseShellExecute = false;
-        psi.CreateNoWindow = true;
-        Process.Start(psi);
-    }
-
     // ---- waiting window ----------------------------------------------------------------
 
     static bool PollHealth(Process server, Func<bool> cancelled)
@@ -422,7 +410,6 @@ static class Program
         Application.EnableVisualStyles();
         Keys mods = Control.ModifierKeys;
         bool stop = Array.IndexOf(args, "--stop") >= 0 || (mods & Keys.Control) != 0;
-        bool classic = Array.IndexOf(args, "--classic") >= 0 || (mods & Keys.Shift) != 0;
 
         if (stop) { StopServer(); return; }
 
@@ -439,8 +426,6 @@ static class Program
                   + "Install uv, run `uv sync` in\n" + Repo + "\nand try again.");
             return;
         }
-        if (classic) { StartClassic(uv); return; }
-
         if (HealthOk(1500)) { OpenBrowser(); return; }
 
         // A server from an earlier click may still be starting: wait for it, never start a second.
@@ -463,7 +448,7 @@ static class Program
         {
             Error("Server not found in this clone:\n" + module + "\n\n"
                   + "Pull the latest main (the web server comes with task T-009), run `uv sync`, "
-                  + "and try again. Shift + click opens the old launcher.");
+                  + "and try again.");
             return;
         }
 

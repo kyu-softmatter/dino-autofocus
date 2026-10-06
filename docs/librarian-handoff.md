@@ -165,8 +165,8 @@
 | L-080 | `IN_FOCUS_DOF` (튜닝) | 1.0 DoF | bench_values:41-42; chk:55 | 임시 | 없음 | 위와 같음 |
 | L-081 | `MAX_SIGMA_DOF` (튜닝, 모델 읽기에 씀) | 3.0 DoF | bench_values:43-44; chk:56 | provisional | 없음 | 모델 sigma 에 거는 문턱이라 3절로 분류. 동의하나요? |
 | L-082 | `MAX_SATURATED_FRACTION` (튜닝) | 0.001 | bench_values:21-23; ops/sample_ops.py:66 | 임시 | 없음 | 넘기지 않음 권고 |
-| L-083 | `DROPOUT_TOLERANCE` (튜닝) | 0.02 | bench_values:24-27 | 9/30 −23 % 깜빡임에서 정한 규칙 (scripts/scan_4x.py) | 없음 | 넘기지 않음 권고 (근거 관찰은 L-051) |
-| L-084 | `PEAK_BIN` (튜닝) | 4 (4 × 4 binning) | flat/focus_classical.py:47 | scripts/focus_100x.py | 없음 | 넘기지 않음 권고 |
+| L-083 | `DROPOUT_TOLERANCE` (튜닝) | 0.02 | bench_values:24-27 | 9/30 −23 % 깜빡임에서 정한 규칙 (scripts/scan_4x.py (R-05 에서 삭제; 이력에 있음)) | 없음 | 넘기지 않음 권고 (근거 관찰은 L-051) |
+| L-084 | `PEAK_BIN` (튜닝) | 4 (4 × 4 binning) | flat/focus_classical.py:47 | scripts/focus_100x.py (R-05 에서 삭제; 이력에 있음) | 없음 | 넘기지 않음 권고 |
 | L-085 | 로딩 검사 문턱 (튜닝) | `MIN_RANGE_ADU` 20, `MIN_STRUCTURE_RATIO` 3.0 | ops/sample_ops.py:67-68 | 임시 | 없음 | 넘기지 않음 권고 |
 | L-086 | `focus_100x` 인자 (튜닝) | 중심 2930 um, ±40 @ 2 um, 미세 ±3 @ 0.2 um, 노출 20 ms, GREEN 1 %, `SIGNAL_MIN_ADU` 50, settle 0.1/0.15 s, 확장 3번 | bench_values:54-67; ops/focus_100x.py:126; flat/focus_search.py:55 | provisional (9/30 한 번) | 없음 (과제 026 미배정, docs/integration-sma.md:11) | 절차 정의로만 넘기고 숫자는 그쪽 plan 에서 다시 정하는 것에 동의하나요? |
 | L-087 | `scan_4x` 인자 (튜닝) | z 추정 2960 um; 첫 타일 ±160 @ 10, 다음 ±50 @ 6, 미세 ±12 @ 2 um; 자동 노출 목표 천장의 0.5, 6회, 시작 30 ms, 1–2000 ms; 여유 500 um, 겹침 0.15; settle 0.1/0.2/0.2 s | ops/scan_4x.py:121-142; run930y:82-86 | 9/30 스크립트 값 | 없음 | 위와 같음 |

@@ -30,7 +30,6 @@ powershell -ExecutionPolicy Bypass -File tools\launcher\build.ps1
 |---|---|
 | Click | Server already answering `GET /api/health` → opens `http://127.0.0.1:<port>/`. Otherwise starts the server hidden, shows "Starting the server…" until `/api/health` answers (up to 60 s), then opens the browser. |
 | Click while a start is in progress | Waits for that server; never starts a second one. |
-| Shift + click (or `--classic`) | Old tkinter launcher: `uv run python scripts\launcher.py`. |
 | Ctrl + click (or `--stop`) | Stops the server after a confirmation: graceful first, forced only if it does not exit (see Stop). |
 
 - The server binds `127.0.0.1` only. The exe never turns on remote view.

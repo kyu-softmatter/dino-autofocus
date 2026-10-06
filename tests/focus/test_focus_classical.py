@@ -1,8 +1,5 @@
 """Classical metrics peak at focus; sweep tools drop dropouts and find the peak."""
 
-import importlib.util
-from pathlib import Path
-
 import numpy as np
 import pytest
 from scipy import ndimage
@@ -16,8 +13,6 @@ from dino_autofocus.bench_values import (
 )
 from dino_autofocus.focus import classical as C
 from dino_autofocus.synth.sim import metrics as synth_metrics
-
-REPO = Path(__file__).resolve().parents[2]
 
 
 def spot_frame(blur_px, size=128, seed=0, n_spots=12, amp=3000.0, bg=100.0, noise=True):
@@ -48,18 +43,28 @@ def test_unknown_metric_names_the_choices():
         C.score(np.zeros((8, 8), np.uint16), "nope")
 
 
-def load_mm_grab():
-    spec = importlib.util.spec_from_file_location("mm_grab_ref", REPO / "scripts" / "mm_grab.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # top level is stdlib + numpy only
-    return mod
+# The bench grab script's two metrics, as the 9/30 runs used them: copied verbatim from
+# scripts/mm_grab.py (last changed in 0a27658), which R-05 deleted; it is in git history.
+def ref_vollath4(img: np.ndarray) -> float:
+    a = img.astype(np.float32)
+    a = a - np.median(a)
+    a /= max(float(np.abs(a).mean()), 1e-6)
+    f = (a[:, :-1] * a[:, 1:]).mean() - (a[:, :-2] * a[:, 2:]).mean()
+    g = (a[:-1] * a[1:]).mean() - (a[:-2] * a[2:]).mean()
+    return float(f + g)
+
+
+def ref_brenner(img: np.ndarray) -> float:
+    a = img.astype(np.float32)
+    a = a - np.median(a)
+    a /= max(float(np.abs(a).mean()), 1e-6)
+    return float(((a[:, 2:] - a[:, :-2]) ** 2).mean() + ((a[2:] - a[:-2]) ** 2).mean())
 
 
 def test_vollath4_and_brenner_match_the_bench_scripts_exactly():
-    ref = load_mm_grab()
     for f in stack(n=5, focus=2):
-        assert C.vollath4(f) == ref.vollath4(f)
-        assert C.brenner(f) == ref.brenner(f)
+        assert C.vollath4(f) == ref_vollath4(f)
+        assert C.brenner(f) == ref_brenner(f)
 
 
 def test_tenengrad_agrees_with_synth_and_is_scale_invariant():

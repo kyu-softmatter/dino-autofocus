@@ -2,7 +2,7 @@
 
 작성: AF 실행5 (2026-10-01). 근거 코드는 `main` 6ba1bc1 의 `scripts/launcher.py`,
 `scripts/live_focus.py`, `scripts/edge_track.py`, `scripts/focus_servo.py`, `scripts/scan_4x.py`,
-`scripts/mm_grab.py`. 운영 규칙은 `docs/runs/2026-09-30_substrate-scan.md` 2절, 설계 규칙과
+`scripts/mm_grab.py` (R-05 에서 삭제; 이력에 있음). 운영 규칙은 `docs/runs/2026-09-30_substrate-scan.md` 2절, 설계 규칙과
 기능 요구사항은 `docs/PLAN.md` (1–4절은 v0.2, 3·5·6·7절은 v0.9 기준) 2·5·6·8절. 작업별 세부는
 `docs/operations-spec.md` (T-006, main 에 병합됨).
 
@@ -52,7 +52,7 @@ D1 은 로컬 웹 앱 (FastAPI 서버 + React 브라우저 화면) 으로 확정
 `mm_grab.py` 의 ROI 라이브 창이다. 라이브 뷰는 한 창 안에 여섯 영역을 둔다.
 PLAN v0.2 의 새 화면 (F1–F5) 은 1.5 에 목록만 두고 7절에서 명세한다.
 
-### 1.1 런처 (`scripts/launcher.py`, 창 제목 `"DINO Autofocus"`)
+### 1.1 런처 (`scripts/launcher.py` (R-05 에서 삭제; 이력에 있음), 창 제목 `"DINO Autofocus"`)
 
 위에서 아래로 따라가는 단계형 창이다. 하드웨어 로직은 없다. 각 작업은 새 콘솔 창에서
 `run_logged.py` 로 감싸 실행되고, 출력은 로그 파일에 복사된다.
@@ -76,7 +76,7 @@ PLAN v0.2 의 새 화면 (F1–F5) 은 1.5 에 목록만 두고 7절에서 명�
   `launcher_<label>_<stamp>.log` 로 쓴다.
 - 중지는 각 콘솔의 Ctrl+C 다. 스크립트 자신의 `finally` 가 소등한다.
 
-### 1.2 라이브 뷰 (`scripts/live_focus.py`, 창 제목 `"Kinetix_red full sensor -- focus score"`)
+### 1.2 라이브 뷰 (`scripts/live_focus.py` (R-05 에서 삭제; 이력에 있음), 창 제목 `"Kinetix_red full sensor -- focus score"`)
 
 가로 세 칸과 아래 상태 줄로 된 한 창이다.
 
@@ -115,7 +115,7 @@ PLAN v0.2 의 새 화면 (F1–F5) 은 1.5 에 목록만 두고 7절에서 명�
 | `--record` | `video_<stamp>_uint16_<h>x<w>.raw` (11.5 MB/프레임) + `_meta.jsonl` | 보관되는 프레임마다 |
 | `autofocus_*.json`, `zsweep_*.json` | 피에조 자동 초점·스윕 결과 | 루틴이 끝날 때 |
 
-### 1.3 4x 스캔 미리보기 (`scripts/scan_4x.py::Preview`, 창 제목 `"scan_4x preview"`)
+### 1.3 4x 스캔 미리보기 (`scripts/scan_4x.py::Preview` (R-05 에서 삭제; 이력에 있음), 창 제목 `"scan_4x preview"`)
 
 스캔 루프가 직접 갱신하는 창이다. `--no-preview` 로 끈다. 창을 닫으면 미리보기만 사라지고
 스캔은 계속된다.
@@ -126,7 +126,7 @@ PLAN v0.2 의 새 화면 (F1–F5) 은 1.5 에 목록만 두고 7절에서 명�
 | 곡선 | `"<tile>: Vollath F4 vs ZDrive (um)"`: 현재 타일의 선명도 대 ZDrive 산점도 | 스냅마다 |
 | 글자 줄 | `"<tile>  (k/n)   ZDrive 3048.70 um   Vollath 0.1234   max 2043/4095   exp 994 ms"` | 스냅마다 |
 
-### 1.4 ROI 라이브 창 (`scripts/mm_grab.py::live`, 창 제목 `"Kinetix_red centre ROI -- 's' saves a frame"`)
+### 1.4 ROI 라이브 창 (`scripts/mm_grab.py::live` (R-05 에서 삭제; 이력에 있음), 창 제목 `"Kinetix_red centre ROI -- 's' saves a frame"`)
 
 518 px 중앙 ROI 와 글자 줄 하나. `s` 가 현재 프레임을 `.npy` 와 위치 `.json` 으로 저장한다.
 런처에는 연결되어 있지 않다. 새 UI 에서는 라이브 뷰의 프레임 저장 명령 (2.1, 4.2) 으로 흡수한다.

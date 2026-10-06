@@ -14,9 +14,10 @@ been measured on this stand yet.
 Every step is done by the user at the microscope PC, watching the stand. Nobody runs these steps from
 another PC.
 
-**Never move the stand with `scripts/*`.** The old scripts (`change_objective.py`, `scan_4x.py`,
-`focus_100x.py`, `live_focus.py`, ...) bypass the guards and the T-036 lock, and open the configuration
-without the T-036b checks. Motion goes through the app, or by hand at the stand.
+**Never move the stand with an old bench script.** The old scripts (`change_objective.py`, `scan_4x.py`,
+`focus_100x.py`, `live_focus.py`, ...) bypassed the guards and the T-036 lock and were deleted in R-05
+(they are in git history; do not restore one to move the stand). Motion goes through the app, or by
+hand at the stand.
 
 ## How to stop, at any step
 
@@ -185,7 +186,7 @@ What that leaves possible on the stand (once the motion lock is off):
 - `focus_100x` and the 100x approach above 2800 are still refused.
 
 Until Q13 and Q20 are measured, the old rules stay user rules: no upward Z on a lens other than the 4x.
-- `scripts/*`: never (see the top of this runbook).
+- Old bench scripts from git history: never (see the top of this runbook).
 
 Enforced by:
 - T-036, the lock;

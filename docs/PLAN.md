@@ -219,7 +219,7 @@ goto_xy(T-032), 서버가 실제 실행기와 mock 백엔드로 시작(T-009i, �
 | 접근 잠금 T-029d | `BENCH_APPROACH = "MEASURED"` (**해제**, 사용자, 2026-10-02) | **부분 해제**. Q13, Q20, 재물대 한계는 아직 재지 않았다. 실제 장비에서 Z 를 올리는 모든 이동(접근, 스윕, move_to)은 렌즈별 상한까지: 4x, 10x, 20x 는 3200 µm, 40x WI, 60x, 100x 는 2800 µm. 그래서 100x 초점 찾기는 계속 거부된다 |
 
 동작 잠금이 풀려도 실제 장비에서 되는 것은 Z 후퇴와 내려가는 이동뿐이다. XY 이동은 T-032 2단계 뒤,
-Z 를 올리는 이동은 접근 잠금이 풀린 뒤다 (2026-10-02 해제, 동작 잠금은 그대로). 기존 `scripts/*` 는 이 잠금 밖이므로 장비를 움직이는 데 쓰지 않는다.
+Z 를 올리는 이동은 접근 잠금이 풀린 뒤다 (2026-10-02 해제, 동작 잠금은 그대로). 잠금 밖에서 장비를 움직이던 옛 벤치 스크립트는 R-05 에서 지웠다 (이력에 있음).
 
 ### 실제 로그인·원격 보기 전에 고칠 것 (보안, 미배정)
 
@@ -238,11 +238,11 @@ Z 를 올리는 이동은 접근 잠금이 풀린 뒤다 (2026-10-02 해제, 동
 
 | 구성 | 위치 | 상태 |
 |---|---|---|
-| 런처 | `scripts/launcher.py` (tkinter) + `tools/launcher` exe | 스크립트를 콘솔 창으로 띄우기만 함 |
-| 라이브 뷰 | `scripts/live_focus.py` (912줄, tkinter 단일 파일) | 화면, 맵, 엣지 추적, 서보, 기록이 한 파일에 섞여 있음 |
-| 하드웨어 접근 | `scripts/mm_grab.py` | 스크립트마다 직접 import |
+| 런처 | `scripts/launcher.py` (tkinter) (R-05 에서 삭제; 이력에 있음) + `tools/launcher` exe | 스크립트를 콘솔 창으로 띄우기만 함 |
+| 라이브 뷰 | `scripts/live_focus.py` (912줄, tkinter 단일 파일) (R-05 에서 삭제; 이력에 있음) | 화면, 맵, 엣지 추적, 서보, 기록이 한 파일에 섞여 있음 |
+| 하드웨어 접근 | `scripts/mm_grab.py` (R-05 에서 삭제; 이력에 있음) | 스크립트마다 직접 import |
 | 모션 가드 | `C:\agentic_microscope` 의 `FocusAxis` | 현미경 PC 에만 있음 |
-| 작업 스크립트 | `scan_4x`, `focus_100x`, `change_objective`, `find_particle_z`, `lights_off` | 9월 30일 벤치에서 사용. `find_particle_z` 는 사용 불가 판정 |
+| 작업 스크립트 | `scan_4x`, `focus_100x`, `change_objective`, `find_particle_z`, `lights_off` | 9월 30일 벤치에서 사용. `find_particle_z` 는 사용 불가 판정. 모두 (R-05 에서 삭제; 이력에 있음) |
 | 초점 점수 | `src/dino_autofocus/live.py`, `backbone.py` | DINO 헤드는 합성 100x 데이터로만 학습 |
 | 기록 | `D:\AutoFocus\samples\<sample_id>\` | sample.json, map.json, scan, log |
 
@@ -305,7 +305,7 @@ Python 환경 방침 (권고, **최종 결정은 현미경 PC 에서**):
     15 mm 로 시작한다. 둘 다 `unmeasured provisional` 이고, 이동 전에 재물대 Y 한계를 읽어 넘으면 거부한다.
     실제 벤치에서는 M4 전에 방향과 거리를 확인한다 (Q12).
 - **Focus**: 고전 지표가 기본이고 최종 판정자다. DINO 점수는 보조이며 torch 는 쓸 때만 import 한다.
-- 기존 `scripts/*` 는 이식이 끝날 때까지 그대로 둔다.
+- 옛 벤치 스크립트는 이식이 끝난 뒤 R-05 에서 지웠다 (이력에 있음). `scripts/` 에는 모델 제작·평가·그림 스크립트만 남는다.
 
 웹 앱 규칙:
 - **Server** 는 엔진의 유일한 소유자다. 프로세스 하나, 코어 하나. 서버는 판단하지 않고

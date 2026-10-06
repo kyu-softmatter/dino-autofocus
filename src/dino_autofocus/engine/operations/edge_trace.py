@@ -1,7 +1,7 @@
 """`edge_trace`: follow the chamber edge with XY moves only and fit the hole (operations-spec 8).
 
 Port of `scripts/edge_track.py` (`EdgeTracker` and its image functions) and the `t` tracking
-of `scripts/live_focus.py`. The script stays as it is; this module is the engine version.
+of `scripts/live_focus.py`, both deleted in R-05 (in git history); this is the engine version.
 
 What it does, in order:
 

@@ -3,7 +3,7 @@
 - 작성: AF 실행4 · 개발 (2026-10-01). 소유: 이 파일 하나 (T-006).
 - 목적: 벤치 스크립트가 하는 일을 엔진 작업의 `plan → preflight → run → abort` 로 풀어,
   WP-C 이식을 기계적으로 만든다. T-002 (가드, 백엔드 계약) 와 T-004 (UI 명세) 의 입력이다.
-- 근거 코드: `scripts/*.py` (main `6ba1bc1`). 운영 기록: `docs/runs/2026-09-30_substrate-scan.md`
+- 근거 코드: `scripts/*.py` (main `6ba1bc1`) (R-05 에서 삭제; 이력에 있음). 운영 기록: `docs/runs/2026-09-30_substrate-scan.md`
   (이하 "9/30 기록"), 같은 이름의 `.yaml`. 계획: `docs/PLAN.md` v0.2.
 - **추론** 표시: `C:\agentic_microscope\hardware\focus.py` (FocusAxis) 는 이 PC 에 없다.
   스크립트의 사용 방식에서 짐작한 동작은 "**추론**" 으로 적고, 확인할 질문은 마지막 절에 모은다.
@@ -116,7 +116,7 @@ T-024 (실행17): 0.1 과 각 절의 호출 이름을 main `543c5ee` 의 `backen
 
 ## 1. `lights_off`
 
-원본: `scripts/lights_off.py`. 런처 버튼 "Lights off (Aura + DiaLamp)" (`hw=True`).
+원본: `scripts/lights_off.py` (R-05 에서 삭제; 이력에 있음). 런처 버튼 "Lights off (Aura + DiaLamp)" (`hw=True`).
 
 **1) 입력 인자**: 없음. 원본은 코어를 `open_core(10.0, 0)` 으로 연다 (노출 10 ms, 전체 센서). 엔진 인자 없음.
 
@@ -156,7 +156,7 @@ T-024 (실행17): 0.1 과 각 절의 호출 이름을 main `543c5ee` 의 `backen
 
 ## 2. `status`
 
-원본: `scripts/change_objective.py --status` (`state()` 함수). 런처 Step 0 "Show objective / Z / PFS".
+원본: `scripts/change_objective.py --status` (`state()` 함수) (R-05 에서 삭제; 이력에 있음). 런처 Step 0 "Show objective / Z / PFS".
 
 **1) 입력 인자**: `--status` 하나. 원본은 코어를 `open_core(30.0, 0)` 으로 연다. 엔진 인자 없음.
 
@@ -200,7 +200,7 @@ PFS off / "Out of Range". 실패 사례 없음. ZDrive 62.9 µm 는 Z 창(2800�
 
 ## 3. `scan_4x`
 
-원본: `scripts/scan_4x.py`. 런처 Step 2 "Start 4x scan" (확인 대화상자 뒤 실행), "Dry run" 체크.
+원본: `scripts/scan_4x.py` (R-05 에서 삭제; 이력에 있음). 런처 Step 2 "Start 4x scan" (확인 대화상자 뒤 실행), "Dry run" 체크.
 
 **1) 입력 인자**
 
@@ -362,7 +362,7 @@ r1c0 (6368.3, 2229.5). 초점 평면: 구멍 중심 3048.7 µm, 기울기 x −1
 
 ## 4. `objective_change` (F5 포함)
 
-원본: `scripts/change_objective.py`. 9/30 에는 `--to 5 --park` → 사람이 오일 → `--return-only` 로 썼다.
+원본: `scripts/change_objective.py` (R-05 에서 삭제; 이력에 있음). 9/30 에는 `--to 5 --park` → 사람이 오일 → `--return-only` 로 썼다.
 런처에는 버튼이 없다 ("The objective change and 100x steps stay manual"). 엔진에서는 PLAN 2절 F5 의
 7단계 순서로 다시 짠다. 아래는 원본을 먼저 적고, 그다음 F5 엔진 작업을 적는다.
 
@@ -695,7 +695,7 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 
 ## 7. `focus_100x`
 
-원본: `scripts/focus_100x.py`. 런처에 버튼 없음 (수동 단계).
+원본: `scripts/focus_100x.py` (R-05 에서 삭제; 이력에 있음). 런처에 버튼 없음 (수동 단계).
 
 **1) 입력 인자**
 
@@ -791,7 +791,7 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 
 ## 8. `edge_trace`
 
-원본: `scripts/edge_track.py` 의 `EdgeTracker` 와 `scripts/live_focus.py` 의 `t` 키 (`toggle_track`).
+원본: `scripts/edge_track.py` 의 `EdgeTracker` 와 `scripts/live_focus.py` 의 `t` 키 (`toggle_track`) (R-05 에서 삭제; 이력에 있음).
 런처 Step 1 "Start live view" (명시야) 후 창에서 `t`. 오프라인 시뮬레이션은 `scripts/sim_edge_track.py`.
 
 **1) 입력 인자**
@@ -876,7 +876,7 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 
 ### 9.1 `find_particle_z` (보류)
 
-`scripts/find_particle_z.py`: 100x 시야를 나선형 (150 µm 간격) 으로 옮기며 시야마다 1 µm 간격 상향 Z 스택을 찍고,
+`scripts/find_particle_z.py` (R-05 에서 삭제; 이력에 있음): 100x 시야를 나선형 (150 µm 간격) 으로 옮기며 시야마다 1 µm 간격 상향 Z 스택을 찍고,
 밝기가 지정한 Z 띠 **안에서** 최대가 되는 점을 입자로 본다. 9/30 기록 4절 1번에 따라 **사용 불가**다.
 
 - 점 판정이 맞지 않는다. 실제 입자는 약 6.7 µm (FWHM) 인데 9/30 실행 때 판정은 2.5 µm 를 가정했다. 지금 코드의
@@ -889,7 +889,7 @@ T-002 가 허용하면 샘플 단위 `moves.jsonl` 한 줄로 대신해도 된�
 
 ### 9.2 `focus_servo` (범위 밖)
 
-`scripts/focus_servo.py` 는 라이브 뷰 안에서 **피에조 Z** (NanoBench, 0–600 µm) 로 미세 초점을 맞추는 세 루틴이다.
+`scripts/focus_servo.py` (R-05 에서 삭제; 이력에 있음) 는 라이브 뷰 안에서 **피에조 Z** (NanoBench, 0–600 µm) 로 미세 초점을 맞추는 세 루틴이다.
 `FocusServo` (`f` 키) 는 DINO 헤드의 부호 있는 점수를 0 으로 보내려고 +0.5 µm 탐침으로 기울기와 부호를 재고,
 걸음당 최대 0.5 µm, 시작점 ±5 µm 안에서 움직인다. `AutoFocusZ` (`w`) 는 ±1 µm 를 0.25 µm 간격으로 Vollath 피크를 찾고,
 끝에 걸리면 ±5 µm 까지 넓히며, 곡선이 평평하면 DINO 점수로 방향을 고른다. `ZSweep` (`W`) 은 ±5 µm 진단 스윕이다.

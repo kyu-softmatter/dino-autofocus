@@ -4,8 +4,8 @@
 > main 에 있지만, 벤치에서 Z 접근 때 간격을 확인하는 장치(T-027 가드, T-011 벤치 검사)가 아직 main 에 없다.
 > 둘 다 병합될 때까지 현미경 PC 에서는 **읽기 전용**으로만 쓴다. 상태 보기, 카메라 프레임, 광원 켜기/끄기(D15)
 > 까지만 하고, 재물대·Z·대물렌즈를 움직이는 작업은 돌리지 않는다. 새 앱의 실제 장비 백엔드는 코드로도 잠겨 있다
-> (T-036, main 2c61b7b: `BENCH_MOTION = "LOCKED"`). **기존 `scripts/*` (scan_4x, focus_100x, change_objective 등) 는
-> 이 잠금 밖이다.** 9월 30일처럼 그 스크립트를 쓰는 것은 사용자의 판단이고, 쓸 때도 아래 설정 파일 확인(시작·종료 프리셋)을 먼저 한다.
+> (T-036, main 2c61b7b: `BENCH_MOTION = "LOCKED"`). **잠금 밖에서 장비를 움직이던 옛 스크립트
+> (scan_4x, focus_100x, change_objective 등) 는 R-05 에서 지웠다 (이력에 있음).** 장비는 앱으로, 또는 손으로 움직인다.
 > 잠금은 T-027, T-011b, T-015b (장비 백엔드를 기본으로 "벤치" 로 보는 안전 기본값), T-027b (작동 거리를 모르는 렌즈는 2800 µm 위로 접근 거부), 그리고 가드와 실행기가 같은 벤치 판정(is_bench)을 쓰게 하는 후속 두 개, T-036d (시작 프리셋 검사가 설정 파일에서 쓰는 장치 이름도 본다), T-015c (벤치 판정이 오류 대신 "벤치" 를 돌려준다), T-029c (Y 이탈을 움직이기 전에 기록한다), T-029d (Q13·Q20 을 재기 전까지 실제 장비에서 렌즈 교체와 100x 접근을 거부. 2026-10-02 사용자가 부분 해제: 40x WI, 60x, 100x 는 2800 µm 까지만) 가 모두 병합되고 매니저와 총괄이 확인한 뒤 풀고, 그때 총괄 세션이 이 경고를 지운다.
 
 작성: 총괄 세션. 개발 데스크톱에서는 답할 수 없고, 현미경 PC 에서 읽거나 한 번 돌려 봐야 답이 나오는
@@ -76,9 +76,9 @@
 
 | 질문 | 지금 상태 | 확인 방법 |
 |---|---|---|
-| **설정 파일을 불러올 때 움직이는 장치를 건드리지 않는가** (T-036b) | 설정을 불러오면 Micro-Manager 가 `System` 그룹의 `Startup` 프리셋과 `Property,Core,Initialize,1` 뒤의 `Property` 줄을 스스로 적용한다. 그 안에 ZDrive, XYStage, Nosepiece, PFS 값이 있으면 **열기만 해도 장비가 움직인다.** 9월 30일 기록에는 `LappMainBranch1 State 1` (광경로) 만 적혀 있고 전체는 확인 전이다. Micro-Manager 의 기본 데모 설정은 Startup 에서 대물렌즈를 돌려서 새 검사에 걸린다. 새 앱은 열기 전에 검사해 거부하지만, 기존 `scripts/*` 는 같은 파일을 검사 없이 연다 | 아래 두 명령. ZDrive, XYStage, Nosepiece, PFS 뿐 아니라 이 설정에서 Z·재물대·대물렌즈·PFS 를 맡은 장치 이름(예: TIZDrive, `Property,Core,Focus,...` 줄에 적힌 이름)이 하나라도 나오면 그 설정으로 아무것도 열지 말고 총괄 세션에 알린다 |
+| **설정 파일을 불러올 때 움직이는 장치를 건드리지 않는가** (T-036b) | 설정을 불러오면 Micro-Manager 가 `System` 그룹의 `Startup` 프리셋과 `Property,Core,Initialize,1` 뒤의 `Property` 줄을 스스로 적용한다. 그 안에 ZDrive, XYStage, Nosepiece, PFS 값이 있으면 **열기만 해도 장비가 움직인다.** 9월 30일 기록에는 `LappMainBranch1 State 1` (광경로) 만 적혀 있고 전체는 확인 전이다. Micro-Manager 의 기본 데모 설정은 Startup 에서 대물렌즈를 돌려서 새 검사에 걸린다. 새 앱은 열기 전에 검사해 거부한다 (같은 파일을 검사 없이 열던 옛 `scripts/*` 는 R-05 에서 삭제; 이력에 있음) | 아래 두 명령. ZDrive, XYStage, Nosepiece, PFS 뿐 아니라 이 설정에서 Z·재물대·대물렌즈·PFS 를 맡은 장치 이름(예: TIZDrive, `Property,Core,Focus,...` 줄에 적힌 이름)이 하나라도 나오면 그 설정으로 아무것도 열지 말고 총괄 세션에 알린다 |
 | **설정의 종료 프리셋이 움직이는 장치를 건드리지 않는가** (T-036b) | 장치를 내릴 때 Core 가 `System/Shutdown` 프리셋을 적용하는지 확인 전이다. 적용한다면 그 안의 Z·재물대·대물렌즈 값은 끌 때 장비를 움직인다. 새 앱은 Shutdown 프리셋도 같은 규칙으로 거부한다 | 아래 명령의 Shutdown 줄을 본다. 끌 때 적용되는지는 벤치에서 Shutdown 프리셋에 눈에 보이는 무해한 값(광경로 등)이 있다면 끄면서 바뀌는지 본다 |
-| 벤치 설정 파일 경로와 Micro-Manager 설치 폴더 | 기존 스크립트(`scripts/mm_grab.py`)는 `C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg` 를 쓴다. 설치 폴더는 pymmcore-plus 가 찾는다 | 파일이 있는지, `uv run python -c "from pymmcore_plus import find_micromanager; print(find_micromanager())"` |
+| 벤치 설정 파일 경로와 Micro-Manager 설치 폴더 | 앱의 mm-real 백엔드(`engine/backends/mm_real.py` `BENCH_CONFIG`)는 `C:\agentic_microscope\config\micromanager\single_cam_red_noDMD_nocom10.cfg` 를 쓴다. 설치 폴더는 pymmcore-plus 가 찾는다 | 파일이 있는지, `uv run python -c "from pymmcore_plus import find_micromanager; print(find_micromanager())"` |
 | Core 의 AutoFocus 장치가 PFS 인가 | 확인 전 | 설정을 불러온 뒤 Core 의 AutoFocus 역할 읽기 |
 | `enableContinuousFocus(False)` 뒤에 꺼짐으로 읽히는가 | 확인 전 | 끄고 `isContinuousFocusEnabled()` 읽기 |
 | XY 이동 대기 시간 30 s 가 가장 긴 이동에 충분한가 | `DEFAULT_XY_TIMEOUT_S = 30` 임시값 | 가장 먼 두 점 사이 이동 시간 재기 |

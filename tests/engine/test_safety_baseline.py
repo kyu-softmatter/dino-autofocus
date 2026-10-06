@@ -19,7 +19,8 @@ Micro-Manager write calls in the tree, in three buckets.
 - ``mm_real.py``: the bench. Every site stays behind ``BENCH_MOTION`` (the lock test proves it).
 - ``mm_demo_core.py``: the demo devices only, addressed by the ``DEMO_*`` constants, never a bench
   device name; ``is_bench`` is False for that backend.
-- ``scripts/*``: legacy, outside every lock, allowed until R-05 deletes them. A new site here fails.
+- ``scripts/*``: none. R-05 deleted the legacy bench scripts that held the last ones (OD-35,
+  user 2026-10-06). A new site here fails.
 
 D-05 (dropping the bench motion path once soft-matter-agents owns it) is the one card that may
 rewrite the bench bucket, and that card rewrites this test to assert absence.
@@ -171,11 +172,10 @@ BENCH_BUCKET = {"src/dino_autofocus/engine/backends/mm_real.py":
                 {"setPosition", "setXYPosition", "enableContinuousFocus"}}
 DEMO_BUCKET = {"src/dino_autofocus/engine/backends/mm_demo_core.py":
                {"setPosition", "setXYPosition"}}
-SCRIPTS_BUCKET = {  # legacy, allowed until R-05; a new site, or a site surviving R-05, fails here
-    "scripts/edge_track.py": {"setRelativeXYPosition"},
-    "scripts/find_particle_z.py": {"setXYPosition"},
-    "scripts/scan_4x.py": {"setXYPosition"},
-}
+# R-05 deleted the legacy bench scripts (scan_4x, edge_track, find_particle_z and eight more;
+# in git history), so scripts/ holds no direct MMCore write at all; a new one fails here
+# (OD-35, user 2026-10-06).
+SCRIPTS_BUCKET: dict[str, set[str]] = {}
 
 
 def test_direct_write_calls_in_the_package_are_exactly_the_bench_and_demo_buckets():
