@@ -6,25 +6,34 @@ Layout read (the soft-matter-agents repository, or a copy with the same layout):
                                         refusal_*.json, result_*.json, *.md, and the same
                                         names with a "vN_" prefix for revision N
     <seat>_agent/runs/<run_id>/         log.json, commands.json | config.json, observables.json,
-                                        trajectory_meta.json, and large files left unopened
+                                        trajectory_meta.json, and large files left unopened;
+                                        events.jsonl while the orchestrator follows the run
+                                        (read by `sma_run`, plan.md 11-25)
     <seat>_agent/inbox/<thread>/        rN_<kind>.json | .md, what the seat received
+    <seat>_agent/approvals/             appr-<qid>-r<N>.json, the person's plan_approval cards
     bridge/threads/<thread>/status.json the bridge's view of the thread
 
 `contracts/schemas/*.schema.json` is what the cards follow; it is not loaded here. A card
-is read as it is and kept whole, so a field this module does not know is not lost.
+is read as it is and kept whole, so a field this module does not know is not lost. JSON is
+read as utf-8-sig, as soft-matter-agents' validator reads it: some approvals carry a
+byte-order mark.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from .sma_run import MAX_EVENTS_BYTES, NotFollowedError, RunStream, SmaRunError, read_stream
 from .store import (
     AGENTS,
     Agent,
+    Approval,
     Card,
     Document,
     FileInfo,
@@ -101,8 +110,20 @@ def _size(p: Path) -> int | None:
 
 
 def _read_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as f:
+    with path.open("r", encoding="utf-8-sig") as f:
         return json.load(f)
+
+
+def plan_hash(card: dict[str, Any]) -> str:
+    """What a plan_approval signs: sha256 of the card with `status` removed, keys sorted, no
+    spaces (soft-matter-agents contracts/validate.py card_sha / plan_hash, plan.md 5.5)."""
+    body = {k: v for k, v in card.items() if k != "status"}
+    blob = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _int_or_none(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
 def _str_or_none(v: Any) -> str | None:
@@ -163,7 +184,11 @@ class SmaFiles:
         v = summary.latest_version if version is None else version
         if v not in paths:
             raise NotFoundError(f"{qid} has no version {v}; it has {summary.versions}")
-        return _detail(summary, v, *self._read_version(paths[v], v))
+        detail = _detail(summary, v, *self._read_version(paths[v], v))
+        plan = detail.plan.data if detail.plan and isinstance(detail.plan.data, dict) else None
+        approvals = [a for a in self.list_approvals(summary.agent) if a.qid == qid]
+        return replace(detail, plan_hash=plan_hash(plan) if plan is not None else None,
+                       approvals=approvals)
 
     def _summary(self, d: Path, paths: dict[int, list[Path]]) -> QuestionSummary:
         """Opens the first and the latest version only, so a list stays quick: created_at is
@@ -281,15 +306,38 @@ class SmaFiles:
         files = [FileInfo(p.name, _size(p)) for p in entries]
         return RunDetail(self._run_summary(agent, d), records, files, not_opened)
 
+    def run_stream(self, agent: Agent, run_id: str) -> RunStream:
+        """The run's events.jsonl as written so far (`sma_run.read_stream`). Raises
+        NotFoundError for no such run, `sma_run.NotFollowedError` for a run not followed."""
+        d = self._run_dir(agent, run_id)
+        if not d.is_dir():
+            raise NotFoundError(f"no {agent} run {run_id} in {self.source}")
+        return read_stream(d, max_bytes=max(self.max_read_bytes, MAX_EVENTS_BYTES))
+
+    def _followed(self, d: Path) -> RunStream | None:
+        """The events stream of a run its orchestrator follows, or None."""
+        try:
+            return read_stream(d, max_bytes=max(self.max_read_bytes, MAX_EVENTS_BYTES))
+        except (NotFollowedError, SmaRunError):
+            return None
+
     def _run_summary(self, agent: Agent, d: Path) -> RunSummary:
         log = self._small_json(d / "log.json")
         config = self._small_json(d / "config.json")
         meta = self._small_json(d / "trajectory_meta.json")
+        # A followed run has events.jsonl from its start and log.json only at its end: until
+        # then the stream says what the run is and whether it is still going (plan.md 11-25).
+        stream = self._followed(d) if not log and agent == "microscope" else None
+        if stream is not None:
+            return RunSummary(
+                run_id=d.name, agent=agent, qid=_qid_of(None, stream.plan_id),
+                plan_id=stream.plan_id,
+                status="running" if stream.running else stream.ended_how,
+                created_at=stream.t0_wall, finished_at=None, backend=None,
+                source=self.source, approval_kind=None,
+            )
         plan_id = _str_or_none(log.get("plan_id")) or _str_or_none(config.get("plan_id"))
-        qid = _str_or_none(config.get("qid")) or _str_or_none(log.get("qid"))
-        if qid is None and plan_id:
-            m = re.search(r"(mic|sim)-[0-9]{8}-[0-9]{3}", plan_id)
-            qid = m.group(0) if m else None
+        qid = _qid_of(_str_or_none(config.get("qid")) or _str_or_none(log.get("qid")), plan_id)
         return RunSummary(
             run_id=d.name,
             agent=agent,
@@ -312,6 +360,57 @@ class SmaFiles:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return {}
         return data if isinstance(data, dict) else {}
+
+    # -- approvals -------------------------------------------------------------------------
+
+    def list_approvals(self, agent: Agent) -> list[Approval]:
+        """`<seat>_agent/approvals/*.json`, newest first, each checked against the plan cards
+        of its question (`plan_found`). An unreadable file is listed with its name only."""
+        base = self._root / f"{check_agent(agent)}_agent" / "approvals"
+        if not base.is_dir():
+            return []
+        hashes: dict[str, set[str]] = {}
+        out = []
+        for p in sorted(base.iterdir()):
+            if p.is_dir() or p.suffix != ".json":
+                continue
+            data = self._small_json(p)
+            qid = _str_or_none(data.get("qid"))
+            want = _str_or_none(data.get("plan_hash"))
+            found = None
+            if qid is not None and want is not None:
+                if qid not in hashes:
+                    hashes[qid] = self._plan_hashes(qid)
+                found = want in hashes[qid] if hashes[qid] is not None else None
+            out.append(Approval(
+                name=p.name, agent=agent, id=_str_or_none(data.get("id")), qid=qid,
+                revision=_int_or_none(data.get("revision")),
+                status=_str_or_none(data.get("status")),
+                plan_id=_str_or_none(data.get("plan_id")),
+                plan_revision=_int_or_none(data.get("plan_revision")), plan_hash=want,
+                approved_by=_str_or_none(data.get("approved_by")),
+                approved_at=_str_or_none(data.get("approved_at")),
+                source=self.source, plan_found=found, data=data or None,
+            ))
+        return sorted(out, key=lambda a: (a.approved_at or "", a.name), reverse=True)
+
+    def _plan_hashes(self, qid: str) -> set[str] | None:
+        """The hash of every plan card of the question, any version; None: no such folder."""
+        try:
+            d = self._question_dir(qid)
+        except NotFoundError:
+            return None
+        if not d.is_dir():
+            return None
+        out = set()
+        for paths in _scan(d).values():
+            for p in paths:
+                base = split_version(p.name)[1]
+                if base.endswith(".json") and guess_kind(base) == "plan":
+                    data = self._small_json(p)
+                    if data:
+                        out.add(plan_hash(data))
+        return out
 
     # -- inbox -----------------------------------------------------------------------------
 
@@ -386,6 +485,14 @@ def _scan(d: Path) -> dict[int, list[Path]]:
         if not p.is_dir() and not p.name.endswith(".tmp"):
             out.setdefault(split_version(p.name)[0], []).append(p)
     return out
+
+
+def _qid_of(qid: str | None, plan_id: str | None) -> str | None:
+    """The run's qid, else the one its plan id carries."""
+    if qid is None and plan_id:
+        m = re.search(r"(mic|sim)-[0-9]{8}-[0-9]{3}", plan_id)
+        qid = m.group(0) if m else None
+    return qid
 
 
 def _is_qid(name: str) -> bool:

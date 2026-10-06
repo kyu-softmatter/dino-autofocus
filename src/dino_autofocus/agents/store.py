@@ -147,6 +147,38 @@ class QuestionSummary:
 
 
 @dataclass(frozen=True)
+class Approval:
+    """One `plan_approval` card of a seat's `approvals/` folder, as the person wrote it.
+
+    `plan_found` says whether a plan card of the question hashes to the approval's
+    `plan_hash` (the hash of the plan with `status` removed, as the seats and the validator
+    compute it): True, False, or None when the question folder is not there.
+    """
+
+    name: str  # file name, e.g. "appr-mic-20260925-002-r2.json"
+    agent: Agent
+    id: str | None
+    qid: str | None
+    revision: int | None
+    status: str | None
+    plan_id: str | None
+    plan_revision: int | None
+    plan_hash: str | None
+    approved_by: str | None
+    approved_at: str | None
+    source: str
+    plan_found: bool | None = None
+    data: Any = None  # the file's content, untouched
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> Approval:
+        return cls(**{k: d.get(k) for k in cls.__dataclass_fields__})
+
+
+@dataclass(frozen=True)
 class QuestionDetail:
     """The cards of one version of a question.
 
@@ -167,6 +199,8 @@ class QuestionDetail:
     others: list[Card]  # cards of any other kind, and a second plan or synthesis
     documents: list[Document]
     files: list[FileInfo]  # what is not a card or a document (images, jsonl), not opened
+    plan_hash: str | None = None  # of this version's plan card, status removed
+    approvals: list[Approval] = field(default_factory=list)  # every approval naming the qid
 
     @property
     def refusal(self) -> Card | None:
@@ -185,6 +219,8 @@ class QuestionDetail:
             "others": [c.to_dict() for c in self.others],
             "documents": [x.to_dict() for x in self.documents],
             "files": [x.to_dict() for x in self.files],
+            "plan_hash": self.plan_hash,
+            "approvals": [a.to_dict() for a in self.approvals],
         }
 
     @classmethod
@@ -204,6 +240,8 @@ class QuestionDetail:
             others=[Card.from_dict(x) for x in d["others"]],
             documents=[Document.from_dict(x) for x in d["documents"]],
             files=[FileInfo.from_dict(x) for x in d["files"]],
+            plan_hash=d.get("plan_hash"),
+            approvals=[Approval.from_dict(x) for x in d.get("approvals", [])],
         )
 
 
@@ -354,6 +392,10 @@ class AgentStore(Protocol):
     def get_run(self, agent: Agent, run_id: str) -> RunDetail: ...
 
     def list_inbox(self) -> list[InboxThread]: ...
+
+    def list_approvals(self, agent: Agent) -> list[Approval]:
+        """The seat's `approvals/` cards, newest first. Read only, like everything here."""
+        ...
 
     def submit_question(
         self,

@@ -326,12 +326,28 @@ class Built:
                 log.exception("closing the %s backend failed", self.name)
 
 
+def agent_store_of(args: argparse.Namespace) -> Any:
+    """The console's agent store: the mock sample (default), or the soft-matter-agents files
+    at --sma-root (else $DINO_AF_SMA_ROOT, else the desktop checkout), read only. A root that
+    holds no seat folder stops the start-up with the reason rather than showing nothing."""
+    from ..agents import open_store
+
+    kind = getattr(args, "store", "mock")
+    if kind != "sma":
+        return None  # create_app's own MockStore
+    store = open_store("sma", getattr(args, "sma_root", None))
+    if not store.available():  # type: ignore[attr-defined]
+        raise SystemExit(f"--store sma: no microscope_agent/ or simulation_agent/ under "
+                         f"{store.root}")  # type: ignore[attr-defined]
+    return store
+
+
 def build(args: argparse.Namespace, *, remote_view: bool = False,
           hosts: list[str] | None = None) -> Built:
     """Open the backend and make everything the server owns. Nothing listens yet."""
     common = dict(remote_view=remote_view, remote_abort=not args.no_remote_abort,
                   allowed_hosts=hosts or [], dev_origins=args.dev_origin,
-                  web_dist=args.web_dist)
+                  web_dist=args.web_dist, agent_store=agent_store_of(args))
     auth = AuthSeat.from_config(args.config_dir)
     from ..auth import config as auth_config
     # designs, not records: one folder for the mock and the bench alike
@@ -458,6 +474,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         "without it the gauge shows the mock's truth (mock) or nothing")
     p.add_argument("--head-camera", default=None, metavar="LABEL",
                    help="score only this camera's frames with --head (e.g. Kinetix_red)")
+    p.add_argument("--store", choices=("mock", "sma"), default="mock",
+                   help="the console's agent store: mock (a copied sample, default) or sma "
+                        "(the soft-matter-agents files, read only)")
+    p.add_argument("--sma-root", type=Path, default=None, metavar="DIR",
+                   help="soft-matter-agents folder for --store sma (default: "
+                        "$DINO_AF_SMA_ROOT, else the desktop checkout)")
     p.add_argument("--web-dist", type=Path, default=None,
                    help="built web app to serve (default: <repo>/web/dist)")
     p.add_argument("--dump-openapi", metavar="PATH",

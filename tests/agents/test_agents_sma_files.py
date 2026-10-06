@@ -37,6 +37,7 @@ def read_everything(s: SmaFiles) -> int:
         for r in s.list_runs(agent):
             s.get_run(agent, r.run_id)
             n += 1
+        n += len(s.list_approvals(agent))
     n += len(s.list_inbox())
     return n
 

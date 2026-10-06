@@ -656,6 +656,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/console/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Approvals
+         * @description The seats' plan_approval cards (approvals/), newest first. Read only: an approval is
+         *     written by the person, never by the console (plan.md 11-25).
+         */
+        get: operations["list_approvals_api_console_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/runs/{agent}/{run_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Stream
+         * @description A followed run's events from line `since` on (poll with the last `total`). A run with
+         *     no events.jsonl answers `state: not_followed` and why the console cannot stop it.
+         */
+        get: operations["run_stream_api_console_runs__agent___run_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/runs/{agent}/{run_id}/frame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Frame
+         * @description The run's latest frame from its frame tap, which hands over a copy and commands
+         *     nothing; the console opens no camera of its own (OD-13).
+         */
+        get: operations["run_frame_api_console_runs__agent___run_id__frame_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/runs/{agent}/{run_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Run
+         * @description Abort a run soft-matter-agents executes: one line on the stop channel it announced.
+         *     The run calls the same abort() as its other stop paths and records who asked.
+         */
+        post: operations["stop_run_api_console_runs__agent___run_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/console/inbox": {
         parameters: {
             query?: never;
@@ -1522,6 +1606,46 @@ export interface components {
         /** ApiError */
         ApiError: {
             detail: components["schemas"]["RefusalDetail"];
+        };
+        /** ApprovalOut */
+        ApprovalOut: {
+            /** Name */
+            name: string;
+            /**
+             * Agent
+             * @enum {string}
+             */
+            agent: "microscope" | "simulation";
+            /** Id */
+            id: string | null;
+            /** Qid */
+            qid: string | null;
+            /** Revision */
+            revision: number | null;
+            /** Status */
+            status: string | null;
+            /** Plan Id */
+            plan_id: string | null;
+            /** Plan Revision */
+            plan_revision: number | null;
+            /** Plan Hash */
+            plan_hash: string | null;
+            /** Approved By */
+            approved_by: string | null;
+            /** Approved At */
+            approved_at: string | null;
+            /** Source */
+            source: string;
+            /**
+             * Plan Found
+             * @description a plan card of the question hashes to plan_hash; None: no question folder
+             */
+            plan_found: boolean | null;
+            /**
+             * Data
+             * @description the approval card's content, untouched
+             */
+            data?: unknown;
         };
         /** AskIn */
         AskIn: {
@@ -2925,6 +3049,16 @@ export interface components {
             documents: components["schemas"]["DocumentOut"][];
             /** Files */
             files: components["schemas"]["dino_autofocus__server__api__console__FileInfoOut"][];
+            /**
+             * Plan Hash
+             * @description sha256 of this version's plan card with status removed
+             */
+            plan_hash?: string | null;
+            /**
+             * Approvals
+             * @description every plan_approval naming this qid
+             */
+            approvals?: components["schemas"]["ApprovalOut"][];
         };
         /** QuestionIn */
         QuestionIn: {
@@ -3096,6 +3230,71 @@ export interface components {
             trajectory_unavailable: string | null;
             /** Source */
             source: string;
+        };
+        /**
+         * RunStreamOut
+         * @description A run soft-matter-agents' orchestrator follows: its events.jsonl so far.
+         */
+        RunStreamOut: {
+            /** Run Id */
+            run_id: string;
+            /**
+             * Agent
+             * @enum {string}
+             */
+            agent: "microscope" | "simulation";
+            /**
+             * Followed
+             * @description the run has an events.jsonl that begins with run_started
+             */
+            followed: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "ended" | "not_followed";
+            /**
+             * Ended How
+             * @description run_ended's how: completed, aborted_by_monitor, stopped_from_outside, failed
+             */
+            ended_how: string | null;
+            /** Plan Id */
+            plan_id: string | null;
+            /** Revision */
+            revision?: unknown;
+            /** T0 Wall */
+            t0_wall: string | null;
+            /**
+             * Can Stop
+             * @description running, with a loopback stop channel announced
+             */
+            can_stop: boolean;
+            /**
+             * Stop Unavailable
+             * @description why the console cannot stop it, in words
+             */
+            stop_unavailable: string | null;
+            /**
+             * Frame Tap
+             * @description running, with a loopback frame tap announced
+             */
+            frame_tap: boolean;
+            /**
+             * Events
+             * @description lines after run_started, from `since` on
+             */
+            events: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Total
+             * @description lines after run_started so far; the next `since`
+             */
+            total: number;
+            /** Partial Tail */
+            partial_tail: boolean;
+            /** Bad Lines */
+            bad_lines: number;
         };
         /** RunSummaryOut */
         RunSummaryOut: {
@@ -3459,6 +3658,26 @@ export interface components {
             by?: string | null;
             /** T */
             t?: string | null;
+        };
+        /** StopIn */
+        StopIn: {
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** StopOut */
+        StopOut: {
+            /** Run Id */
+            run_id: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "begun" | "refused" | "no_answer";
+            /** Message */
+            message: string;
         };
         /** StoreOut */
         StoreOut: {
@@ -5297,6 +5516,216 @@ export interface operations {
             };
             /** @description the store could not read the files */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_approvals_api_console_approvals_get: {
+        parameters: {
+            query?: {
+                agent?: ("microscope" | "simulation") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalOut"][];
+                };
+            };
+            /** @description no such question, version or run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the store could not read the files */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    run_stream_api_console_runs__agent___run_id__stream_get: {
+        parameters: {
+            query?: {
+                since?: number;
+            };
+            header?: never;
+            path: {
+                agent: "microscope" | "simulation";
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStreamOut"];
+                };
+            };
+            /** @description no such question, version or run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the store could not read the files */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    run_frame_api_console_runs__agent___run_id__frame_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: "microscope" | "simulation";
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the run's latest frame, binned and JPEG'd; header X-DinoAF-Frame holds its metadata as JSON */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": unknown;
+                };
+            };
+            /** @description no frame yet: the run has acquired nothing */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not followed, ended, or no frame tap */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the frame tap did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stop_run_api_console_runs__agent___run_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent: "microscope" | "simulation";
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopOut"];
+                };
+            };
+            /** @description remote view with remote abort off, or logged out (D13) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description no such run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not followed, ended, or a simulation run */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the stop channel did not answer a connection */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
