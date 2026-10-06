@@ -303,7 +303,7 @@ soft-matter-agents plan.md 10.2 (96db738, 2026-10-03): 초점 탐색의 자리(1
 | L-043 | 8 | | | | | |
 | L-044 | 8 | | | | | |
 | L-051 | 8 | | | | | |
-| L-055 | 6 | | 포화 2^16, 16비트 (S4, 사람 진술; uint16 최댓값 65535) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-055 | 6 | | "2^16 이 포화 값", 16비트 (S4, 사람 진술 그대로; 숫자 값이 아님 — 포화 프레임에서 본 최댓값만 답이 된다, 2^16 − 1 가정 금지) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
 | L-062 | 7 | | MM 으로 제어 (S5, 사람 진술); 끄는 속성은 열림 | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
 | L-063 | 7 | | (S5 와 같음) | | | |
 | L-064 | 7 | | | | | |
