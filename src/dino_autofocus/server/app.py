@@ -28,6 +28,7 @@ import contextlib
 import importlib
 import logging
 import pkgutil
+import re
 import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from importlib.metadata import PackageNotFoundError, version
@@ -82,6 +83,9 @@ log = logging.getLogger(__name__)
 READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 COMMANDS_PATH = "/api/commands"  # checked in the endpoint, which knows the command kind
+# the Abort of a run soft-matter-agents executes (plan.md 11-25): a stop, so it gets the stop
+# rules (loopback always; a logged-in remote viewer when remote abort is on, D13)
+SMA_STOP_PATH = re.compile(r"^/api/console/runs/[^/]+/[^/]+/stop$")
 SHUTDOWN_PATH = "/api/shutdown"
 OPEN_READS = frozenset({"/api/health", "/api/auth/setup"})  # setup: first-run state (T-105)
 # reads a locked login still gets: the lock screen needs who is locked (T-105 `/me`)
@@ -154,6 +158,8 @@ def _http_refusal(request: Request) -> Refusal | None:
         return None
     if path == SHUTDOWN_PATH:
         return _shutdown_refusal(request)
+    if SMA_STOP_PATH.match(path):
+        return command_refusal(request, "abort")
     return command_refusal(request)  # any other write: loopback, logged in, unlocked
 
 

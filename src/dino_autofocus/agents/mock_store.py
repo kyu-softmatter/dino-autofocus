@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .sma_files import SmaFiles, long_path
+from .sma_run import RunStream
 from .store import (
     QID_PREFIX,
     Agent,
@@ -111,6 +112,9 @@ class MockStore:
 
     def get_run(self, agent: Agent, run_id: str) -> RunDetail:
         return self.sample.get_run(agent, run_id)
+
+    def run_stream(self, agent: Agent, run_id: str) -> RunStream:
+        return self.sample.run_stream(agent, run_id)
 
     def list_inbox(self) -> list[InboxThread]:
         return self.sample.list_inbox()

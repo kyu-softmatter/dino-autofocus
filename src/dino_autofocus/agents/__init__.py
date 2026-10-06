@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from typing import Literal
 
+from . import sma_run
 from .mock_store import MockStore
 from .sma_files import SmaFiles
 from .store import (
@@ -49,6 +50,7 @@ __all__ = [
     "SmaFiles",
     "StoreError",
     "open_store",
+    "sma_run",
 ]
 
 

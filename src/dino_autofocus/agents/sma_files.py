@@ -6,7 +6,9 @@ Layout read (the soft-matter-agents repository, or a copy with the same layout):
                                         refusal_*.json, result_*.json, *.md, and the same
                                         names with a "vN_" prefix for revision N
     <seat>_agent/runs/<run_id>/         log.json, commands.json | config.json, observables.json,
-                                        trajectory_meta.json, and large files left unopened
+                                        trajectory_meta.json, and large files left unopened;
+                                        events.jsonl while the orchestrator follows the run
+                                        (read by `sma_run`, plan.md 11-25)
     <seat>_agent/inbox/<thread>/        rN_<kind>.json | .md, what the seat received
     bridge/threads/<thread>/status.json the bridge's view of the thread
 
@@ -22,6 +24,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .sma_run import MAX_EVENTS_BYTES, NotFollowedError, RunStream, SmaRunError, read_stream
 from .store import (
     AGENTS,
     Agent,
@@ -281,15 +284,38 @@ class SmaFiles:
         files = [FileInfo(p.name, _size(p)) for p in entries]
         return RunDetail(self._run_summary(agent, d), records, files, not_opened)
 
+    def run_stream(self, agent: Agent, run_id: str) -> RunStream:
+        """The run's events.jsonl as written so far (`sma_run.read_stream`). Raises
+        NotFoundError for no such run, `sma_run.NotFollowedError` for a run not followed."""
+        d = self._run_dir(agent, run_id)
+        if not d.is_dir():
+            raise NotFoundError(f"no {agent} run {run_id} in {self.source}")
+        return read_stream(d, max_bytes=max(self.max_read_bytes, MAX_EVENTS_BYTES))
+
+    def _followed(self, d: Path) -> RunStream | None:
+        """The events stream of a run its orchestrator follows, or None."""
+        try:
+            return read_stream(d, max_bytes=max(self.max_read_bytes, MAX_EVENTS_BYTES))
+        except (NotFollowedError, SmaRunError):
+            return None
+
     def _run_summary(self, agent: Agent, d: Path) -> RunSummary:
         log = self._small_json(d / "log.json")
         config = self._small_json(d / "config.json")
         meta = self._small_json(d / "trajectory_meta.json")
+        # A followed run has events.jsonl from its start and log.json only at its end: until
+        # then the stream says what the run is and whether it is still going (plan.md 11-25).
+        stream = self._followed(d) if not log and agent == "microscope" else None
+        if stream is not None:
+            return RunSummary(
+                run_id=d.name, agent=agent, qid=_qid_of(None, stream.plan_id),
+                plan_id=stream.plan_id,
+                status="running" if stream.running else stream.ended_how,
+                created_at=stream.t0_wall, finished_at=None, backend=None,
+                source=self.source, approval_kind=None,
+            )
         plan_id = _str_or_none(log.get("plan_id")) or _str_or_none(config.get("plan_id"))
-        qid = _str_or_none(config.get("qid")) or _str_or_none(log.get("qid"))
-        if qid is None and plan_id:
-            m = re.search(r"(mic|sim)-[0-9]{8}-[0-9]{3}", plan_id)
-            qid = m.group(0) if m else None
+        qid = _qid_of(_str_or_none(config.get("qid")) or _str_or_none(log.get("qid")), plan_id)
         return RunSummary(
             run_id=d.name,
             agent=agent,
@@ -386,6 +412,14 @@ def _scan(d: Path) -> dict[int, list[Path]]:
         if not p.is_dir() and not p.name.endswith(".tmp"):
             out.setdefault(split_version(p.name)[0], []).append(p)
     return out
+
+
+def _qid_of(qid: str | None, plan_id: str | None) -> str | None:
+    """The run's qid, else the one its plan id carries."""
+    if qid is None and plan_id:
+        m = re.search(r"(mic|sim)-[0-9]{8}-[0-9]{3}", plan_id)
+        qid = m.group(0) if m else None
+    return qid
 
 
 def _is_qid(name: str) -> bool:

@@ -1,6 +1,15 @@
 """Console area (PLAN.md F1, ui-spec 7.1, docs/screens/console.md): the agents' questions, runs
 and inbox, read from the AgentStore, and the one write, a question to the mock store.
 
+A run that soft-matter-agents' orchestrator is executing is followed through what it offers a
+console (its plan.md 11-25; `agents/sma_run.py`): `GET .../stream` reads its events.jsonl,
+`GET .../frame` asks its frame tap for the latest frame (it holds no core and never snaps;
+OD-13), and `POST .../stop` is the console's Abort for that run, sent on the run's own
+loopback stop channel. The stop is a stop: the access middleware treats it as `abort` (from
+the microscope PC always, from a logged-in remote viewer when remote abort is on, D13), and
+it is sent only when a person presses it. Closing the page stops nothing (OD-30). Nothing is
+written in the soft-matter-agents tree.
+
 The router reads only. Whether someone may submit is not decided here: the access middleware
 already refuses a remote or logged-out write, and the route asks `server_action_why` for the
 T-018 permission `SUBMIT_QUESTION` (operator on the microscope PC, D16). The console's own rule
@@ -10,14 +19,24 @@ grades and `numbers` are not touched (PLAN.md 6절 3항).
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from ...agents import AGENTS, MockStore, NotFoundError, ReadOnlyStoreError, StoreError
+from ...agents import AGENTS, MockStore, NotFoundError, ReadOnlyStoreError, StoreError, sma_run
 from ...auth import AuditKind
-from . import AgentStoreDep, Auth, Login, Refusal, Sessions, server_action_why
+from . import (
+    AgentStoreDep,
+    Auth,
+    Login,
+    Refusal,
+    Sessions,
+    command_why,
+    server_action_why,
+)
 
 router = APIRouter()
 
@@ -122,6 +141,37 @@ class StoreOut(BaseModel):
     writable: bool
 
 
+class RunStreamOut(BaseModel):
+    """A run soft-matter-agents' orchestrator follows: its events.jsonl so far."""
+
+    run_id: str
+    agent: AgentName
+    followed: bool = Field(description="the run has an events.jsonl that begins with run_started")
+    state: Literal["running", "ended", "not_followed"]
+    ended_how: str | None = Field(
+        description="run_ended's how: completed, aborted_by_monitor, stopped_from_outside, failed")
+    plan_id: str | None
+    revision: Any = None
+    t0_wall: str | None
+    can_stop: bool = Field(description="running, with a loopback stop channel announced")
+    stop_unavailable: str | None = Field(description="why the console cannot stop it, in words")
+    frame_tap: bool = Field(description="running, with a loopback frame tap announced")
+    events: list[dict[str, Any]] = Field(description="lines after run_started, from `since` on")
+    total: int = Field(description="lines after run_started so far; the next `since`")
+    partial_tail: bool
+    bad_lines: int
+
+
+class StopIn(BaseModel):
+    reason: str = Field(default="", max_length=600)
+
+
+class StopOut(BaseModel):
+    run_id: str
+    outcome: Literal["begun", "refused", "no_answer"]
+    message: str
+
+
 class QuestionIn(BaseModel):
     text: str
     target: AgentName
@@ -215,6 +265,148 @@ def get_run(agent: AgentName, run_id: str, store: AgentStoreDep) -> RunDetailOut
     except StoreError as e:
         raise _store_error(e).http() from e
     return RunDetailOut.model_validate(r.to_dict())
+
+
+# -- a run soft-matter-agents executes: follow, frame, stop (plan.md 11-25) ------------------
+
+NOT_FOLLOWED_STOP = ("this run is not followed (no events.jsonl), so the console has no stop "
+                     "channel for it; stop it at the instrument or in the operator terminal")
+SIM_STOP = "the console does not stop simulation runs"
+
+
+def _stream(store: Any, agent: str, run_id: str) -> sma_run.RunStream:
+    """The run's stream, or a refusal: 404 no such run, 409 not followed."""
+    reader = getattr(store, "run_stream", None)
+    if reader is None:
+        raise Refusal(409, "not_followed", "this store does not read followed runs").http()
+    try:
+        return reader(agent, run_id)
+    except NotFoundError as e:
+        raise _not_found(e).http() from e
+    except sma_run.NotFollowedError as e:
+        raise Refusal(409, "not_followed", str(e)).http() from e
+    except sma_run.SmaRunError as e:
+        raise Refusal(500, "store_error", str(e)).http() from e
+
+
+@router.get("/runs/{agent}/{run_id}/stream", response_model=RunStreamOut, responses=ERRORS)
+def run_stream(agent: AgentName, run_id: str, store: AgentStoreDep,
+               since: int = 0) -> RunStreamOut:
+    """A followed run's events from line `since` on (poll with the last `total`). A run with
+    no events.jsonl answers `state: not_followed` and why the console cannot stop it."""
+    reader = getattr(store, "run_stream", None)
+    try:
+        st = reader(agent, run_id) if reader is not None else None
+    except NotFoundError as e:
+        raise _not_found(e).http() from e
+    except sma_run.NotFollowedError:
+        st = None
+    except sma_run.SmaRunError as e:
+        raise Refusal(500, "store_error", str(e)).http() from e
+    if st is None:
+        try:
+            store.get_run(agent, run_id)  # 404 for no such run
+        except NotFoundError as e:
+            raise _not_found(e).http() from e
+        except StoreError as e:
+            raise _store_error(e).http() from e
+        return RunStreamOut(
+            run_id=run_id, agent=agent, followed=False, state="not_followed", ended_how=None,
+            plan_id=None, t0_wall=None, can_stop=False,
+            stop_unavailable=SIM_STOP if agent == "simulation" else NOT_FOLLOWED_STOP,
+            frame_tap=False, events=[], total=0, partial_tail=False, bad_lines=0)
+    if agent != "microscope":
+        why = SIM_STOP
+    elif not st.running:
+        why = f"the run has ended ({st.ended_how})"
+    elif st.stop_channel is None:
+        why = "the run announced no loopback stop channel; stop it at the instrument"
+    else:
+        why = None
+    since = max(0, since)
+    return RunStreamOut(
+        run_id=st.run_id, agent=agent, followed=True,
+        state="running" if st.running else "ended", ended_how=st.ended_how,
+        plan_id=st.plan_id, revision=st.revision, t0_wall=st.t0_wall,
+        can_stop=why is None, stop_unavailable=why,
+        frame_tap=st.running and st.frame_tap is not None,
+        events=st.events[since:], total=len(st.events),
+        partial_tail=st.partial_tail, bad_lines=st.bad_lines)
+
+
+@router.get(
+    "/runs/{agent}/{run_id}/frame",
+    response_class=Response,
+    responses={200: {"content": {"image/jpeg": {}},
+                     "description": "the run's latest frame, binned and JPEG'd; header "
+                                    "X-DinoAF-Frame holds its metadata as JSON"},
+               204: {"description": "no frame yet: the run has acquired nothing"},
+               409: {"description": "not followed, ended, or no frame tap"},
+               502: {"description": "the frame tap did not answer"}},
+)
+def run_frame(agent: AgentName, run_id: str, store: AgentStoreDep) -> Response:
+    """The run's latest frame from its frame tap, which hands over a copy and commands
+    nothing; the console opens no camera of its own (OD-13)."""
+    st = _stream(store, agent, run_id)
+    try:
+        got = sma_run.latest_frame(st)
+    except sma_run.RunEndedError as e:
+        raise Refusal(409, "run_ended", str(e)).http() from e
+    except sma_run.NotFollowedError as e:
+        raise Refusal(409, "no_frame_tap", str(e)).http() from e
+    except sma_run.SmaRunError as e:
+        raise Refusal(502, "frame_tap_unreachable", str(e)).http() from e
+    if got is None:
+        return Response(status_code=204)
+    if got.pixels is None:
+        raise Refusal(502, "frame_unreadable",
+                      f"the tap sent shape {got.shape} dtype {got.dtype!r}, not a mono frame "
+                      "the console can show").http()
+    from ..ws import encode_frame  # here, not at import: ws imports this package
+
+    frame, jpeg = encode_frame(got.pixels, {**got.metadata, "t": got.t_mono or 0.0}, 0)
+    head = {"run_id": st.run_id, "t_mono": got.t_mono, "shape": got.shape, "dtype": got.dtype,
+            "binning": frame.binning, "display_min": frame.display_min,
+            "display_max": frame.display_max, "time_base": "software (the run's t_mono)"}
+    return Response(jpeg, media_type="image/jpeg",
+                    headers={"X-DinoAF-Frame": json.dumps(head, default=str),
+                             "Cache-Control": "no-store"})
+
+
+@router.post(
+    "/runs/{agent}/{run_id}/stop",
+    response_model=StopOut,
+    responses={403: {"description": "remote view with remote abort off, or logged out (D13)"},
+               404: {"description": "no such run"},
+               409: {"description": "not followed, ended, or a simulation run"},
+               502: {"description": "the stop channel did not answer a connection"}},
+)
+def stop_run(agent: AgentName, run_id: str, body: StopIn, request: Request, store: AgentStoreDep,
+             me: Login, seat: Auth) -> StopOut:
+    """Abort a run soft-matter-agents executes: one line on the stop channel it announced.
+    The run calls the same abort() as its other stop paths and records who asked."""
+    remote_abort = getattr(request.app.state, "remote_abort", True)
+    if why := command_why(me, "abort", remote_abort=remote_abort):
+        raise why.http()
+    if agent != "microscope":
+        raise Refusal(409, "not_followed", SIM_STOP).http()
+    st = _stream(store, agent, run_id)
+    who = me.user_id or ("the microscope PC" if me.local else "a remote viewer")
+    reason = body.reason.strip() or "Abort pressed"
+    try:
+        result = sma_run.send_stop(st, f"{reason} (by {who})")
+    except sma_run.RunEndedError as e:
+        raise Refusal(409, "run_ended", str(e)).http() from e
+    except sma_run.NotFollowedError as e:
+        raise Refusal(409, "no_stop_channel", str(e)).http() from e
+    except sma_run.UnreachableError as e:
+        raise Refusal(502, "stop_unreachable", str(e)).http() from e
+    if seat.audit is not None:
+        seat.audit.append(AuditKind.COMMAND_EXECUTED, me.user_id, origin="console",
+                          command="sma_stop", run_id=st.run_id, local=me.local,
+                          outcome=result.outcome)
+    return StopOut(run_id=st.run_id, outcome=result.outcome,  # type: ignore[arg-type]
+                   message=result.message)
 
 
 @router.get("/inbox", response_model=list[InboxThreadOut], responses=ERRORS)
