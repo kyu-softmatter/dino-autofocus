@@ -19,6 +19,8 @@ export type RunSummary = Schemas["RunSummaryOut"];
 export type RunDetail = Schemas["RunDetailOut"];
 export type InboxMessage = Schemas["InboxMessageOut"];
 export type InboxThread = Schemas["InboxThreadOut"];
+/** A plan_approval card of a seat's approvals/ (read only). */
+export type Approval = Schemas["ApprovalOut"];
 /** `GET /api/console/store`: which store is behind the console, and whether it takes a question. */
 export type StoreInfo = Schemas["StoreOut"];
 /** One answer of `GET /api/permissions?ops=...` (T-009b): may I, and if not, why and the code. */
@@ -65,6 +67,7 @@ export const PATHS = {
   runFrame: (agent: Agent, runId: string) => `/api/console/runs/${seg(agent)}/${seg(runId)}/frame`,
   runStop: (agent: Agent, runId: string) => `/api/console/runs/${seg(agent)}/${seg(runId)}/stop`,
   inbox: "/api/console/inbox",
+  approvals: (agent?: Agent) => `/api/console/approvals${query({ agent })}`,
   permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(seg).join(",")}`,
 };
 

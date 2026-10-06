@@ -172,6 +172,7 @@ export function QuestionDetailView({
               {card !== undefined && <CardView card={card} />}
             </>
           )}
+          <PlanApprovals detail={d} />
           {d.documents.map((doc) => (
             <details key={doc.name} className="console-json">
               <summary>{doc.name} <span className="console-tag">generated</span></summary>
@@ -184,6 +185,39 @@ export function QuestionDetailView({
         </section>
       )}
     </Loaded>
+  );
+}
+
+/** What the person approved for this question (approvals/), read only: the console writes none. */
+export function PlanApprovals({ detail }: { detail: QuestionDetail }) {
+  const approvals = detail.approvals ?? [];
+  if (detail.plan_hash == null && approvals.length === 0) return null;
+  return (
+    <section aria-label="Approvals" className="console-approvals">
+      {detail.plan_hash != null && (
+        <p className="console-muted">
+          Plan hash ({versionLabel(detail.version)}, status left out): <code>{detail.plan_hash}</code>
+        </p>
+      )}
+      {approvals.length === 0 ? (
+        <p className="console-muted">No approval in approvals/ names this question.</p>
+      ) : (
+        <ul>
+          {approvals.map((a) => (
+            <li key={a.name}>
+              {a.id ?? a.name} · {a.status ?? "—"} by {a.approved_by ?? "—"} at {shortTime(a.approved_at)} ·{" "}
+              {a.plan_hash !== null && a.plan_hash === detail.plan_hash
+                ? "signs this version's plan"
+                : a.plan_found === true
+                  ? "signs another version's plan"
+                  : a.plan_found === false
+                    ? "signs a plan that is not in the question folder"
+                    : "its question folder is not here"}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

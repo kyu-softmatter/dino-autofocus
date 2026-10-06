@@ -27,6 +27,7 @@ All are mounted at `/api/console` by T-009's area-router mechanism. Bodies are t
 | `GET /runs/{agent}/{run_id}/frame` | | `image/jpeg` of the run's latest frame (binned, 0.5–99.5 percentile), metadata in `X-DinoAF-Frame`; 204 before the first frame | the run's frame tap |
 | `POST /runs/{agent}/{run_id}/stop` | `{reason}` | `StopOut`: `outcome` `begun` / `refused` / `no_answer`, `message` | the run's stop channel |
 | `GET /inbox` | | `InboxThread[]` with messages | `list_inbox()` |
+| `GET /approvals` | `agent=`, optional | `Approval[]` (the seats' `approvals/` plan_approval cards, newest first; `plan_found`: a plan card of the question hashes to `plan_hash`) | `list_approvals(agent)` |
 | `POST /questions` | `{text, target, purpose?, observable?}` | `201`, `QuestionSummary` | `submit_question(text, target, purpose=, observable=)` |
 
 Error mapping (all T-009b refusals: `detail = {code, message}` and the `X-DinoAF-Refusal` header):
@@ -66,6 +67,16 @@ announces a loopback stop channel and a frame tap in `run_started`, and keeps go
   no button, and `"Abort: this run is not followed (no events.jsonl), so the console has no stop channel
   for it; stop it at the instrument or in the operator terminal"`. Simulation runs have no Abort here.
 - Nothing is written in the soft-matter-agents tree (the audit line goes to the console's own folder).
+
+## Which store (C-03)
+
+`python -m dino_autofocus.server --store sma --sma-root DIR` (default root `$DINO_AF_SMA_ROOT`, else the
+desktop checkout) shows the soft-matter-agents files themselves: questions, runs, inbox and approvals of
+both seats, read only. A root with no seat folder stops the start-up with the reason. Without `--store`
+the console shows the mock sample (`agents/mock_data`, pinned at baf6f1e). `GET /questions/{qid}` carries
+`plan_hash` (sha256 of that version's plan card with `status` left out, as soft-matter-agents computes it)
+and every approval naming the question; the screen says which plan each approval signs. JSON is read as
+utf-8-sig. The console writes nothing in that tree: approvals are the person's, written outside it.
 
 ## Rules: remote, role, read-only
 

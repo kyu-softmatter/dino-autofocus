@@ -24,6 +24,7 @@ from .sma_run import RunStream
 from .store import (
     QID_PREFIX,
     Agent,
+    Approval,
     InboxThread,
     NotFoundError,
     QuestionDetail,
@@ -118,6 +119,9 @@ class MockStore:
 
     def list_inbox(self) -> list[InboxThread]:
         return self.sample.list_inbox()
+
+    def list_approvals(self, agent: Agent) -> list[Approval]:
+        return self.sample.list_approvals(agent)
 
     # -- writing ---------------------------------------------------------------------------
 

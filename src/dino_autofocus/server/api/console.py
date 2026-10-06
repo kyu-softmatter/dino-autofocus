@@ -82,6 +82,24 @@ class QuestionSummaryOut(BaseModel):
     observable_name: str | None = None
 
 
+class ApprovalOut(BaseModel):
+    name: str
+    agent: AgentName
+    id: str | None
+    qid: str | None
+    revision: int | None
+    status: str | None
+    plan_id: str | None
+    plan_revision: int | None
+    plan_hash: str | None
+    approved_by: str | None
+    approved_at: str | None
+    source: str
+    plan_found: bool | None = Field(
+        description="a plan card of the question hashes to plan_hash; None: no question folder")
+    data: Any = Field(default=None, description="the approval card's content, untouched")
+
+
 class QuestionDetailOut(BaseModel):
     summary: QuestionSummaryOut
     version: int
@@ -94,6 +112,10 @@ class QuestionDetailOut(BaseModel):
     others: list[CardOut]
     documents: list[DocumentOut]
     files: list[FileInfoOut]
+    plan_hash: str | None = Field(
+        default=None, description="sha256 of this version's plan card with status removed")
+    approvals: list[ApprovalOut] = Field(default_factory=list,
+                                         description="every plan_approval naming this qid")
 
 
 class RunSummaryOut(BaseModel):
@@ -265,6 +287,21 @@ def get_run(agent: AgentName, run_id: str, store: AgentStoreDep) -> RunDetailOut
     except StoreError as e:
         raise _store_error(e).http() from e
     return RunDetailOut.model_validate(r.to_dict())
+
+
+@router.get("/approvals", response_model=list[ApprovalOut], responses=ERRORS)
+def list_approvals(store: AgentStoreDep, agent: AgentName | None = None) -> list[ApprovalOut]:
+    """The seats' plan_approval cards (approvals/), newest first. Read only: an approval is
+    written by the person, never by the console (plan.md 11-25)."""
+    reader = getattr(store, "list_approvals", None)
+    if reader is None:
+        return []
+    try:
+        found = [a for ag in _agents(agent) for a in reader(ag)]
+    except StoreError as e:
+        raise _store_error(e).http() from e
+    found.sort(key=lambda a: (a.approved_at or "", a.name), reverse=True)
+    return [ApprovalOut.model_validate(a.to_dict()) for a in found]
 
 
 # -- a run soft-matter-agents executes: follow, frame, stop (plan.md 11-25) ------------------

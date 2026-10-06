@@ -656,6 +656,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/console/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Approvals
+         * @description The seats' plan_approval cards (approvals/), newest first. Read only: an approval is
+         *     written by the person, never by the console (plan.md 11-25).
+         */
+        get: operations["list_approvals_api_console_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/console/runs/{agent}/{run_id}/stream": {
         parameters: {
             query?: never;
@@ -1585,6 +1606,46 @@ export interface components {
         /** ApiError */
         ApiError: {
             detail: components["schemas"]["RefusalDetail"];
+        };
+        /** ApprovalOut */
+        ApprovalOut: {
+            /** Name */
+            name: string;
+            /**
+             * Agent
+             * @enum {string}
+             */
+            agent: "microscope" | "simulation";
+            /** Id */
+            id: string | null;
+            /** Qid */
+            qid: string | null;
+            /** Revision */
+            revision: number | null;
+            /** Status */
+            status: string | null;
+            /** Plan Id */
+            plan_id: string | null;
+            /** Plan Revision */
+            plan_revision: number | null;
+            /** Plan Hash */
+            plan_hash: string | null;
+            /** Approved By */
+            approved_by: string | null;
+            /** Approved At */
+            approved_at: string | null;
+            /** Source */
+            source: string;
+            /**
+             * Plan Found
+             * @description a plan card of the question hashes to plan_hash; None: no question folder
+             */
+            plan_found: boolean | null;
+            /**
+             * Data
+             * @description the approval card's content, untouched
+             */
+            data?: unknown;
         };
         /** AskIn */
         AskIn: {
@@ -2988,6 +3049,16 @@ export interface components {
             documents: components["schemas"]["DocumentOut"][];
             /** Files */
             files: components["schemas"]["dino_autofocus__server__api__console__FileInfoOut"][];
+            /**
+             * Plan Hash
+             * @description sha256 of this version's plan card with status removed
+             */
+            plan_hash?: string | null;
+            /**
+             * Approvals
+             * @description every plan_approval naming this qid
+             */
+            approvals?: components["schemas"]["ApprovalOut"][];
         };
         /** QuestionIn */
         QuestionIn: {
@@ -5425,6 +5496,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunDetailOut"];
+                };
+            };
+            /** @description no such question, version or run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the store could not read the files */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_approvals_api_console_approvals_get: {
+        parameters: {
+            query?: {
+                agent?: ("microscope" | "simulation") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalOut"][];
                 };
             };
             /** @description no such question, version or run */
