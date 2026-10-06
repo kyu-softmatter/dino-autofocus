@@ -1,5 +1,5 @@
-# origin: dino-autofocus, public since 2026-10-03:
-#   https://github.com/kyu-softmatter/dino-autofocus/blob/ab4978710228bb7f392a1f9050b95dfb10b42a92/microscope_agent/src/focus_classical.py
+# origin: soft-matter-agents, the original since 2026-10-05; dino-autofocus mirrors it:
+#   https://github.com/kyu-softmatter/soft-matter-agents/blob/f2c56dcfc018b23ff784dc2ac06e150db499f556/microscope_agent/src/focus_classical.py
 # body-sha256: a1155a04c9f180ed8d257d081ff03b4e1a205d7d2d886010821e265778e9b127
 """Classical focus metrics for live frames and the sweep-curve tools built on them.
 
