@@ -278,3 +278,65 @@ soft-matter-agents plan.md 10.2 (96db738, 2026-10-03): 초점 탐색의 자리(1
 | L05-19 | `run_log` | a focus verdict is logged as one run-log event that is not a command: it carries no params and no channel, the chosen frame's z is the encoder readback, values read in the run and deterministic computations on them carry their grades, and model numbers appear only as signals without a grade. | shape of the run-log event; the grade mapping is provisional until the person rules on it |
 
 검사: 이 절의 claim·validity 칸에는 숫자 리터럴이 없다 (`grep` 으로 확인; 출처 줄의 해시·커밋은 제외). 벤치·튜닝 숫자는 2.8 절의 카드(L-077~L-089)와 5 절의 20 장이 따로 다룬다; 이 절은 정의만이다.
+
+## 7. 답 줄 (B-01 벤치 방문과 복사 전 20 장) — 2026-10-05 추가, 빈 칸
+
+- 벤치 세션(B-01 준비)이 만든 빈 답 줄이다. 1–6 절은 바꾸지 않았다. 점검표 `docs/runbooks/bench-visit-1.md`, 기록 양식 `docs/runs/templates/bench-visit-1.template.{md,yaml}`.
+- 답의 모양은 5 절과 같다: **보냄** (librarian 항목으로; 출처·날짜) / **안 보냄** (이유) / **먼저 측정** (언제, 어떻게). 등급은 적지 않는다 (OD-17: 출처만, 등급은 SMA 가 유도).
+- 칸: 답 / 값 (있으면) / 출처 (`user statement in the bench window, <date>` 또는 `file <path> sha256`) / 확인 `{kind, by, on, how}` / 벤치 확인 (목요일).
+- 사람 진술 S1–S6 (2026-10-05): 사람이 병합 계획 세션 창에서 말했고 그 세션이 전달했다. `how` = "stated in the merge-plan session window; not yet confirmed at the bench". 잰 값이 아니며 벤치 확인 칸은 열려 있다.
+- 봉투 값 (`focus_z_*`, 후퇴, 걸음) 은 여기서 정하지 않는다. 사람이 U-03 에서 SMA `safety.json` 에 쓴다.
+
+### 7.1 벤치 방문 1 에서 답이 나오는 카드
+
+| id | 점검표 절 | 답 | 값 | 출처 | 확인 {kind, by, on, how} | 벤치 확인 |
+|---|---|---|---|---|---|---|
+| L-005 | 5.3 | | 170 um (S1, 사람 진술) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-013 | 4.1 | | | | | |
+| L-015 | 4.5 | | | | | |
+| L-018 | 5.1 | | (S2: 따로 답하지 않음) | | | |
+| L-019 | 5.2 | | Z 100 um 내림 (S2, 사람 진술) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-023 | 4.3 | | 재물대 ±2 cm (S3, 사람 진술) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-024 | 4.3 | | | | | |
+| L-029 | 8 | | | | | |
+| L-033 | 5.4 | | | | | |
+| L-043 | 8 | | | | | |
+| L-044 | 8 | | | | | |
+| L-051 | 8 | | | | | |
+| L-055 | 6 | | "2^16 이 포화 값", 16비트 (S4, 사람 진술 그대로; 숫자 값이 아님 — 포화 프레임에서 본 최댓값만 답이 된다, 2^16 − 1 가정 금지) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-062 | 7 | | MM 으로 제어 (S5, 사람 진술); 끄는 속성은 열림 | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-063 | 7 | | (S5 와 같음) | | | |
+| L-064 | 7 | | | | | |
+| L-065 | 7 | | | | | |
+| L-067 | 4.4 | | | | | |
+| L-073 | 4.2 | | | | | |
+| L-090 | 9 | | 카메라를 놓아줌 (S6, 사람 진술) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-091 | 9 | | y 가 줄면 영상에서 아래로 (S6, 사람 진술) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-094 | 4.2 | | 압전 0–6000 um (S3, 사람 진술; **확인 필요**: dino `PIEZO_RANGE_UM` ±100 um, KB 컨트롤러 NPC-6330) | 병합 계획 세션 전달 2026-10-05 | {person_statement, person, 2026-10-05, "stated in the merge-plan session window; not yet confirmed at the bench"} | |
+| L-095 | 9 | | | | | |
+| L-096 | 9 | | | | | |
+
+### 7.2 복사 전에 답할 20 장 (5 절, OD-22)
+
+| id | 답 | 값 | 출처 | 확인 {kind, by, on, how} | 먼저 측정이면 언제·어떻게 |
+|---|---|---|---|---|---|
+| L-032 | | | | | |
+| L-033 | | | | | |
+| L-057 | | | | | |
+| L-077 | | | | | |
+| L-078 | | | | | |
+| L-079 | | | | | |
+| L-080 | | | | | |
+| L-081 | | | | | |
+| L-082 | | | | | |
+| L-083 | | | | | |
+| L-084 | | | | | |
+| L-085 | | | | | |
+| L-086 | | | | | |
+| L-087 | | | | | |
+| L-088 | | | | | |
+| L-089 | | | | | |
+| L-005 (충돌) | | (7.1 참고) | | | |
+| L-031 (충돌) | | | | | |
+| L-052 (충돌) | | | | | |
+| L-056 (충돌) | | (7.1 의 L-055 참고) | | | |
