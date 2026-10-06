@@ -179,8 +179,8 @@ def test_the_named_commit_holds_this_body():
     problems = []
     for p in flat_origin.flat_files(REPO):
         header, body = flat_origin.split(p.read_text(encoding="utf-8"))
-        if header is None:
-            continue  # reported by the test above
+        if header is None or header.origin != flat_origin.ORIGIN:
+            continue  # no header: reported above; a mirror: checked against SMA below
         shown = _git("show", f"{header.commit}:{header.path}", cwd=REPO)
         if shown.returncode:
             problems.append(f"{header.path}: commit {header.commit[:12]} is not in this"
@@ -227,4 +227,17 @@ def test_soft_matter_agents_checkout_has_the_pin_and_no_drift():
         if flat_origin.body_sha256(ours) != flat_origin.body_sha256(there):
             problems.append(f"{rel.as_posix()}: body differs from the soft-matter-agents copy"
                             f" (drift: mirror the change back or forward, by card)")
+    # D-06: every mirrored file's body is the one at SMA_MIRROR_COMMIT in soft-matter-agents
+    for rel in sorted(flat_origin.MIRRORED):
+        shown = _git("show", f"{flat_origin.SMA_MIRROR_COMMIT}:{rel}", cwd=sma)
+        if shown is None:
+            break
+        if shown.returncode:
+            problems.append(f"{rel}: SMA_MIRROR_COMMIT has no such file in the checkout")
+            continue
+        _, there = flat_origin.split(shown.stdout.decode("utf-8"))
+        _, ours = flat_origin.split((REPO / rel).read_text(encoding="utf-8"))
+        if flat_origin.body_sha256(ours) != flat_origin.body_sha256(there):
+            problems.append(f"{rel}: the mirror differs from soft-matter-agents at "
+                            f"{flat_origin.SMA_MIRROR_COMMIT[:12]}")
     assert not problems, problems

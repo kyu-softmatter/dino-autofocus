@@ -284,7 +284,7 @@ soft-matter-agents plan.md 10.2 (96db738, 2026-10-03): 초점 탐색의 자리(1
 - 벤치 세션(B-01 준비)이 만든 빈 답 줄이다. 1–6 절은 바꾸지 않았다. 점검표 `docs/runbooks/bench-visit-1.md`, 기록 양식 `docs/runs/templates/bench-visit-1.template.{md,yaml}`.
 - 답의 모양은 5 절과 같다: **보냄** (librarian 항목으로; 출처·날짜) / **안 보냄** (이유) / **먼저 측정** (언제, 어떻게). 등급은 적지 않는다 (OD-17: 출처만, 등급은 SMA 가 유도).
 - 칸: 답 / 값 (있으면) / 출처 (`user statement in the bench window, <date>` 또는 `file <path> sha256`) / 확인 `{kind, by, on, how}` / 벤치 확인 (목요일).
-- 사람 진술 S1–S6 (2026-10-05): 사람이 병합 계획 세션 창에서 말했고 그 세션이 전달했다. `how` = "stated in the merge-plan session window; not yet confirmed at the bench". 잰 값이 아니며 벤치 확인 칸은 열려 있다.
+- 사람 진술 S1–S6 (2026-10-05): 사람이 병합 계획 세션 창에서 말했고 그 세션이 전달했다. `how` = "stated in the merge-plan session window; not yet confirmed at the bench". 2026-10-06 사람이 벤치 세션 창에서 "yes" 로 S1–S6 이 자기 진술임을 확인했다 (user statement in the bench window, 2026-10-06). 잰 값이 아니며 벤치 확인 칸은 열려 있다.
 - 봉투 값 (`focus_z_*`, 후퇴, 걸음) 은 여기서 정하지 않는다. 사람이 U-03 에서 SMA `safety.json` 에 쓴다.
 
 ### 7.1 벤치 방문 1 에서 답이 나오는 카드
