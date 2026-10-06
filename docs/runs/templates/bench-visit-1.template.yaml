@@ -24,7 +24,8 @@ run:
     mm_real.BENCH_MOTION: LOCKED
     guards.BENCH_APPROACH: MEASURED
 
-prior_statements:            # relayed 2026-10-05 by the merge-plan session; confirm at the bench, do not treat as measured
+prior_statements:            # relayed 2026-10-05 by the merge-plan session; the person answered "yes" to S1-S6 and the visit date 2026-10-08
+                             # in the bench window on 2026-10-06 (user statement in the bench window, 2026-10-06). Still statements: confirm at the bench, do not treat as measured
   - {id: S1, card: L-005, text: "40x WI working distance at collar 0.17 = 170 um", by: person, on: "2026-10-05", how: "stated in the merge-plan session window; not yet confirmed at the bench", confirmed_at_bench: null}
   - {id: S2, card: L-019, text: "retract before a long XY move: lower Z by 100 um (Q20); Q13 step not answered", by: person, on: "2026-10-05", how: "stated in the merge-plan session window; not yet confirmed at the bench", confirmed_at_bench: null}
   - {id: S3, card: L-023/L-024/L-094, text: "piezo 0-6000 um; motorized stage +-2 cm (piezo to confirm: dino PIEZO_RANGE_UM +-100 um, KB controller NPC-6330)", by: person, on: "2026-10-05", how: "stated in the merge-plan session window; not yet confirmed at the bench", confirmed_at_bench: null}
