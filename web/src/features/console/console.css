@@ -157,3 +157,23 @@
   display: block;
   width: 100%;
 }
+
+/* a run soft-matter-agents executes: its Abort and its latest frame */
+.console-followed {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.console-abort {
+  margin: 0.5rem 0;
+}
+.console-abort-button {
+  font-weight: 600;
+}
+.console-tap img {
+  max-width: 100%;
+  max-height: 480px;
+  display: block;
+  background: #000;
+}

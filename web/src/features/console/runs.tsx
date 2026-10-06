@@ -1,11 +1,17 @@
 /** Run list and run detail (ui-spec 7.1). Simulation progress and trajectories live in the simulation area. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { areaHref } from "../../app/route";
 import { useClient } from "../../app/client";
-import { AGENTS, type Agent, PATHS, type RunDetail, type RunSummary } from "./api";
-import { asArray, Fields, isRecord, Json, Loaded, shortTime, show, useLoad } from "./ui";
+import { AGENTS, type Agent, PATHS, type RunDetail, type RunStream, type RunSummary, stopRun } from "./api";
+import { asArray, errorText, Fields, isRecord, Json, Loaded, shortTime, show, useLoad } from "./ui";
+
+/** How often a running run's events and frame are read again (the file and the tap, not a device). */
+export const FOLLOW_MS = 1000;
+export const ABORT_LABEL = "Abort this run";
+/** OD-30: soft-matter-agents keeps a run going when its viewer goes, and so does the console. */
+export const CLOSE_NOTE = "Closing this page does not stop the run.";
 
 export function RunList({ runs, onOpen }: { runs: RunSummary[]; onOpen: (agent: Agent, runId: string) => void }) {
   const [agent, setAgent] = useState("");
@@ -57,7 +63,137 @@ const SIM_OBSERVABLES = ["observable", "fit", "uncertainty", "relaxation"] as co
 export function RunDetailView({ agent, runId, refreshKey }: { agent: Agent; runId: string; refreshKey: number }) {
   const client = useClient();
   const state = useLoad(() => client.get<RunDetail>(PATHS.run(agent, runId)), [client, agent, runId, refreshKey]);
-  return <Loaded state={state}>{(d) => <RunBody run={d} />}</Loaded>;
+  return (
+    <>
+      {agent === "microscope" && <FollowedRun agent={agent} runId={runId} />}
+      <Loaded state={state}>{(d) => <RunBody run={d} />}</Loaded>
+    </>
+  );
+}
+
+/**
+ * A run soft-matter-agents executes (its plan.md 11-25): the events it has written so far, its
+ * latest frame from its frame tap, and Abort on its own stop channel. Read again every FOLLOW_MS
+ * while it runs; nothing is read once it has ended. A run that is not followed says why the
+ * console cannot stop it, in words.
+ */
+export function FollowedRun({ agent, runId }: { agent: Agent; runId: string }) {
+  const client = useClient();
+  const [stream, setStream] = useState<RunStream | null>(null);
+  const [events, setEvents] = useState<Record<string, unknown>[]>([]);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [frameTick, setFrameTick] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    let since = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setStream(null);
+    setEvents([]);
+    setReadError(null);
+    const read = async () => {
+      try {
+        const s = await client.get<RunStream>(PATHS.runStream(agent, runId, since || undefined));
+        if (!live) return;
+        since = s.total;
+        setStream(s);
+        setReadError(null);
+        if (s.events.length > 0) setEvents((old) => [...old, ...s.events.filter(isRecord)]);
+        setFrameTick((t) => t + 1);
+        if (s.state === "running") timer = setTimeout(read, FOLLOW_MS);
+      } catch (e: unknown) {
+        if (!live) return;
+        setReadError(errorText(e));
+        timer = setTimeout(read, FOLLOW_MS * 5);
+      }
+    };
+    void read();
+    return () => {
+      live = false;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [client, agent, runId]);
+
+  if (stream === null) {
+    return readError === null ? null : <p className="console-muted">Run events unavailable: {readError}</p>;
+  }
+  if (!stream.followed) {
+    return (
+      <section aria-label="Followed run" className="console-followed">
+        <p className="console-muted">Abort: {stream.stop_unavailable}</p>
+      </section>
+    );
+  }
+  return (
+    <section aria-label="Followed run" className="console-followed">
+      <header className="console-detail-head">
+        <span className="console-status">{stream.state === "running" ? "running" : `ended: ${stream.ended_how ?? "unknown"}`}</span>
+        <span className="console-tag">soft-matter-agents run</span>
+        {stream.plan_id !== null && <span>{stream.plan_id}</span>}
+      </header>
+      <AbortRun agent={agent} runId={runId} stream={stream} />
+      {readError !== null && <p className="console-muted">Last read failed: {readError}</p>}
+      {stream.frame_tap && <TapFrame agent={agent} runId={runId} tick={frameTick} />}
+      <Events events={events} label="Run events (events.jsonl)" />
+    </section>
+  );
+}
+
+function AbortRun({ agent, runId, stream }: { agent: Agent; runId: string; stream: RunStream }) {
+  const client = useClient();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [refused, setRefused] = useState<string | null>(null);
+  const press = async () => {
+    setBusy(true);
+    setRefused(null);
+    try {
+      const r = await stopRun(client, agent, runId, reason);
+      setAnswer(r.message);
+    } catch (e: unknown) {
+      setRefused(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!stream.can_stop) {
+    return (
+      <div className="console-abort">
+        <button type="button" className="console-abort-button" disabled title={stream.stop_unavailable ?? undefined}>
+          {ABORT_LABEL}
+        </button>{" "}
+        <span className="console-muted">{stream.stop_unavailable}</span>
+        {answer !== null && <p className="console-muted">{answer}</p>}
+      </div>
+    );
+  }
+  return (
+    <div className="console-abort">
+      <label>
+        Reason{" "}
+        <input value={reason} maxLength={300} placeholder="optional" onChange={(e) => setReason(e.target.value)} />
+      </label>{" "}
+      <button type="button" className="console-abort-button" disabled={busy} onClick={() => void press()}>
+        {ABORT_LABEL}
+      </button>{" "}
+      <span className="console-muted">Sent to the run's own stop channel; the run aborts and records who asked. {CLOSE_NOTE}</span>
+      {answer !== null && <p role="status">{answer}</p>}
+      {refused !== null && <p role="alert" className="console-error">{refused}</p>}
+    </div>
+  );
+}
+
+/** The run's latest frame, a copy its frame tap hands over; the console opens no camera. */
+function TapFrame({ agent, runId, tick }: { agent: Agent; runId: string; tick: number }) {
+  return (
+    <figure className="console-tap">
+      <img src={`${PATHS.runFrame(agent, runId)}?t=${tick}`} alt={`Latest frame of ${runId}`} />
+      <figcaption className="console-muted">
+        Latest frame from the run's own acquisition (display range 0.5–99.5 percentile); blank until it acquires one.
+      </figcaption>
+    </figure>
+  );
 }
 
 function RunBody({ run }: { run: RunDetail }) {
@@ -93,11 +229,11 @@ function RunBody({ run }: { run: RunDetail }) {
 }
 
 /** The log's events in file order (already time order). */
-function Events({ events }: { events: unknown[] }) {
+function Events({ events, label = "Events" }: { events: unknown[]; label?: string }) {
   const rows = events.filter(isRecord);
   if (rows.length === 0) return null;
   return (
-    <table className="console-table" aria-label="Events">
+    <table className="console-table" aria-label={label}>
       <thead>
         <tr><th>t</th><th>Event</th><th>Fields</th></tr>
       </thead>

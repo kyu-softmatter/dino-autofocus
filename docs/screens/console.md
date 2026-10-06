@@ -23,6 +23,9 @@ All are mounted at `/api/console` by T-009's area-router mechanism. Bodies are t
 | `GET /questions/{qid}` | `version=N`, optional. Omitted: latest | `QuestionDetail` (`summary.versions` lists the others) | `get_question(qid, version)` |
 | `GET /runs` | `agent=`, optional, as for questions | `RunSummary[]` | `list_runs(agent)` |
 | `GET /runs/{agent}/{run_id}` | | `RunDetail` (`not_opened` lists big or unreadable records) | `get_run(agent, run_id)` |
+| `GET /runs/{agent}/{run_id}/stream` | `since=N` (the last answer's `total`) | `RunStream`: `followed`, `state` (`running` / `ended` / `not_followed`), `ended_how`, `can_stop`, `stop_unavailable` (words), `frame_tap`, `events[since:]`, `total` | `run_stream(agent, run_id)` (`agents/sma_run.py`) |
+| `GET /runs/{agent}/{run_id}/frame` | | `image/jpeg` of the run's latest frame (binned, 0.5–99.5 percentile), metadata in `X-DinoAF-Frame`; 204 before the first frame | the run's frame tap |
+| `POST /runs/{agent}/{run_id}/stop` | `{reason}` | `StopOut`: `outcome` `begun` / `refused` / `no_answer`, `message` | the run's stop channel |
 | `GET /inbox` | | `InboxThread[]` with messages | `list_inbox()` |
 | `POST /questions` | `{text, target, purpose?, observable?}` | `201`, `QuestionSummary` | `submit_question(text, target, purpose=, observable=)` |
 
@@ -40,7 +43,29 @@ The status and date filters and the two-version diff (ui-spec 7.1) run in the br
 responses: the list is small, and the diff fetches `?version=` twice. No server diff endpoint.
 
 Refresh: when the area opens and on the `"Refresh"` button. No polling, no file watching (ui-spec 7.1).
-After a successful submit the screen re-reads `GET /questions`.
+After a successful submit the screen re-reads `GET /questions`. One exception: a running followed run
+(below) is read again every second until it ends.
+
+## A run soft-matter-agents executes (C-04, C-08)
+
+soft-matter-agents plan.md 11-25: a run its orchestrator follows writes `runs/<run_id>/events.jsonl`
+(`run_started` … `run_ended` with `how` = completed, aborted_by_monitor, stopped_from_outside or failed),
+announces a loopback stop channel and a frame tap in `run_started`, and keeps going if a viewer drops.
+
+- The run list shows such a run by its stream while it has no `log.json`: outcome `running`, then `how`.
+- A microscope run's detail starts with a "Followed run" box: state, the events so far, the latest
+  frame (only while the run's own acquisition produces frames; the tap never snaps and the console
+  opens no camera, OD-13), and `"Abort this run"` with an optional reason.
+- Abort sends one line on the run's own stop channel; the run calls the same abort() as its other stop
+  paths and records `stop_requested` with the reason and who pressed it. The server treats it as a stop:
+  the microscope PC always, a logged-in remote viewer when remote abort is on (D13), otherwise 403.
+  The answer is shown next to the button: began to abort / refused (the run records why) / no answer
+  in 15 s (watch the events).
+- `"Closing this page does not stop the run."` (OD-30): nothing sends a stop except the button.
+- An ended run: the button is disabled with `"the run has ended (<how>)"`. A run without events.jsonl:
+  no button, and `"Abort: this run is not followed (no events.jsonl), so the console has no stop channel
+  for it; stop it at the instrument or in the operator terminal"`. Simulation runs have no Abort here.
+- Nothing is written in the soft-matter-agents tree (the audit line goes to the console's own folder).
 
 ## Rules: remote, role, read-only
 

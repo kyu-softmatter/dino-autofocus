@@ -25,6 +25,9 @@ export type StoreInfo = Schemas["StoreOut"];
 export type Permission = Schemas["PermissionOut"];
 export type Permissions = Record<string, Permission>;
 export type SubmitIn = Schemas["QuestionIn"];
+/** A run soft-matter-agents executes, as its events.jsonl says so far (plan.md 11-25). */
+export type RunStream = Schemas["RunStreamOut"];
+export type StopResult = Schemas["StopOut"];
 
 export type Agent = QuestionSummary["agent"];
 export const AGENTS: readonly Agent[] = ["microscope", "simulation"];
@@ -57,6 +60,10 @@ export const PATHS = {
   question: (qid: string, version?: number) => `/api/console/questions/${seg(qid)}${query({ version })}`,
   runs: (agent?: Agent) => `/api/console/runs${query({ agent })}`,
   run: (agent: Agent, runId: string) => `/api/console/runs/${seg(agent)}/${seg(runId)}`,
+  runStream: (agent: Agent, runId: string, since?: number) =>
+    `/api/console/runs/${seg(agent)}/${seg(runId)}/stream${query({ since })}`,
+  runFrame: (agent: Agent, runId: string) => `/api/console/runs/${seg(agent)}/${seg(runId)}/frame`,
+  runStop: (agent: Agent, runId: string) => `/api/console/runs/${seg(agent)}/${seg(runId)}/stop`,
   inbox: "/api/console/inbox",
   permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(seg).join(",")}`,
 };
@@ -79,4 +86,15 @@ export async function submitQuestion(client: Client, body: SubmitIn): Promise<Qu
   const q = await client.post<QuestionSummary>("/api/console/questions", body);
   if (q === null) throw new CommandRefused(502, "the server returned no question");
   return q;
+}
+
+/**
+ * `POST .../stop`: the console's Abort for a run soft-matter-agents executes, sent on the run's
+ * own loopback stop channel. A stop like the engine's abort: the microscope PC always, a remote
+ * viewer when remote abort is on (D13). Any refusal is thrown with its reason.
+ */
+export async function stopRun(client: Client, agent: Agent, runId: string, reason: string): Promise<StopResult> {
+  const r = await client.post<StopResult>(PATHS.runStop(agent, runId), { reason });
+  if (r === null) throw new CommandRefused(502, "the server returned no answer to the stop");
+  return r;
 }
