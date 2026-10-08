@@ -119,6 +119,19 @@ approach:
     entries: []                  # {lens, modality, z_range_um: [lo, hi], step_um, frames, exposure_ms, folder, sha256_list_file}
   pixel_size_1x1:                # 5.6  only if L-031 is not closed by the E2 entries
     {checklist: "5.6", card: L-031, per_lens: {}, status: unmeasured, method: null, by: null, on: null, source: null}
+  shadow_mode_eval:              # 5.7  docs/sma-shadow-mode.md section 7; frames by hand (knob + Snap), scores computed later on the desktop
+    checklist: "5.7"
+    design: docs/sma-shadow-mode.md section 7 (S-01)
+    person_decides: {lenses: null, fields_per_lens: null, plane_spacing_um: null, planes_per_field: null}   # no proposed numbers
+    lenses: []                   # {lens, illumination, exposure_ms, readout_mode: {Port, ReadoutRate}, fields: [...]}
+                                 #   field: {field: n, z0_um: hand-focus ZDrive, xy_um: [x, y], sample_present: true|false,
+                                 #           planes: [{plane: n, zdrive_um, frame_file}], by, on}
+    no_sample_field: null        # optional; same shape as a field, sample_present: false
+    frames_shared_with_5_5: null
+    status: unmeasured
+    by: null
+    on: null
+    source: null
 
 camera_kinetix_red:              # 6  D-08 / L-056 conflict 12 vs 16 bit: record as read
   checklist: "6"
