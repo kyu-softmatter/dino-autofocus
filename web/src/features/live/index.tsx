@@ -23,6 +23,7 @@ import {
   type Trap,
   TrapOverlay,
 } from "../../app/live";
+import { SmaLiveSwitch } from "./smaLive";
 
 const TRAP_EVENTS = ["motion", "finished"] as const;
 
@@ -133,6 +134,7 @@ export default function LiveScreen() {
           <PatternRunControls patternId={pattern.id} onTime={setT} />
         </>
       )}
+      <SmaLiveSwitch />
       <div className="live-with-focus">
         <LiveView overlay={pattern || trapsShown ? overlay : undefined} onFrame={onFrame} />
         <FocusPanel samples={samples} />

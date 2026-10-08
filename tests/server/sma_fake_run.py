@@ -178,6 +178,78 @@ class FakeSmaRun:
         return json.dumps(head).encode() + b"\n" + body
 
 
+LIVE_LIST = {"card": "live_view_list", "name": "brightfield finder", "lamp": "DiaLamp",
+             "intensity": 12, "exposure_ms": 20, "frame_ceiling": 3000}
+
+
+def write_live_list(root: Path, name: str = "live-view-brightfield.json",
+                    data: dict[str, Any] | None = None) -> str:
+    """A live-view list as the person would leave it in approvals/; returns its sha256."""
+    import hashlib
+
+    folder = Path(root) / "microscope_agent" / "approvals"
+    folder.mkdir(parents=True, exist_ok=True)
+    raw = json.dumps(data or LIVE_LIST, indent=2).encode()
+    (folder / name).write_bytes(raw)
+    return hashlib.sha256(raw).hexdigest()
+
+
+class FakeLiveHost:
+    """soft-matter-agents' live-view host as card 062 and the console agreed it (2026-10-07):
+    127.0.0.1 on an OS port, announced in an address file outside the tree; exactly one line
+    {"live_on": <sha256>}; replies {"live_on": "started", "run_id"} once run_started is
+    written, or {"live_on": "refused", "reason"}. One run at a time (the lock)."""
+
+    def __init__(self, root: Path, address_file: Path, *, silent: bool = False) -> None:
+        self.root = Path(root)
+        self.address_file = Path(address_file)
+        self.silent = silent
+        self.requests: list[bytes] = []
+        self.runs: list[FakeSmaRun] = []
+        self.server = _Server(self._judge)
+        self.server.start()
+        addr = self.server.address()
+        self.address_file.parent.mkdir(parents=True, exist_ok=True)
+        self.address_file.write_text(json.dumps({**addr, "pid": 4242,
+                                                 "started_at": T0_WALL}), encoding="utf-8")
+
+    def approved(self) -> set[str]:
+        import hashlib
+
+        folder = self.root / "microscope_agent" / "approvals"
+        return {hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in folder.glob("live-view-*.json")} if folder.is_dir() else set()
+
+    def _judge(self, raw: bytes) -> bytes | None:
+        self.requests.append(raw)
+        if self.silent:
+            return None
+
+        def refuse(why: str) -> bytes:
+            return json.dumps({"live_on": "refused", "reason": why}).encode() + b"\n"
+
+        try:
+            message = json.loads(raw.decode("utf-8").rstrip("\n"))
+        except ValueError:
+            return refuse("not JSON")
+        if not isinstance(message, dict) or set(message) != {"live_on"}:
+            return refuse("not exactly the key live_on")
+        if message["live_on"] not in self.approved():
+            return refuse("no approved live-view list has that sha256")
+        if any(not r.ended for r in self.runs):
+            return refuse("a run holds the lock")
+        run = FakeSmaRun(self.root, run_id=f"run-live-{len(self.runs) + 1:03d}",
+                         plan_id=None)  # type: ignore[arg-type]
+        self.runs.append(run)
+        return json.dumps({"live_on": "started", "run_id": run.run_id}).encode() + b"\n"
+
+    def close(self) -> None:
+        for r in self.runs:
+            r.end()
+        self.server.close()
+        self.address_file.unlink(missing_ok=True)
+
+
 def tree_state(root: Path) -> dict[str, tuple[int, int]]:
     """Every file under `root` with its size and mtime, to show the console wrote nothing."""
     return {str(p.relative_to(root)): (p.stat().st_size, p.stat().st_mtime_ns)

@@ -26,7 +26,15 @@ from fastapi import APIRouter, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from ...agents import AGENTS, MockStore, NotFoundError, ReadOnlyStoreError, StoreError, sma_run
+from ...agents import (
+    AGENTS,
+    MockStore,
+    NotFoundError,
+    ReadOnlyStoreError,
+    StoreError,
+    sma_live,
+    sma_run,
+)
 from ...auth import AuditKind
 from . import (
     AgentStoreDep,
@@ -192,6 +200,32 @@ class StopOut(BaseModel):
     run_id: str
     outcome: Literal["begun", "refused", "no_answer"]
     message: str
+
+
+class LiveListOut(BaseModel):
+    name: str
+    sha256: str = Field(description="of the list file's bytes; the only thing the console sends")
+    data: Any = Field(description="the list as the person wrote it, untouched")
+
+
+class LiveOut(BaseModel):
+    """soft-matter-agents' live view (its card 062): whether its host runs, and which
+    approved lists the person may switch on."""
+
+    available: bool = Field(description="host reachable and the store is soft-matter-agents")
+    why_not: str | None = Field(description="why live view cannot be switched on, in words")
+    host: str | None = Field(description="127.0.0.1:<port> when known")
+    lists: list[LiveListOut]
+
+
+class LiveOnIn(BaseModel):
+    sha256: str = Field(min_length=64, max_length=64)
+
+
+class LiveOnOut(BaseModel):
+    outcome: Literal["started", "refused"]
+    run_id: str | None
+    reason: str | None
 
 
 class QuestionIn(BaseModel):
@@ -444,6 +478,75 @@ def stop_run(agent: AgentName, run_id: str, body: StopIn, request: Request, stor
                           outcome=result.outcome)
     return StopOut(run_id=st.run_id, outcome=result.outcome,  # type: ignore[arg-type]
                    message=result.message)
+
+
+# -- live view from the console (soft-matter-agents card 062) ----------------------------------
+
+NOT_SMA = "the console is not connected to the soft-matter-agents files (start it with --store sma)"
+
+
+def _live_host(request: Request) -> tuple[sma_run.Address | None, str | None]:
+    fixed = getattr(request.app.state, "live_host", None)
+    if fixed:
+        try:
+            return sma_live.parse_host(fixed), None
+        except ValueError as e:
+            return None, str(e)
+    return sma_live.host_address(getattr(request.app.state, "live_host_file", None))
+
+
+def _sma_root(store: Any) -> Any:
+    return None if isinstance(store, MockStore) else getattr(store, "root", None)
+
+
+@router.get("/live", response_model=LiveOut)
+def live_state(request: Request, store: AgentStoreDep) -> LiveOut:
+    """Whether a live view can be switched on, and the approved live-view lists to name.
+    Answers only from the address file and approvals/; it connects to nothing."""
+    root = _sma_root(store)
+    lists = [] if root is None else sma_live.live_lists(root)
+    addr, why = _live_host(request)
+    if root is None:
+        why = NOT_SMA
+    elif why is None and not lists:
+        why = "no approved live-view list in microscope_agent/approvals/ (the person writes it)"
+    return LiveOut(available=why is None, why_not=why,
+                   host=None if addr is None else f"{addr.host}:{addr.port}",
+                   lists=[LiveListOut(name=x.name, sha256=x.sha256, data=x.data) for x in lists])
+
+
+@router.post(
+    "/live/on",
+    response_model=LiveOnOut,
+    responses={403: {"description": "not the microscope PC, or a role that may not operate"},
+               409: {"description": "not connected to soft-matter-agents, or no such list"},
+               502: {"description": "the live-view host is not running or did not answer"}},
+)
+def live_switch_on(body: LiveOnIn, request: Request, store: AgentStoreDep, me: Login,
+                   seat: Auth) -> LiveOnOut:
+    """Ask soft-matter-agents' live-view host to run the approved list named by its sha256.
+    It starts an acquisition and may light the sample, so it is an operator action on the
+    microscope PC. "Live off" is the run's own stop (`POST .../runs/microscope/{id}/stop`)."""
+    if why := server_action_why(me, "live_on"):
+        raise why.http()
+    root = _sma_root(store)
+    if root is None:
+        raise Refusal(409, "not_sma", NOT_SMA).http()
+    if body.sha256 not in {x.sha256 for x in sma_live.live_lists(root)}:
+        raise Refusal(409, "no_such_list",
+                      "no approved live-view list in approvals/ has that sha256").http()
+    addr, why_not = _live_host(request)
+    if addr is None:
+        raise Refusal(502, "live_host_not_running", why_not or "no live-view host").http()
+    try:
+        r = sma_live.live_on(addr, body.sha256)
+    except sma_live.LiveError as e:
+        raise Refusal(502, "live_host_not_running", str(e)).http() from e
+    if seat.audit is not None:
+        seat.audit.append(AuditKind.COMMAND_EXECUTED, me.user_id, origin="console",
+                          command="sma_live_on", list_sha256=body.sha256, outcome=r.outcome,
+                          run_id=r.run_id)
+    return LiveOnOut(outcome=r.outcome, run_id=r.run_id, reason=r.reason)  # type: ignore[arg-type]
 
 
 @router.get("/inbox", response_model=list[InboxThreadOut], responses=ERRORS)

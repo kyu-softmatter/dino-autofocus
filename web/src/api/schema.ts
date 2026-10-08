@@ -740,6 +740,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/console/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live State
+         * @description Whether a live view can be switched on, and the approved live-view lists to name.
+         *     Answers only from the address file and approvals/; it connects to nothing.
+         */
+        get: operations["live_state_api_console_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/live/on": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Live Switch On
+         * @description Ask soft-matter-agents' live-view host to run the approved list named by its sha256.
+         *     It starts an acquisition and may light the sample, so it is an operator action on the
+         *     microscope PC. "Live off" is the run's own stop (`POST .../runs/microscope/{id}/stop`).
+         */
+        post: operations["live_switch_on_api_console_live_on_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/console/inbox": {
         parameters: {
             query?: never;
@@ -2546,6 +2589,62 @@ export interface components {
             error?: string | null;
         } & {
             [key: string]: unknown;
+        };
+        /** LiveListOut */
+        LiveListOut: {
+            /** Name */
+            name: string;
+            /**
+             * Sha256
+             * @description of the list file's bytes; the only thing the console sends
+             */
+            sha256: string;
+            /**
+             * Data
+             * @description the list as the person wrote it, untouched
+             */
+            data: unknown;
+        };
+        /** LiveOnIn */
+        LiveOnIn: {
+            /** Sha256 */
+            sha256: string;
+        };
+        /** LiveOnOut */
+        LiveOnOut: {
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "started" | "refused";
+            /** Run Id */
+            run_id: string | null;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * LiveOut
+         * @description soft-matter-agents' live view (its card 062): whether its host runs, and which
+         *     approved lists the person may switch on.
+         */
+        LiveOut: {
+            /**
+             * Available
+             * @description host reachable and the store is soft-matter-agents
+             */
+            available: boolean;
+            /**
+             * Why Not
+             * @description why live view cannot be switched on, in words
+             */
+            why_not: string | null;
+            /**
+             * Host
+             * @description 127.0.0.1:<port> when known
+             */
+            host: string | null;
+            /** Lists */
+            lists: components["schemas"]["LiveListOut"][];
         };
         /** LoadingState */
         LoadingState: {
@@ -5725,6 +5824,80 @@ export interface operations {
                 };
             };
             /** @description the stop channel did not answer a connection */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    live_state_api_console_live_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveOut"];
+                };
+            };
+        };
+    };
+    live_switch_on_api_console_live_on_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveOnIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveOnOut"];
+                };
+            };
+            /** @description not the microscope PC, or a role that may not operate */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not connected to soft-matter-agents, or no such list */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description the live-view host is not running or did not answer */
             502: {
                 headers: {
                     [name: string]: unknown;
