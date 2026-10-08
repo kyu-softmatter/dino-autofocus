@@ -7,7 +7,7 @@
 #   status: unmeasured | measured | read_from_device | catalog | person_decision | person_statement
 #   method: what was actually done, in words (never just "confirmed")
 #   by:     person id (OD-6 handle), never an email or a PC user name
-#   "on":     date, YYYY-MM-DD
+#   "on":   date, YYYY-MM-DD. Keep the key quoted: YAML 1.1 readers (PyYAML) read a bare `on` key as the boolean true.
 #   source: "user statement in the bench window, <date>" or "file <path> sha256 <hex>"
 # Software moved nothing on this visit: every motion was by hand (workplan 6.2 stop criterion 8).
 # Conflicting values (40x WI WD 160/170, Kinetix 12/16 bit) are recorded as read; nothing is merged or chosen here.
