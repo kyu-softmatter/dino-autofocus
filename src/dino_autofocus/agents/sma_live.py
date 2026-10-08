@@ -6,22 +6,24 @@ a live view is an ordinary preparatory run: the person starts a live-view host, 
 runs a live-view command list the person wrote and approved in `<seat>_agent/approvals/`.
 The console can only name such a list by its sha256. It cannot send a list, a path or a value.
 
-What this module speaks (proposed by the console and agreed by the microscope seat for
-card 062 on 2026-10-07):
+What this module speaks (proposed by the console, adopted unchanged in card 062 at
+soft-matter-agents 032e556; the list's shape is contracts/schemas/live_view_list.schema.json
+at 48242a2):
 
 - The host's address is `%LOCALAPPDATA%\\soft-matter-agents\\live_host.json`, outside the
   soft-matter-agents tree, written atomically by the host while it runs and deleted when it
   stops: `{"host": "127.0.0.1", "port": N, "pid": P, "started_at": "<iso>"}`. Only 127.0.0.1
   is accepted. A missing file or a port that does not answer means the host is not running
   (a file left by a crash reads that way). `--live-host 127.0.0.1:N` is the manual fallback.
-- A list is a file `live-view-<name>.json` in `<seat>_agent/approvals/` with `"card":
-  "live_view_list"` (LIST_CARD; the one string expected to change when manager-microscope
-  adds the schema). Its sha256 is of the raw file bytes, as for approved_commands. The host
-  checks the list itself and does not trust what the console offers.
+- A list is a JSON file in `<seat>_agent/approvals/` with `"artifact": "live_view_list"`
+  (an artifact, not a card: no qid, identified by its bytes). Its sha256 is of the raw file
+  bytes. The console shows the person's values (label, lamp intensity, exposure, frame
+  ceiling, any excitation block) and sends only the sha256; the host checks the list itself.
 - "Live on": exactly one line, `{"live_on": "<sha256>"}`. Reply, one line:
   `{"live_on": "started", "run_id": "<id>"}`, sent once `run_started` is in that run's
   events.jsonl, or `{"live_on": "refused", "reason": "<text>"}` (the host records every
-  refusal). A close with no reply means the host died mid-request: shown as refused, no reason.
+  refusal). `reason` is for the person and never branched on. A close with no reply means the
+  host died mid-request: shown as refused, no reason.
 - The run is then followed like any run (`sma_run`), and "Live off" is that run's own stop
   channel (`sma_run.send_stop`). There is no other way to stop it. It also ends by itself at
   the frame ceiling the person wrote in the list, so a forgotten live view stops.
@@ -42,7 +44,7 @@ from typing import Any
 from .sma_run import CONNECT_TIMEOUT_S, Address
 
 HOST_FILE_ENV = "DINO_AF_SMA_LIVE_HOST_FILE"
-LIST_CARD = "live_view_list"
+LIST_MARKER = ("artifact", "live_view_list")
 MAX_LIST_BYTES = 200_000
 REPLY_TIMEOUT_S = 15.0  # the host starts the run (and the camera) before it answers
 _SHA256 = set("0123456789abcdef")
@@ -99,7 +101,7 @@ def is_sha256(value: str) -> bool:
 
 
 def live_lists(sma_root: str | os.PathLike[str], seat: str = "microscope") -> list[LiveList]:
-    """Every `live-view-*.json` in `<seat>_agent/approvals/` whose `card` is LIST_CARD."""
+    """Every JSON file in `<seat>_agent/approvals/` marked `"artifact": "live_view_list"`."""
     from .sma_files import long_path
 
     base = long_path(Path(sma_root) / f"{seat}_agent" / "approvals")
@@ -107,7 +109,7 @@ def live_lists(sma_root: str | os.PathLike[str], seat: str = "microscope") -> li
         return []
     out = []
     for p in sorted(base.iterdir()):
-        if p.is_dir() or p.suffix != ".json" or not p.name.startswith("live-view-"):
+        if p.is_dir() or p.suffix != ".json":
             continue
         try:
             if p.stat().st_size > MAX_LIST_BYTES:
@@ -116,7 +118,7 @@ def live_lists(sma_root: str | os.PathLike[str], seat: str = "microscope") -> li
             data = json.loads(raw.decode("utf-8-sig"))
         except (OSError, UnicodeDecodeError, ValueError):
             continue
-        if isinstance(data, dict) and data.get("card") == LIST_CARD:
+        if isinstance(data, dict) and data.get(LIST_MARKER[0]) == LIST_MARKER[1]:
             out.append(LiveList(p.name, hashlib.sha256(raw).hexdigest(), data))
     return out
 

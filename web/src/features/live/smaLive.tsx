@@ -27,13 +27,28 @@ export const LIVE_OFF_NOTE =
   "Live off stops the run (lamp off, shutters closed). Closing this page does not stop it; " +
   "it ends by itself at the frame ceiling.";
 
-/** The values the person wrote in a list, for the picker: everything but the marker. */
+function rec(v: unknown): Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+/**
+ * The values the person wrote in a list (soft-matter-agents live_view_list.schema.json, 48242a2),
+ * for the picker: label, lamp intensity, camera, exposure, frame ceiling, and whether it adds
+ * fluorescence excitation (a separate approval on that side). A missing value shows as "—".
+ */
 export function listSummary(l: LiveList): string {
-  const data = (l.data ?? {}) as Record<string, unknown>;
-  const parts = Object.entries(data)
-    .filter(([k]) => k !== "card")
-    .map(([k, v]) => `${k} ${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
-  return parts.join(", ");
+  const d = rec(l.data);
+  const lamp = rec(d.transmitted_lamp);
+  const cam = rec(d.camera);
+  const show = (v: unknown) => (v === undefined || v === null ? "—" : String(v));
+  const parts = [
+    show(d.label),
+    `${show(lamp.device ?? "lamp")} intensity ${show(rec(lamp.intensity).value)}`,
+    `${show(cam.device ?? "camera")} exposure ${show(cam.exposure_ms)} ms`,
+    `frame ceiling ${show(cam.frame_ceiling)}`,
+  ];
+  if (d.excitation !== undefined) parts.push("adds fluorescence excitation");
+  return parts.join(" · ");
 }
 
 export function SmaLiveSwitch() {

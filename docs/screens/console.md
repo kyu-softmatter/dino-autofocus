@@ -75,8 +75,9 @@ outside a plan too, to help find the sample. The Live area shows a "Microscope l
 
 - `GET /api/console/live`: whether soft-matter-agents' live-view host is running (its address file
   `%LOCALAPPDATA%\soft-matter-agents\live_host.json`, or `--live-host-file` / `--live-host
-  127.0.0.1:N`), and the live-view lists the person approved (`microscope_agent/approvals/
-  live-view-*.json`, `"card": "live_view_list"`), each with the values the person wrote.
+  127.0.0.1:N`), and the live-view lists the person approved (JSON files in
+  `microscope_agent/approvals/` marked `"artifact": "live_view_list"`, the shape of
+  soft-matter-agents `contracts/schemas/live_view_list.schema.json`), each with the person's values.
 - `"Live on"`: `POST /api/console/live/on {sha256}`, an operator action on the microscope PC
   (`/api/permissions?ops=live_on`). The console names the list by its sha256 and nothing else; the
   host checks the list and starts an ordinary run, then the screen follows it (frames from its tap).

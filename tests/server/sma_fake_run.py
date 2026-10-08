@@ -178,8 +178,11 @@ class FakeSmaRun:
         return json.dumps(head).encode() + b"\n" + body
 
 
-LIVE_LIST = {"card": "live_view_list", "name": "brightfield finder", "lamp": "DiaLamp",
-             "intensity": 12, "exposure_ms": 20, "frame_ceiling": 3000}
+# the shape of soft-matter-agents contracts/schemas/live_view_list.schema.json (48242a2)
+LIVE_LIST = {"artifact": "live_view_list", "schema_version": "0.1", "written_by": "kyuhwan",
+             "written_at": "2026-10-07", "label": "finding the sample in transmitted light",
+             "transmitted_lamp": {"device": "DiaLamp", "intensity": {"value": 12}},
+             "camera": {"device": "Kinetix_red", "exposure_ms": 20, "frame_ceiling": 3000}}
 
 
 def write_live_list(root: Path, name: str = "live-view-brightfield.json",
@@ -217,8 +220,9 @@ class FakeLiveHost:
         import hashlib
 
         folder = self.root / "microscope_agent" / "approvals"
-        return {hashlib.sha256(p.read_bytes()).hexdigest()
-                for p in folder.glob("live-view-*.json")} if folder.is_dir() else set()
+        return {hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.glob("*.json")
+                if json.loads(p.read_bytes()).get("artifact") == "live_view_list"} \
+            if folder.is_dir() else set()
 
     def _judge(self, raw: bytes) -> bytes | None:
         self.requests.append(raw)

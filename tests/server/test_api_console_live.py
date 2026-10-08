@@ -46,13 +46,13 @@ def client(engine, make_client, root, addr_file):
 # -- the module -------------------------------------------------------------------------------
 
 
-def test_lists_are_named_files_marked_as_live_view_lists(root):
+def test_lists_are_files_marked_as_live_view_list_artifacts(root):
     sha = write_live_list(root)
-    write_live_list(root, "live-view-other.json", {"card": "plan_approval"})  # not a list
-    write_live_list(root, "appr-mic-x-r1.json", {"card": "live_view_list"})  # not the name
+    write_live_list(root, "appr-mic-x-r1.json", {"card": "plan_approval"})  # an approval
+    write_live_list(root, "old.json", {"card": "live_view_list"})  # the pre-schema marker
     (got,) = sma_live.live_lists(root)
     assert got.name == "live-view-brightfield.json" and got.sha256 == sha
-    assert got.data["frame_ceiling"] == 3000
+    assert got.data["camera"]["frame_ceiling"] == 3000
 
 
 def test_host_address_from_file_or_flag(tmp_path, addr_file, host):

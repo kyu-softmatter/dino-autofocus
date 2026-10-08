@@ -11,7 +11,12 @@ const RUN = "run-live-001";
 const LIST = {
   name: "live-view-brightfield.json",
   sha256: SHA,
-  data: { card: "live_view_list", lamp: "DiaLamp", intensity: 12, exposure_ms: 20, frame_ceiling: 3000 },
+  data: {
+    artifact: "live_view_list",
+    label: "finding the sample",
+    transmitted_lamp: { device: "DiaLamp", intensity: { value: 12 } },
+    camera: { device: "Kinetix_red", exposure_ms: 20, frame_ceiling: 3000 },
+  },
 };
 
 function live(over: Partial<LiveState> = {}): LiveState {
@@ -66,7 +71,7 @@ describe("microscope live view switch", () => {
   it("switches on by sha256 only, then Live off is the run's stop and says what it does", async () => {
     const t = renderSwitch(live());
     await waitFor(() => expect(onButton().disabled).toBe(false));
-    expect(screen.getByText(/intensity 12, exposure_ms 20, frame_ceiling 3000/)).toBeTruthy();
+    expect(screen.getByText(/DiaLamp intensity 12 · Kinetix_red exposure 20 ms · frame ceiling 3000/)).toBeTruthy();
     await act(async () => {
       fireEvent.click(onButton());
     });
@@ -105,7 +110,10 @@ describe("microscope live view switch", () => {
     expect(onButton().disabled).toBe(true);
   });
 
-  it("summarises a list without its marker", () => {
-    expect(listSummary(LIST)).toBe("lamp DiaLamp, intensity 12, exposure_ms 20, frame_ceiling 3000");
+  it("summarises a list by the schema's fields, and says when it adds excitation", () => {
+    expect(listSummary(LIST)).toBe(
+      "finding the sample · DiaLamp intensity 12 · Kinetix_red exposure 20 ms · frame ceiling 3000",
+    );
+    expect(listSummary({ ...LIST, data: { ...LIST.data, excitation: {} } })).toMatch(/adds fluorescence excitation$/);
   });
 });
