@@ -339,6 +339,8 @@ def create_app(
     dev_origins: Sequence[str] = (),
     engine_name: str = "unknown",
     web_dist: Path | None = None,
+    live_host_file: Path | None = None,
+    live_host: str | None = None,
 ) -> FastAPI:
     """`agent_store` defaults to a `MockStore` (dev); `auth` to an `AuthSeat` with no accounts
     in a temporary folder (nobody can log in; the launcher passes `AuthSeat.from_config()`).
@@ -373,6 +375,9 @@ def create_app(
     app = FastAPI(title="dino-autofocus", version=_package_version(), lifespan=lifespan)
     app.state.engine = engine
     app.state.agent_store = agent_store if agent_store is not None else MockStore()
+    # soft-matter-agents' live-view host (its card 062): an address file, or a fixed address
+    app.state.live_host_file = live_host_file
+    app.state.live_host = live_host
     app.state.auth = auth if auth is not None else AuthSeat.throwaway()
     app.state.sessions = sessions if sessions is not None else SessionSeat()
     app.state.records = records

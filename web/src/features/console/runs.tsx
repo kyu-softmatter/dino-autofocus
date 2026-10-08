@@ -77,7 +77,19 @@ export function RunDetailView({ agent, runId, refreshKey }: { agent: Agent; runI
  * while it runs; nothing is read once it has ended. A run that is not followed says why the
  * console cannot stop it, in words.
  */
-export function FollowedRun({ agent, runId }: { agent: Agent; runId: string }) {
+export function FollowedRun({
+  agent,
+  runId,
+  abortLabel = ABORT_LABEL,
+  note,
+}: {
+  agent: Agent;
+  runId: string;
+  /** "Live off" for a live view; the request is the same stop */
+  abortLabel?: string;
+  /** what the button does, in words, instead of the default text */
+  note?: string;
+}) {
   const client = useClient();
   const [stream, setStream] = useState<RunStream | null>(null);
   const [events, setEvents] = useState<Record<string, unknown>[]>([]);
@@ -131,7 +143,7 @@ export function FollowedRun({ agent, runId }: { agent: Agent; runId: string }) {
         <span className="console-tag">soft-matter-agents run</span>
         {stream.plan_id !== null && <span>{stream.plan_id}</span>}
       </header>
-      <AbortRun agent={agent} runId={runId} stream={stream} />
+      <AbortRun agent={agent} runId={runId} stream={stream} label={abortLabel} note={note} />
       {readError !== null && <p className="console-muted">Last read failed: {readError}</p>}
       {stream.frame_tap && <TapFrame agent={agent} runId={runId} tick={frameTick} />}
       <Events events={events} label="Run events (events.jsonl)" />
@@ -139,7 +151,19 @@ export function FollowedRun({ agent, runId }: { agent: Agent; runId: string }) {
   );
 }
 
-function AbortRun({ agent, runId, stream }: { agent: Agent; runId: string; stream: RunStream }) {
+function AbortRun({
+  agent,
+  runId,
+  stream,
+  label,
+  note,
+}: {
+  agent: Agent;
+  runId: string;
+  stream: RunStream;
+  label: string;
+  note?: string;
+}) {
   const client = useClient();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -149,7 +173,7 @@ function AbortRun({ agent, runId, stream }: { agent: Agent; runId: string; strea
     setBusy(true);
     setRefused(null);
     try {
-      const r = await stopRun(client, agent, runId, reason);
+      const r = await stopRun(client, agent, runId, reason || (label === ABORT_LABEL ? "" : label));
       setAnswer(r.message);
     } catch (e: unknown) {
       setRefused(errorText(e));
@@ -161,7 +185,7 @@ function AbortRun({ agent, runId, stream }: { agent: Agent; runId: string; strea
     return (
       <div className="console-abort">
         <button type="button" className="console-abort-button" disabled title={stream.stop_unavailable ?? undefined}>
-          {ABORT_LABEL}
+          {label}
         </button>{" "}
         <span className="console-muted">{stream.stop_unavailable}</span>
         {answer !== null && <p className="console-muted">{answer}</p>}
@@ -175,9 +199,11 @@ function AbortRun({ agent, runId, stream }: { agent: Agent; runId: string; strea
         <input value={reason} maxLength={300} placeholder="optional" onChange={(e) => setReason(e.target.value)} />
       </label>{" "}
       <button type="button" className="console-abort-button" disabled={busy} onClick={() => void press()}>
-        {ABORT_LABEL}
+        {label}
       </button>{" "}
-      <span className="console-muted">Sent to the run's own stop channel; the run aborts and records who asked. {CLOSE_NOTE}</span>
+      <span className="console-muted">
+        {note ?? `Sent to the run's own stop channel; the run aborts and records who asked. ${CLOSE_NOTE}`}
+      </span>
       {answer !== null && <p role="status">{answer}</p>}
       {refused !== null && <p role="alert" className="console-error">{refused}</p>}
     </div>

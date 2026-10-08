@@ -30,6 +30,10 @@ export type SubmitIn = Schemas["QuestionIn"];
 /** A run soft-matter-agents executes, as its events.jsonl says so far (plan.md 11-25). */
 export type RunStream = Schemas["RunStreamOut"];
 export type StopResult = Schemas["StopOut"];
+/** soft-matter-agents' live view (its card 062): the host and the approved lists. */
+export type LiveState = Schemas["LiveOut"];
+export type LiveList = Schemas["LiveListOut"];
+export type LiveOnResult = Schemas["LiveOnOut"];
 
 export type Agent = QuestionSummary["agent"];
 export const AGENTS: readonly Agent[] = ["microscope", "simulation"];
@@ -67,6 +71,8 @@ export const PATHS = {
   runFrame: (agent: Agent, runId: string) => `/api/console/runs/${seg(agent)}/${seg(runId)}/frame`,
   runStop: (agent: Agent, runId: string) => `/api/console/runs/${seg(agent)}/${seg(runId)}/stop`,
   inbox: "/api/console/inbox",
+  live: "/api/console/live",
+  liveOn: "/api/console/live/on",
   approvals: (agent?: Agent) => `/api/console/approvals${query({ agent })}`,
   permissions: (ops: readonly string[]) => `/api/permissions?ops=${ops.map(seg).join(",")}`,
 };

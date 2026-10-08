@@ -64,7 +64,8 @@ STOPS = frozenset({"abort", "lights_off"})
 MAP_WRITE_OPS = frozenset({"map_flag", "map_flag_retire", "candidate_confirm", "candidate_reject"})
 # actions the server decides itself (not engine operations), for /api/permissions
 SESSION_ACTIONS = frozenset({"session_open", "session_close", "session_continue"})
-SERVER_ACTIONS = SESSION_ACTIONS | {"submit_question"}
+# live_on: switch on soft-matter-agents' live view (its card 062); an operator action, local
+SERVER_ACTIONS = SESSION_ACTIONS | {"submit_question", "live_on"}
 
 
 # -- refusals ---------------------------------------------------------------------------

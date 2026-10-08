@@ -68,6 +68,25 @@ announces a loopback stop channel and a frame tap in `run_started`, and keeps go
   for it; stop it at the instrument or in the operator terminal"`. Simulation runs have no Abort here.
 - Nothing is written in the soft-matter-agents tree (the audit line goes to the console's own folder).
 
+## Microscope live view from the console (C-15, soft-matter-agents card 062)
+
+The person decided on 2026-10-07 that a live camera view is switched on and off from the console,
+outside a plan too, to help find the sample. The Live area shows a "Microscope live view" bar:
+
+- `GET /api/console/live`: whether soft-matter-agents' live-view host is running (its address file
+  `%LOCALAPPDATA%\soft-matter-agents\live_host.json`, or `--live-host-file` / `--live-host
+  127.0.0.1:N`), and the live-view lists the person approved (`microscope_agent/approvals/
+  live-view-*.json`, `"card": "live_view_list"`), each with the values the person wrote.
+- `"Live on"`: `POST /api/console/live/on {sha256}`, an operator action on the microscope PC
+  (`/api/permissions?ops=live_on`). The console names the list by its sha256 and nothing else; the
+  host checks the list and starts an ordinary run, then the screen follows it (frames from its tap).
+  A refusal is shown with the host's reason (`"a run holds the lock"`, ...).
+- `"Live off"`: the run's own stop, `POST .../runs/microscope/{id}/stop`. The text says: `"Live off
+  stops the run (lamp off, shutters closed). Closing this page does not stop it; it ends by itself
+  at the frame ceiling."`
+- Fluorescence is not in the default list; a list with any other light is the person's separate
+  approval on the soft-matter-agents side. Nothing is written in that tree by the console.
+
 ## Which store (C-03)
 
 `python -m dino_autofocus.server --store sma --sma-root DIR` (default root `$DINO_AF_SMA_ROOT`, else the

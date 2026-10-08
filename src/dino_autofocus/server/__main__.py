@@ -347,7 +347,9 @@ def build(args: argparse.Namespace, *, remote_view: bool = False,
     """Open the backend and make everything the server owns. Nothing listens yet."""
     common = dict(remote_view=remote_view, remote_abort=not args.no_remote_abort,
                   allowed_hosts=hosts or [], dev_origins=args.dev_origin,
-                  web_dist=args.web_dist, agent_store=agent_store_of(args))
+                  web_dist=args.web_dist, agent_store=agent_store_of(args),
+                  live_host_file=getattr(args, "live_host_file", None),
+                  live_host=getattr(args, "live_host", None))
     auth = AuthSeat.from_config(args.config_dir)
     from ..auth import config as auth_config
     # designs, not records: one folder for the mock and the bench alike
@@ -480,6 +482,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--sma-root", type=Path, default=None, metavar="DIR",
                    help="soft-matter-agents folder for --store sma (default: "
                         "$DINO_AF_SMA_ROOT, else the desktop checkout)")
+    p.add_argument("--live-host-file", type=Path, default=None, metavar="FILE",
+                   help="where soft-matter-agents' live-view host announces its address "
+                        "(default: $DINO_AF_SMA_LIVE_HOST_FILE, else "
+                        "%%LOCALAPPDATA%%\\soft-matter-agents\\live_host.json)")
+    p.add_argument("--live-host", default=None, metavar="127.0.0.1:PORT",
+                   help="the live-view host's address as the person reads it off the host "
+                        "(instead of the file)")
     p.add_argument("--web-dist", type=Path, default=None,
                    help="built web app to serve (default: <repo>/web/dist)")
     p.add_argument("--dump-openapi", metavar="PATH",
