@@ -13,7 +13,7 @@
 # Conflicting values (40x WI WD 160/170, Kinetix 12/16 bit) are recorded as read; nothing is merged or chosen here.
 
 run:
-  date: null                 # planned 2026-10-08
+  date: null                 # planned 2026-10-12 (moved from 2026-10-08; the person said "yes" in the bench window on 2026-10-09)
   local_time: null
   kind: bench_visit_1_hand_only
   operator: null             # person id
