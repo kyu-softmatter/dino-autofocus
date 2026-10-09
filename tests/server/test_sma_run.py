@@ -76,6 +76,19 @@ def test_store_lists_a_followed_run_by_its_stream(root, run):
     assert store.run_stream("microscope", run.run_id).ended_how == "stopped_from_outside"
 
 
+def test_a_finished_followed_run_keeps_its_outcome_once_log_json_exists(root, run):
+    """log.json of a followed run has no outcome field (card 063 step 4, 2026-10-07): the
+    list reads run_ended's how from events.jsonl instead of showing nothing."""
+    run.end("stopped_from_outside")
+    (run.folder / "log.json").write_text(json.dumps(
+        {"run_id": run.run_id, "plan_id": None, "t0_wall": "2026-10-07T22:34:24Z",
+         "events": [{"event": "abort_end"}], "finished_at": "2026-10-07T22:34:42Z"}),
+        encoding="utf-8")
+    (summary,) = SmaFiles(root).list_runs("microscope")
+    assert summary.status == "stopped_from_outside"
+    assert summary.finished_at == "2026-10-07T22:34:42Z"
+
+
 # -- the stop channel -----------------------------------------------------------------------
 
 

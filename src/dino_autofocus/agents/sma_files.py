@@ -338,12 +338,18 @@ class SmaFiles:
             )
         plan_id = _str_or_none(log.get("plan_id")) or _str_or_none(config.get("plan_id"))
         qid = _qid_of(_str_or_none(config.get("qid")) or _str_or_none(log.get("qid")), plan_id)
+        status = _run_outcome(log) or _str_or_none(meta.get("stop_outcome"))
+        if status is None and agent == "microscope":
+            # A followed run's log.json states no outcome; run_ended's `how` is only in the
+            # stream (soft-matter-agents card 057), so the list reads it there.
+            ended = self._followed(d)
+            status = ended.ended_how if ended is not None and not ended.running else None
         return RunSummary(
             run_id=d.name,
             agent=agent,
             qid=qid,
             plan_id=plan_id,
-            status=_run_outcome(log) or _str_or_none(meta.get("stop_outcome")),
+            status=status,
             created_at=_str_or_none(log.get("t0_wall")),
             finished_at=_str_or_none(log.get("finished_at")),
             backend=_str_or_none(log.get("backend")) or _str_or_none(config.get("backend")),
