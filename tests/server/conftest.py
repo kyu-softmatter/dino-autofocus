@@ -25,8 +25,23 @@ from server_fakes import (  # noqa: F401 - re-export for one transition (T-015e)
 
 from dino_autofocus.agents import MockStore
 from dino_autofocus.auth import config as auth_config
+from dino_autofocus.auth import passwords
 from dino_autofocus.server import create_app
 from dino_autofocus.server.api import AuthSeat
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_scrypt: keep the production scrypt cost")
+
+
+@pytest.fixture(autouse=True)
+def fast_scrypt(request, monkeypatch):
+    """As tests/auth/conftest.py: `seat` seeds four accounts per test, and at the production
+    cost (n=2**14, ~0.8 s each here) that made every client test spend ~3.4 s in setup and
+    tests/server no longer finished in 25 minutes (AF 통합, 2026-10-09). The cost itself is
+    tested in tests/auth (real_scrypt); a test here that needs it takes the same marker."""
+    if request.node.get_closest_marker("real_scrypt") is None:
+        monkeypatch.setattr(passwords, "SCRYPT_N", 2**10)
 
 
 @pytest.fixture(autouse=True)
