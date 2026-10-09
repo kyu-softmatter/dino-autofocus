@@ -24,6 +24,7 @@ import {
 import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
 import { readLights } from "../../app/status";
+import { placeholderNotice } from "../../app/unavailable";
 import {
   CHECKING_PERMISSIONS,
   type CurrentSample,
@@ -101,6 +102,13 @@ export default function SampleScreen() {
   const [access, setAccess] = useState<SampleAccess | null>(null);
   const [perms, setPerms] = useState<Permissions | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // the placeholder engine has no sample store: one notice instead of the 503 (app/unavailable)
+  const [unavailable, setUnavailable] = useState<string | null>(null);
+  const fail = useCallback((e: Error) => {
+    const notice = placeholderNotice(e);
+    if (notice !== null) setUnavailable(notice);
+    else setError(e.message);
+  }, []);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [imageStatus, setImageStatus] = useState<string | null>(null);
   const [light, setLight] = useState<string | null>(null);
@@ -128,7 +136,7 @@ export default function SampleScreen() {
         setFields(f);
         setCurrent(s.sample ?? null);
       })
-      .catch((e: Error) => live && setError(e.message));
+      .catch((e: Error) => live && fail(e));
     return () => {
       live = false;
     };
@@ -140,7 +148,7 @@ export default function SampleScreen() {
     client
       .get<SampleAccess>(PATHS.access(viewId))
       .then((a) => live && setAccess(a))
-      .catch((e: Error) => live && setError(e.message));
+      .catch((e: Error) => live && fail(e));
     if (viewId === null) {
       setSelected(null);
       return () => {
@@ -153,7 +161,7 @@ export default function SampleScreen() {
       client.get<LoadingState>(PATHS.loading(viewId)),
     ])
       .then(([detail, geometry, loading]) => live && setSelected({ detail, geometry, loading }))
-      .catch((e: Error) => live && setError(e.message));
+      .catch((e: Error) => live && fail(e));
     return () => {
       live = false;
     };
@@ -265,6 +273,17 @@ export default function SampleScreen() {
     };
   }, [selected]);
   useScreenContext(details);
+
+  if (unavailable !== null) {
+    return (
+      <div className="sample-screen">
+        <h2>Sample</h2>
+        <p className="muted" role="status">
+          {unavailable}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="sample-screen">

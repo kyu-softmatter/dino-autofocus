@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CommandRefused, useClient, useEventsConnected, useReadOnly } from "../../app/client";
 import { useAreaPath } from "../../app/route";
 import { useScreenContext } from "../../app/screenContext";
+import { placeholderNotice } from "../../app/unavailable";
 import {
   blockedBy,
   PATHS,
@@ -56,6 +57,8 @@ export default function SessionsScreen() {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // the placeholder engine has no records store: one notice instead of the 503 (app/unavailable)
+  const [unavailable, setUnavailable] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState(0); // bump to reload
 
@@ -74,7 +77,12 @@ export default function SessionsScreen() {
         setCurrent(c);
         setSample(s);
       })
-      .catch((e) => live && setError(errorText(e)));
+      .catch((e) => {
+        if (!live) return;
+        const notice = placeholderNotice(e);
+        if (notice !== null) setUnavailable(notice);
+        else setError(errorText(e));
+      });
     return () => {
       live = false;
     };
@@ -143,6 +151,17 @@ export default function SessionsScreen() {
     : denied("session_continue") ??
       (detail.status === "open" ? "Close this session first" : null) ??
       (current ? `${current.session_id} is open; close it first` : null);
+
+  if (unavailable !== null) {
+    return (
+      <section aria-label="Experiment sessions">
+        <h2>Experiment sessions</h2>
+        <p className="muted" role="status">
+          {unavailable}
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section aria-label="Experiment sessions">
