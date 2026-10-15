@@ -5,12 +5,12 @@ Focus is judged from deterministic image metrics, with frozen DINOv2 features an
 (focus score / signed z-error) as a helper. The verdict is one of `in_focus`, `step_up`,
 `step_down`, `no_sample_here` or `unsure`; the code never invents a Z target on its own.
 
-> **This repository will be merged into
-> [soft-matter-agents](https://github.com/kyu-softmatter/soft-matter-agents).**
-> Autofocus becomes part of that project's hardware engine (`microscope_agent`), and the web
-> interface becomes part of its front end. Until then the two are developed separately. The
-> `microscope_agent/` folder here already mirrors the target layout, so the source can be moved
-> folder by folder when development is done. Plan and mapping: [`docs/integration-sma.md`](docs/integration-sma.md).
+> **Moved and frozen (2026-10-15).** This repository has moved into
+> [soft-matter-agents](https://github.com/kyu-softmatter/soft-matter-agents) at
+> `microscope_agent/autofocus/`, with its history. This repository is frozen as a read-only
+> record: no new commits land here, and development continues in soft-matter-agents.
+> The plan that led here: [`docs/integration-sma.md`](docs/integration-sma.md) and
+> [`docs/integration-sma-workplan.md`](docs/integration-sma-workplan.md).
 
 ## Layout
 
